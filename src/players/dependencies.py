@@ -47,6 +47,21 @@ class RefreshTokenBearer(TokenBearer):
             )
 
 
+
+# TODO: Use exception handler to 
+# redirect responses for website pages
+
+# class RequiresLoginException(Exception):
+#     pass
+
+# async def redirect() -> bool:
+#     raise RequiresLoginException
+
+# @app.exception_handler(RequiresLoginException)
+# async def exception_handler(request: Request, exc: RequiresLoginException) -> Response:
+#     return RedirectResponse(url='/login')
+
+
 player_service = PlayerService()
 team_service = TeamService()
 

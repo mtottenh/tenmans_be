@@ -3,25 +3,25 @@ from .schemas import TeamCreateModel, TeamUpdateModel, SeasonCreateModel
 from sqlmodel import select, desc
 from .models import Team, Season, Settings, Roster
 from src.players.models import Player
-
+from typing import List
 class TeamService:
-    async def get_all_teams(self, session: AsyncSession ):
+    async def get_all_teams(self, session: AsyncSession ) -> List[Team]:
         stmnt = select(Team).order_by(desc(Team.created_at))
         result = await session.exec(stmnt)
         return result.all()
     
-    async def get_team_by_name(self, name: str, session: AsyncSession):
+    async def get_team_by_name(self, name: str, session: AsyncSession) -> Team | None:
         stmnt = select(Team).where(Team.name == name)
         result = await session.exec(stmnt)
         return result.first()
     
-    async def team_exists(self, name: str, session: AsyncSession):
+    async def team_exists(self, name: str, session: AsyncSession) -> bool:
         team = await self.get_team_by_name(name, session)
         return team is not None
         
     async def create_team(
         self, team_data: TeamCreateModel, session: AsyncSession
-    ):
+    ) -> Team:
         team_data_dict = team_data.model_dump()
         new_team = Team(**team_data_dict)
         session.add(new_team)
@@ -34,29 +34,33 @@ class TeamService:
         return True
 
 class SeasonService:
-    async def get_all_seasons(self, session: AsyncSession):
+    async def get_all_seasons(self, session: AsyncSession) -> List[Season]:
         stmnt = select(Season).order_by(desc(Season.created_at))
         result = await session.exec(stmnt)
         return result.all()
 
-    async def create_new_season(self, season_data: SeasonCreateModel, session: AsyncSession):
+    async def create_new_season(self, season_data: SeasonCreateModel, session: AsyncSession) -> Season:
         season_data_dict = season_data.model_dump()
         new_season = Season(**season_data_dict)
         session.add(new_season)
         await session.commit()
 
         return new_season
+    async def get_season(self, season_id: str, session: AsyncSession) -> Season | None:
+        stmnt = select(Season).where(Season.id == season_id)
+        result = await session.exec(stmnt)
+        return result.first()
     
-    async def get_season_by_name(self, name: str, session: AsyncSession):
+    async def get_season_by_name(self, name: str, session: AsyncSession) -> Season | None:
         stmnt = select(Season).where(Season.name == name)
         result = await session.exec(stmnt)
         return result.first()
 
-    async def season_exists(self, name: str, session: AsyncSession):
+    async def season_exists(self, name: str, session: AsyncSession) -> bool:
         season = await self.get_season_by_name(name, session)
         return season is not None
     
-    async def set_active_season(self, season: Season, session: AsyncSession):
+    async def set_active_season(self, season: Season, session: AsyncSession) -> Settings:
         stmnt = select(Settings).where(Settings.name == "active_season")
         result = await session.exec(stmnt)
         new_active_season_setting=Settings(name="active_season",value=season.name)
@@ -68,7 +72,7 @@ class SeasonService:
         await session.commit()
         return new_active_season_setting
 
-    async def get_active_season(self, session: AsyncSession):
+    async def get_active_season(self, session: AsyncSession) -> Settings | None:
         stmnt = select(Settings).where(Settings.name == "active_season")
         result = await session.exec(stmnt)
         active_season_setting = result.first()

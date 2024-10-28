@@ -10,8 +10,8 @@ from .schemas import TeamCreateModel, SeasonCreateModel, RosterUpdateModel
 from .service import TeamService, SeasonService, RosterService
 from src.players.service import PlayerService
 
-team_router = APIRouter()
-season_router = APIRouter()
+team_router = APIRouter(prefix="/teams")
+season_router = APIRouter(prefix="/seasons")
 access_token_bearer = AccessTokenBearer()
 player_service = PlayerService()
 team_service = TeamService()
@@ -92,16 +92,8 @@ async def get_team_roster(
 ):
     current_season = await season_service.get_active_season(session)
     team = await team_service.get_team_by_name(name, session)
-    # print(f"Team : {team}")
-    # links =  team.player_links
-    # for link in links:
-    #     print(link)
-    # return links
     current_roster = await roster_service.get_roster(team,current_season,session)
     return current_roster
-
-
-
 
 @season_router.post("/", dependencies=[admin_checker])
 async def create_new_season(
