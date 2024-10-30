@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.players.routes import player_router
 from src.teams.routes import team_router, season_router
 from src.fixtures.routes import fixture_router
@@ -22,7 +23,7 @@ app = FastAPI(
     version=version,
     lifespan=life_span,
 )
-
+app.add_middleware(CORSMiddleware, allow_origins=["*"],  allow_methods=["*"], allow_headers=['*'], allow_credentials=True)
 app.include_router(player_router, prefix=f"/api/{version}")
 app.include_router(team_router, prefix=f"/api/{version}" )
 app.include_router(season_router, prefix=f"/api/{version}")

@@ -27,7 +27,10 @@ async def get_all_teams(
 ):
     return await team_service.get_all_teams(session)
 
-
+# TODO - Amend the data model such that we can have a captains table for a given team.
+# TODO - Make the user who created the team a team captain?
+# - How do we ensure that admins who create teams don't get added as captains?
+# - Maybe just have an API parameter of team_captian: optional[str] and have the front-end supply it.
 @team_router.post("/", dependencies=[admin_checker])
 async def create_team(
     team_data: TeamCreateModel,
@@ -50,7 +53,7 @@ async def get_team_by_name(
     session: AsyncSession = Depends(get_session),
     player_details=Depends(access_token_bearer),
 ):
-    team = await team_service.get_team_by_name(name)
+    team = await team_service.get_team_by_name(name, session)
     if team is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -91,6 +94,8 @@ async def get_team_roster(
     player_details=Depends(access_token_bearer),
 ):
     current_season = await season_service.get_active_season(session)
+    if current_season == None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active season configured.")
     team = await team_service.get_team_by_name(name, session)
     current_roster = await roster_service.get_roster(team,current_season,session)
     return current_roster

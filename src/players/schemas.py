@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 import uuid
 from datetime import datetime
-
+from typing import Optional
 class PlayerModel(BaseModel):
     uid: uuid.UUID
     name: str
@@ -20,10 +20,11 @@ class PlayerCreateModel(BaseModel):
     
 
 class PlayerUpdateModel(BaseModel):
-    name: str
-    email: str
-    SteamID: str
-    password: str
+    name: Optional[str]
+    email: Optional[str]
+    SteamID: Optional[str]
+    password: Optional[str]
+    role: Optional[str]
 
 class PlayerLoginModel(BaseModel):
     email: str

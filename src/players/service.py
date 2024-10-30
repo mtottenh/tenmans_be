@@ -60,7 +60,12 @@ class PlayerService:
         if player_to_update is not None:
             update_data = player_data.model_dump()
             for k, v in update_data.items():
-                setattr(player_to_update, k, v)
+                if v is not None:
+                    if k is "password":
+                        setattr(player_to_update, 'password_hash', generate_password_hash(v))
+                    else:
+                        setattr(player_to_update, k, v)
+                
 
             await session.commit()
         return player_to_update

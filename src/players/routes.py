@@ -20,6 +20,7 @@ from .utils import create_access_token, decode_token, verify_password
 player_router = APIRouter(prefix="/players")
 player_service = PlayerService()
 access_token_bearer = AccessTokenBearer()
+refresh_token_bearer = RefreshTokenBearer()
 admin_checker = RoleChecker(["admin", "user"])
 
 
@@ -81,6 +82,16 @@ async def login_player(
         status_code=status.HTTP_403_FORBIDDEN, detail="Invalid playername/Password"
     )
 
+@player_router.post("/refresh")
+async def get_new_access_token(token_details: dict = Depends(refresh_token_bearer)):
+    expiry_date = token_details["exp"]
+    if datetime.fromtimestamp(expiry_date) > datetime.now():
+        new_access_token = create_access_token(player_data=token_details["player"])
+        return JSONResponse(content={"access_token": new_access_token})
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired refresh token",
+    )
 
 @player_router.get("/", response_model=List[Player])
 async def get_players(
@@ -94,6 +105,11 @@ async def get_players(
 @player_router.get("/me")
 async def get_current_player(player: Player = Depends(get_current_player)):
     return player
+
+
+
+
+
 
 
 @player_router.get("/{player_uid}", response_model=Player)
@@ -144,14 +160,3 @@ async def delete_player(
         )
     return
 
-
-@player_router.get("/refresh")
-async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer)):
-    expiry_date = token_details["exp"]
-    if datetime.fromtimestamp(expiry_date) > datetime.now():
-        new_access_token = create_access_token(player_data=token_details["player"])
-        return JSONResponse(content={"access_token": new_access_token})
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Invalid or expired refresh token",
-    )

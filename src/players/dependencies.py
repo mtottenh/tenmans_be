@@ -19,7 +19,7 @@ class TokenBearer(HTTPBearer):
         token_data = decode_token(creds.credentials)
         if token_data is None:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or expired token"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
             )
         self.verify_token_data(token_data)
         return token_data
@@ -29,18 +29,17 @@ class TokenBearer(HTTPBearer):
 
 
 class AccessTokenBearer(TokenBearer):
-
     def verify_token_data(self, token_data: dict) -> None:
         if token_data and token_data["refresh"]:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Provide a valid access token",
             )
 
 
 class RefreshTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict) -> None:
-        if token_data and token_data["access"]:
+        if token_data and "access" in token_data:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Provide a valid refresh token",
