@@ -1,7 +1,7 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
 from .schemas import TeamCreateModel, TeamUpdateModel, SeasonCreateModel
 from sqlmodel import select, desc
-from .models import Team, Season, Settings, Roster
+from .models import Team, Season, Settings, Roster, TeamCaptain
 from src.players.models import Player
 from typing import List
 class TeamService:
@@ -26,12 +26,27 @@ class TeamService:
         new_team = Team(**team_data_dict)
         session.add(new_team)
         await session.commit()
-
+        await session.refresh(new_team)
         return new_team
+
+    async def create_captain(
+        self, team: Team, player: Player, session: AsyncSession
+    ) -> TeamCaptain:
+        new_captain = TeamCaptain(team_id=team.id,player_uid=player.uid)
+        session.add(new_captain)
+        await session.commit()
+        await session.refresh(new_captain)
+        return new_captain
+
+    async def get_team_captains(self, team_name: str, session: AsyncSession):
+        stmnt = select(Player).where(Team.name == team_name).where(Team.id == TeamCaptain.team_id).where(Player.uid == TeamCaptain.player_uid)
+        players = await session.exec(stmnt)
+        return players.all()
     
-    # TODO
-    async def player_is_on_roster(self, player_data: Player, session: AsyncSession) -> bool:
-        return True
+    async def player_is_team_captain(self,  player: Player, team: Team, session: AsyncSession):
+        stmnt = select(Player).where(Team.name == team.name).where(Team.id == TeamCaptain.team_id).where(Player.uid == TeamCaptain.player_uid).where(Player.uid == player.uid)
+        result = await session.exec(stmnt)
+        return not result.first() is None
 
 class SeasonService:
     async def get_all_seasons(self, session: AsyncSession) -> List[Season]:
@@ -70,6 +85,7 @@ class SeasonService:
             new_active_season_setting.value = season.name
         session.add(new_active_season_setting)
         await session.commit()
+        await session.refresh(new_active_season_setting)
         return new_active_season_setting
 
     async def get_active_season(self, session: AsyncSession) -> Settings | None:
@@ -84,13 +100,14 @@ class SeasonService:
 
 class RosterService:
     async def add_player_to_team_roster(self, player: Player, team: Team, season: Season, session: AsyncSession):
-        new_roster = Roster(team_id=team.id, player_uid=player.uid, season_id=season.id)
+        new_roster = Roster(team_id=team.id, player_uid=player.uid, season_id=season.id, pending=True)
         session.add(new_roster)
         await session.commit()
+        await session.refresh(new_roster)
         return new_roster
     
-    async def get_roster(self, team: Team, season: Season, session: AsyncSession):
-        stmnt = select(Roster).where(Roster.team_id == team.id).where(Season.id == season.id)
+    async def get_roster(self, team_name: str, season: Season, session: AsyncSession):
+        stmnt = select(Player, Roster.pending).where(Roster.team_id == Team.id).where(Team.name == team_name).where(Roster.season_id == season.id).where(Roster.player_uid == Player.uid)
         result = await session.exec(stmnt)
         return result.all()
     
@@ -98,3 +115,25 @@ class RosterService:
         stmnt = select(Roster).where(Roster.team_id == team.id).where(Roster.season_id == season.id).where(Roster.player_uid == player.uid)
         result = await session.exec(stmnt)
         return result.first() is not None
+    
+    async def player_on_active_roster(self, player: Player, team: Team, season: Season, session: AsyncSession) -> bool:
+        stmnt = select(Roster).where(Roster.team_id == team.id).where(Roster.season_id == season.id).where(Roster.player_uid == player.uid).where(Roster.pending == False)
+        result = await session.exec(stmnt)
+        return result.first() is not None
+    
+    async def player_is_pending(self, player: Player, team: Team, season: Season, session: AsyncSession) -> bool:
+        stmnt = select(Roster).where(Roster.team_id == team.id).where(Roster.season_id == season.id).where(Roster.player_uid == player.uid).where(Roster.pending == True)
+        result = await session.exec(stmnt)
+        return result.first() is not None
+    
+    async def set_player_active(self, player: Player, team: Team, season: Season, session: AsyncSession) :
+        stmnt = select(Roster).where(Roster.team_id == team.id).where(Roster.season_id == season.id).where(Roster.player_uid == player.uid).where(Roster.pending == True)
+        result = await session.exec(stmnt)
+        new_roster_entry = result.first()
+        if new_roster_entry:
+            new_roster_entry.pending = False
+            session.add(new_roster_entry)
+            await session.commit()
+            await session.refresh(new_roster_entry)
+        return new_roster_entry
+        

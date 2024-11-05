@@ -14,8 +14,8 @@ class TokenBearer(HTTPBearer):
     def __init__(self, auto_error=True):
         super().__init__(auto_error=auto_error)
 
-    async def __call__(self, requset: Request) -> HTTPAuthorizationCredentials | None:
-        creds = await super().__call__(request=requset)
+    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+        creds = await super().__call__(request=request)
         token_data = decode_token(creds.credentials)
         if token_data is None:
             raise HTTPException(
@@ -78,7 +78,8 @@ class RosterChecker:
     def __init__(self, allowed_roles: List[str]) -> None:
         self.allowed_roles = allowed_roles
     
-    async def __call__(self, current_player: Player = Depends(get_current_player)):
+    async def __call__(self, request: Request, current_player: Player = Depends(get_current_player)):
+        
         return await team_service.player_is_on_roster(current_player)
 
 class RoleChecker:

@@ -12,11 +12,6 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-        # stmnt = text("SELECT 'hello';")
-        # result = await conn.execute(stmnt)
-        # print(result.all())
-
-
 async def get_session() -> AsyncSession:
     Session = sessionmaker(
         bind=engine,

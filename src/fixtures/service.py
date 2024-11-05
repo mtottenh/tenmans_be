@@ -63,6 +63,7 @@ class FixtureService:
         new_fixture = Fixture(**fixture_data_dict)
         session.add(new_fixture)
         await session.commit()
+        await session.refresh(new_fixture)
         return new_fixture
 
 class ResultsService:
@@ -84,4 +85,5 @@ class ResultsService:
         result_obj=Result(**result.model_dump())
         session.add(result_obj)
         await session.commit()
+        await session.refresh(result_obj)
         return result_obj
