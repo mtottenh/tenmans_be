@@ -1,5 +1,6 @@
 import sqlite3
 import pandas as pd
+import os
 
 
 def to_csv():
@@ -10,9 +11,10 @@ def to_csv():
     for table_name in tables:
         table_name = table_name[0]
         table = pd.read_sql_query("SELECT * from %s" % table_name, db)
-        table.to_csv(table_name + '.csv', index_label='index')
+        table.to_csv("db_dump/" + table_name + '.csv', index_label='index')
     cursor.close()
     db.close()
 
 if __name__ == "__main__":
+    os.makedirs('db_dump', exist_ok=True) 
     to_csv()
