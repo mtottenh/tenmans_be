@@ -7,6 +7,7 @@ from src.teams.service import TeamService, SeasonService
 from enum import Enum, StrEnum
 from datetime import datetime
 from typing import List
+import uuid
 
 team_service = TeamService()
 season_service = SeasonService()
@@ -60,6 +61,7 @@ class FixtureService:
         fixture_data_dict['team_2'] = team_2.id
         fixture_data_dict['season_id'] = season.id
         fixture_data_dict['scheduled_at'] = scheduled_date
+        fixture_data_dict['round']
         new_fixture = Fixture(**fixture_data_dict)
         session.add(new_fixture)
         await session.commit()
@@ -76,7 +78,12 @@ class ResultsService:
         stmnt = select(Result, Fixture.id).where(Result.season_id == season.id, Result.fixture_id == Fixture.id).where(or_(Fixture.team_1 == team.id, Fixture.team_2 == team.id))
         result = await session.exec(stmnt)
         return result.all()
-
+    
+    async def get_result_for_fixture(self, fixture_id: str, session: AsyncSession):
+        stmnt = select(Result).where(Result.fixture_id == fixture_id)
+        result = await session.exec(stmnt)
+        return result.first()
+    
     async def add_result(self,  result: ResultCreateModel, session: AsyncSession) -> Result | None:
         stmnt = select(Fixture).where(Fixture.id == result.fixture_id)
         result = await session.exec(stmnt)

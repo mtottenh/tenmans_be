@@ -13,10 +13,13 @@ from src.players.dependencies import (
     get_current_player,
 )
 from datetime import timedelta, datetime
-
+from bs4 import BeautifulSoup
+import httpx
 from typing import List
 from .utils import create_access_token, decode_token, verify_password
-
+from zenrows import ZenRowsClient
+from src.config import Config
+zclient = ZenRowsClient(Config.ZENROWS_API_KEY)
 player_router = APIRouter(prefix="/players")
 player_service = PlayerService()
 access_token_bearer = AccessTokenBearer()
@@ -103,11 +106,60 @@ async def get_players(
 
 
 @player_router.get("/me")
-async def get_current_player(player: Player = Depends(get_current_player)):
+async def get_current_player_route(player: Player = Depends(get_current_player)):
     return player
 
 
+@player_router.get("/steam_rank/{player_id}")
+async def get_player_rank(player_id: str):
+    url = f"https://csstats.gg/player/{player_id}"
 
+    try:
+        # Fetch the page HTML
+        #async with httpx.AsyncClient() as client:
+    #         headers={
+    #     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:98.0) Gecko/20100101 Firefox/98.0",
+    #     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    #     "Accept-Language": "en-US,en;q=0.5",
+    #     "Accept-Encoding": "gzip, deflate",
+    #     "Connection": "keep-alive",
+    #     "Upgrade-Insecure-Requests": "1",
+    #     "Sec-Fetch-Dest": "document",
+    #     "Sec-Fetch-Mode": "navigate",
+    #     "Sec-Fetch-Site": "none",
+    #     "Sec-Fetch-User": "?1",
+    #     "Cache-Control": "max-age=0",
+    # }
+    #         response = await client.get(url,headers=headers, follow_redirects=True)
+    #         print(response.text)
+    #         response.raise_for_status()
+
+        params = {"premium_proxy":"true"}
+
+        response = zclient.get(url, params=params)
+        # Parse HTML with BeautifulSoup
+        print (response.text)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Scrape the best Premier rank (update this selector based on the actual HTML structure)
+        # Example: Assuming the rank is in an element like <div class="rank">Premier Rank: Gold</div>
+        rank_elements = soup.select("div.rank > .cs2rating, div.best > .cs2rating")  # Adjust selector as per the actual HTML structure
+
+        if rank_elements:
+            print(f"RANK: {rank_elements}")
+            ranks = []
+            for rank_element in rank_elements:
+                ranks.append(rank_element.get_text(strip=True).replace(',',''))
+            ranks = sorted(ranks,key=int)
+            best_rank = ranks[1] if len(ranks) == 2 else ranks[0]
+            return {"player_id": player_id, "current_rank": ranks[0], "best_rank": best_rank}
+        else:
+            raise HTTPException(status_code=404, detail="Rank information not found")
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"Failed to retrieve player data {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred while fetching player data {e}")
 
 
 

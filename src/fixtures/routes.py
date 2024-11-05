@@ -47,6 +47,27 @@ async def add_fixture_result(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No fixture with id {result_data.fixture_id}")
     return new_result
 
+@fixture_router.get("/{fixture_id}",   status_code=status.HTTP_200_OK, response_model=Fixture)
+async def get_fixture(
+    fixture_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    fixture = await fixture_service.get_fixture_by_id(fixture_id,session)
+    if fixture is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No fixture with id {fixture_id}")
+    return fixture
+
+@fixture_router.get("/{fixture_id}/result",   status_code=status.HTTP_201_CREATED, response_model=Result)
+async def add_fixture_result(
+    fixture_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    new_result = await results_service.get_result_for_fixture(fixture_id,session)
+    if new_result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No result for fixture with id {fixture_id}")
+    return new_result
+
+
 @fixture_router.get("/current_season", response_model=List[Fixture])
 async def get_all_fixtures_for_active_season(
     season: Season = Depends(get_active_season),

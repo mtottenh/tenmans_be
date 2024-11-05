@@ -51,8 +51,21 @@ async def create_team(
     captain = await team_service.create_captain(new_team, player_details, session)
     return new_team
 
+@team_router.get("/id/{id}")
+async def get_team_by_id(
+    id: str,
+    session: AsyncSession = Depends(get_session),
+    player_details=Depends(access_token_bearer),
+):
+    team = await team_service.get_team_by_id(id, session)
+    if team is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Team with name '{name}' not found",
+        )
+    return team
 
-@team_router.get("/{name}")
+@team_router.get("/name/{name}")
 async def get_team_by_name(
     name: str,
     session: AsyncSession = Depends(get_session),
@@ -67,7 +80,7 @@ async def get_team_by_name(
     return team
 
 # TODO:  Make a 'team captain' checker.
-@team_router.patch("/{team_name}/roster", dependencies=[admin_checker])
+@team_router.patch("/name/{team_name}/roster", dependencies=[admin_checker])
 async def update_team_roster(
     team_name: str,
     roster: RosterUpdateModel,
@@ -102,7 +115,7 @@ async def update_team_roster(
         return JSONResponse(content={"players_already_team" : { "team" : team.name, "players" : skipped}})
 
 
-@team_router.patch("/{team_name}/roster/active", dependencies=[admin_checker])
+@team_router.patch("/name/{team_name}/roster/active", dependencies=[admin_checker])
 async def accept_team_join_request(
     team_name: str,
     roster_update:  RosterPendingUpdateModel,
@@ -131,7 +144,7 @@ async def accept_team_join_request(
     
 
 
-@team_router.get("/{team_name}/captains", response_model=List[Player])
+@team_router.get("/name/{team_name}/captains", response_model=List[Player])
 async def get_team_captains(
     team_name: str,
     session: AsyncSession = Depends(get_session)
@@ -139,7 +152,7 @@ async def get_team_captains(
     captains = await team_service.get_team_captains(team_name, session)
     return captains
 
-@team_router.patch("/{team_name}/captains")
+@team_router.patch("/name/{team_name}/captains")
 async def add_team_captains(
     team_name: str,
 
@@ -148,7 +161,7 @@ async def add_team_captains(
     #captains = await team_service.create_captain(team_name, player_name)
     pass
 
-@team_router.get("/{team_name}/roster", response_model=List[RosterEntryModel])
+@team_router.get("/name/{team_name}/roster", response_model=List[RosterEntryModel])
 async def get_team_roster(
     team_name: str,
     session: AsyncSession = Depends(get_session),

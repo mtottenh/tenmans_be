@@ -14,7 +14,12 @@ class TeamService:
         stmnt = select(Team).where(Team.name == name)
         result = await session.exec(stmnt)
         return result.first()
-    
+
+    async def get_team_by_id(self, id: str, session: AsyncSession) -> Team | None:
+        stmnt = select(Team).where(Team.id == id)
+        result = await session.exec(stmnt)
+        return result.first()
+
     async def team_exists(self, name: str, session: AsyncSession) -> bool:
         team = await self.get_team_by_name(name, session)
         return team is not None

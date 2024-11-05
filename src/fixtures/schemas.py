@@ -11,5 +11,5 @@ class FixtureCreateModel(BaseModel):
 
 class ResultCreateModel(BaseModel):
     fixture_id: str
-    result: ResultEnum
-    winning_team: str | None
+    score_team_1: int
+    score_team_2: int

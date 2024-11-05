@@ -20,6 +20,7 @@ class Round(SQLModel, table=True):
     )
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id"), nullable=False))
     round_number: int = Field(nullable=False)  # Round number within the season
+    round_name: str
     fixtures: list["Fixture"] = Relationship(back_populates="round", sa_relationship_kwargs={"lazy": "selectin"})
 
 class Fixture(SQLModel, table=True):
@@ -31,7 +32,7 @@ class Fixture(SQLModel, table=True):
     team_1: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     team_2: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id")))
-    round_id: uuid.UUID = Field(sa_column=Column(ForeignKey("rounds.id"), nullable=False))
+    round_id: uuid.UUID = Field(sa_column=Column(ForeignKey("rounds.id")))
     scheduled_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
     result: "Result" = Relationship(
         back_populates="fixture", sa_relationship_kwargs={"lazy": "selectin"}
