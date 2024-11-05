@@ -40,9 +40,10 @@ class Fixture(SQLModel, table=True):
 
 class Result(SQLModel, table=True):
     __tablename__ = "results"
-    fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id"), primary_key=True))
-    winning_team: uuid.UUID | None = Field(sa_column=Column(ForeignKey("teams.id")))
-    result: ResultEnum
-    fixture: Fixture = Relationship(
-        back_populates="result", sa_relationship_kwargs={"lazy": "selectin"}
+    id: uuid.UUID = Field(
+        sa_column=Column(UUIDType, primary_key=True, default=uuid.uuid4)
     )
+    fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
+    score_team_1: int = Field(default=0)
+    score_team_2: int = Field(default=0)
+    fixture: Fixture = Relationship(back_populates="result", sa_relationship_kwargs={"lazy": "selectin"})
