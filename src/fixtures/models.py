@@ -1,17 +1,15 @@
 from sqlmodel import SQLModel, Field, Column, Relationship, ForeignKey
 import sqlalchemy.dialects.sqlite as sl
+import sqlalchemy as sa
 from sqlalchemy_utils import UUIDType
 from datetime import datetime
 import uuid
 from enum import StrEnum
 
 
-class ResultEnum(StrEnum):
-    PENDING = 'pending'
-    CANCELED = 'cancled'
-    DRAW = 'draw'
-    WIN_LOSS = 'win_loss'
-
+class RoundType(StrEnum):
+    GROUP_STAGE = "Group Stage"
+    KNOCKOUT = "Knockout"
 
 class Round(SQLModel, table=True):
     __tablename__ = "rounds"
@@ -20,7 +18,7 @@ class Round(SQLModel, table=True):
     )
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id"), nullable=False))
     round_number: int = Field(nullable=False)  # Round number within the season
-    round_name: str
+    type : RoundType =Field(sa_column=sa.Column(sa.Enum(RoundType)))
     fixtures: list["Fixture"] = Relationship(back_populates="round", sa_relationship_kwargs={"lazy": "selectin"})
 
 class Fixture(SQLModel, table=True):
@@ -47,4 +45,6 @@ class Result(SQLModel, table=True):
     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
     score_team_1: int = Field(default=0)
     score_team_2: int = Field(default=0)
+    confirmed: bool = Field(default=False)
+    submitted_by: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     fixture: Fixture = Relationship(back_populates="result", sa_relationship_kwargs={"lazy": "selectin"})

@@ -1,3 +1,4 @@
+from typing import List
 from sqlmodel.ext.asyncio.session import AsyncSession
 from .schemas import PlayerCreateModel, PlayerUpdateModel
 from sqlmodel import select, desc
@@ -6,32 +7,40 @@ from .utils import generate_password_hash
 
 
 class PlayerService:
-    async def get_all_players(self, session: AsyncSession):
+    async def get_all_players(self, session: AsyncSession) -> List[Player]:
         stmnt = select(Player).order_by(desc(Player.created_at))
 
         result = await session.exec(stmnt)
 
         return result.all()
 
-    async def get_player(self, player_uid: str, session: AsyncSession):
+
+    async def get_player(self, player_uid: str, session: AsyncSession)  -> Player | None:
         stmnt = select(Player).where(Player.uid == player_uid)
 
         result = await session.exec(stmnt)
 
         return result.first()
 
-    async def get_player_by_email(self, email: str, session: AsyncSession):
+    async def get_player_by_email(self, email: str, session: AsyncSession)  -> Player | None:
         stmnt = select(Player).where(Player.email == email)
         result = await session.exec(stmnt)
 
         return result.first()
 
 
-    async def get_player_by_name(self, name: str, session: AsyncSession):
+    async def get_player_by_name(self, name: str, session: AsyncSession) -> Player | None:
         stmnt = select(Player).where(Player.name == name)
         result = await session.exec(stmnt)
 
         return result.first()
+
+    async def player_exists_by_id(self, id: str, session: AsyncSession) -> bool:
+        player = await self.get_player(id, session)
+        if player:
+            return True
+        else:
+            return False
 
     async def player_exists(self, email: str, session: AsyncSession) -> bool:
         player = await self.get_player_by_email(email, session)
@@ -67,7 +76,9 @@ class PlayerService:
                         setattr(player_to_update, k, v)
                 
 
+            await session.add(player_to_update)
             await session.commit()
+            await session.refresh(player_to_update)
         return player_to_update
 
     async def delete_player(self, player_uid: str, session: AsyncSession):

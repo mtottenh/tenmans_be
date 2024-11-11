@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str
     API_VERSION: str
     ZENROWS_API_KEY: str
+    DB_ECHO: bool
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

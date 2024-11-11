@@ -1,3 +1,4 @@
+from enum import StrEnum
 from sqlmodel import SQLModel, Field, Column, Relationship
 from async_sqlmodel import AsyncSQLModel, AwaitableField
 import sqlalchemy.dialects.sqlite as sl
@@ -6,6 +7,10 @@ from datetime import datetime
 import uuid
 from src.teams.models import Roster
 from typing import Awaitable
+
+class PlayerRoles(StrEnum):
+    ADMIN = "admin"
+    USER = "user"
 
 
 class Player(SQLModel, table=True):
@@ -17,7 +22,7 @@ class Player(SQLModel, table=True):
     name: str
     SteamID: str
     email: str
-    role: str = Field(sa_column=Column(
+    role: PlayerRoles = Field(sa_column=Column(
         sl.VARCHAR, nullable=False, server_default="user"
     ))
     is_verified: bool = False

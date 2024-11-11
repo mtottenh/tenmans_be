@@ -86,9 +86,12 @@ async def login_player(
     )
 
 @player_router.post("/refresh")
-async def get_new_access_token(token_details: dict = Depends(refresh_token_bearer)):
+async def get_new_access_token(token_details: dict = Depends(refresh_token_bearer), session: AsyncSession  = Depends(get_session)):
     expiry_date = token_details["exp"]
     if datetime.fromtimestamp(expiry_date) > datetime.now():
+        player = await player_service.player_exists_by_id(token_details['player']['player_uid'], session)
+        if not player:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid Refresh Token")
         new_access_token = create_access_token(player_data=token_details["player"])
         return JSONResponse(content={"access_token": new_access_token})
     raise HTTPException(
@@ -162,7 +165,18 @@ async def get_player_rank(player_id: str):
         raise HTTPException(status_code=500, detail=f"An error occurred while fetching player data {e}")
 
 
-
+@player_router.get("/name/{player_name}", response_model=Player)
+async def get_player_by_name(
+    player_name: str,
+    session: AsyncSession = Depends(get_session),
+    player_details=Depends(access_token_bearer),
+) -> dict:
+    player = await player_service.get_player_by_name(player_name, session)
+    if player is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Player not found"
+        )
+    return player
 
 @player_router.get("/{player_uid}", response_model=Player)
 async def get_player(

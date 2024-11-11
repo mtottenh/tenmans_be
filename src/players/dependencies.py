@@ -2,6 +2,9 @@ from fastapi import Request, HTTPException, status, Depends
 from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.seasons.models import Season
+from src.seasons.service import SeasonService
 from .utils import decode_token
 from src.db.main import get_session
 from .service import PlayerService
@@ -63,16 +66,26 @@ class RefreshTokenBearer(TokenBearer):
 
 player_service = PlayerService()
 team_service = TeamService()
+season_service = SeasonService()
 
 async def get_current_player(
     token_details: dict = Depends(AccessTokenBearer()),
     session: AsyncSession = Depends(get_session),
 ) -> Player:
-    player = await player_service.get_player_by_email(
-        token_details["player"]["email"], session
+    print(token_details)
+    player = await player_service.get_player(
+        token_details["player"]["player_uid"], session
     )
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Provide a valid access token",
+            )
     return player
 
+async def get_current_season(session: AsyncSession = Depends(get_session)) -> Season:
+    season = await season_service.get_active_season()
+    return season
+    
 # TODO - How to inject the Team name & current season?
 class RosterChecker:
     def __init__(self, allowed_roles: List[str]) -> None:
@@ -81,6 +94,14 @@ class RosterChecker:
     async def __call__(self, request: Request, current_player: Player = Depends(get_current_player)):
         
         return await team_service.player_is_on_roster(current_player)
+
+class CaptainChecker:
+    async def __call__(self, request: Request, current_player: Player = Depends(get_current_player), current_season: Season = Depends(get_current_season), session=Depends(get_session)):
+        if not 'team_name' in request.path_params:
+                    return False
+        team = await team_service.get_team_by_name(request.path_params['team_name'], session)
+        return await team_service.player_is_team_captain(current_player, team, session)
+
 
 class RoleChecker:
     def __init__(self, allowed_roles: List[str]) -> None:

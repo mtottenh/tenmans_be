@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.players.routes import player_router
-from src.teams.routes import team_router, season_router
+from src.teams.routes import team_router
+from src.seasons.routes import season_router
 from src.fixtures.routes import fixture_router
 from contextlib import asynccontextmanager
 from src.db.main import init_db

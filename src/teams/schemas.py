@@ -10,9 +10,6 @@ class TeamCreateModel(BaseModel):
 class TeamUpdateModel(BaseModel):
     name: str
 
-class SeasonCreateModel(BaseModel):
-    name: str
-
 class PlayerId(BaseModel):
     id: str
 
