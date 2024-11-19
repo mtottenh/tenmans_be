@@ -1,7 +1,7 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
-from .schemas import FixtureCreateModel, ResultConfirmModel, ResultCreateModel
+from .schemas import FixtureCreateModel, PugCreateModel, ResultConfirmModel, ResultCreateModel
 from sqlmodel import select, desc, or_
-from .models import Fixture, Result, Round, RoundType
+from .models import Fixture, Pug, Result, Round, RoundType
 from src.teams.models import Team
 from src.teams.service import TeamService, RosterService
 from src.seasons.service import SeasonService
@@ -42,7 +42,14 @@ class FixtureService:
         result = await session.exec(stmnt)
 
         return result.first()
-    
+
+    async def create_pug(self, pug_data: PugCreateModel, session: AsyncSession) -> Pug:
+        new_pug = Pug(**pug_data.model_dump())
+        session.add(new_pug)
+        await session.commit()
+        await session.refresh(new_pug)
+        return new_pug
+
     async def create_fixture_for_season(self, fixture_data: FixtureCreateModel, session: AsyncSession) -> CreateFixtureError | Fixture:
         scheduled_date = datetime.now()
         try:

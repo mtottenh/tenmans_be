@@ -1,13 +1,18 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, status
+import logging
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
+
 from sqlalchemy import Null
 
+from src.fixtures.MapPicker.state_machine import WSConnMgr, WebSocketStateMachine
+from src.fixtures.dependencies import GetWSFixtureOrchestrator, GetWSPugOrchestrator
+from src.fixtures.MapPicker.commands import WSSCommand
 from src.players.models import Player, PlayerRoles
 from .service import FixtureService, CreateFixtureError, ResultsService
-from .schemas import FixtureCreateModel, FixtureDate, ResultConfirmModel, ResultCreateModel
-from .models import Fixture,  Result, Round
+from .schemas import FixtureCreateModel, FixtureDate, PugCreateModel, ResultConfirmModel, ResultCreateModel
+from .models import Fixture, Pug,  Result, Round
 from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.players.dependencies import AccessTokenBearer, get_current_player
@@ -17,7 +22,7 @@ from src.seasons.service import SeasonService
 from src.seasons.dependencies import get_active_season
 from typing import List, Tuple
 from src.config import Config
-
+logger = logging.getLogger('uvicorn.error')
 API_VERSION_SLUG=f"/api/{Config.API_VERSION}"
 fixture_router = APIRouter(prefix="/fixtures")
 fixture_service = FixtureService()
@@ -208,3 +213,42 @@ async def get_results_for_team_in_season(
 
     results = await results_service.get_results_for_team_in_season(team, season, session)
     return results
+
+@fixture_router.post('/new_pug', response_model=Pug)
+async def create_new_pug(pug_data: PugCreateModel, session: AsyncSession = Depends(get_session)):
+    # Insert a pug into the pugs table
+    # Should at-least contain team_names - can be updated later
+    # Via the websocket
+    # Return a response with the fixture ID to connect the websocket to. 
+    return await fixture_service.create_pug(pug_data, session)
+
+
+ws_fixture_orchestrator_manager = GetWSFixtureOrchestrator()
+ws_pug_orchestrator_manager = GetWSPugOrchestrator()
+
+@fixture_router.websocket('/pug/id/{pug_id}/ws')
+async def fixture_websocket_handler(
+    pug_id: str,
+    websocket: WebSocket,
+    ws_manager: WebSocketStateMachine = Depends(ws_pug_orchestrator_manager)
+):
+    mgr = WSConnMgr()
+    await mgr.accept(websocket)
+    await ws_manager.add_conn(mgr)
+    try:
+
+        async for cmd in mgr.start():
+            await ws_manager.process_event(cmd, mgr)
+
+    except WebSocketDisconnect:
+        ws_manager.remove_conn(mgr)
+    except Exception as e:
+        pass
+
+
+@fixture_router.websocket('/id/{fixture_id}/ws')
+async def fixture_websocket_handler(
+    fixture_id: str,
+
+):
+    pass

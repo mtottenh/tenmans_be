@@ -8,7 +8,7 @@ from src.seasons.service import SeasonService
 from .utils import decode_token
 from src.db.main import get_session
 from .service import PlayerService
-from src.teams.service import TeamService
+from src.teams.service import RosterService, TeamService
 from .models import Player
 from typing import List
 
@@ -67,6 +67,7 @@ class RefreshTokenBearer(TokenBearer):
 player_service = PlayerService()
 team_service = TeamService()
 season_service = SeasonService()
+roster_service = RosterService()
 
 async def get_current_player(
     token_details: dict = Depends(AccessTokenBearer()),
@@ -83,17 +84,17 @@ async def get_current_player(
     return player
 
 async def get_current_season(session: AsyncSession = Depends(get_session)) -> Season:
-    season = await season_service.get_active_season()
+    season = await season_service.get_active_season(session)
     return season
     
-# TODO - How to inject the Team name & current season?
-class RosterChecker:
-    def __init__(self, allowed_roles: List[str]) -> None:
-        self.allowed_roles = allowed_roles
+# # TODO - How to inject the Team name & current season?
+# class RosterChecker:
+#     def __init__(self, allowed_roles: List[str]) -> None:
+#         self.allowed_roles = allowed_roles
     
-    async def __call__(self, request: Request, current_player: Player = Depends(get_current_player)):
-        
-        return await team_service.player_is_on_roster(current_player)
+#     async def __call__(self, request: Request, current_player: Player = Depends(get_current_player), current_season: Season = Depends(get_current_season), session=Depends(get_session)):
+#         team = request.
+#         return await roster_service.player_on_active_roster(current_player,)
 
 class CaptainChecker:
     async def __call__(self, request: Request, current_player: Player = Depends(get_current_player), current_season: Season = Depends(get_current_season), session=Depends(get_session)):

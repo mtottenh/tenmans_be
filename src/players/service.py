@@ -1,7 +1,8 @@
 from typing import List
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.sql.operators import is_
 from .schemas import PlayerCreateModel, PlayerUpdateModel
-from sqlmodel import select, desc
+from sqlmodel import select, desc, or_
 from .models import Player
 from .utils import generate_password_hash
 
@@ -14,6 +15,10 @@ class PlayerService:
 
         return result.all()
 
+    async def get_unranked_players(self, session) -> List[Player] | None:
+        stmnt = select(Player).where(or_(is_(Player.current_elo,None), is_(Player.highest_elo, None)))
+        result = await session.exec(stmnt)
+        return result.all()
 
     async def get_player(self, player_uid: str, session: AsyncSession)  -> Player | None:
         stmnt = select(Player).where(Player.uid == player_uid)

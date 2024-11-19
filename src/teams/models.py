@@ -5,6 +5,7 @@ from sqlalchemy_utils import UUIDType
 from datetime import datetime
 import uuid
 
+
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
 
@@ -12,6 +13,7 @@ class Team(SQLModel, table=True):
         sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
     )
     name: str = Field(unique=True)
+    logo: str = Field(nullable=True)
     player_links: list['Roster'] = Relationship(
         back_populates="team", sa_relationship_kwargs={"lazy": "selectin"}
     )

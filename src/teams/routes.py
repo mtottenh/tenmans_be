@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, status
-from fastapi.responses import JSONResponse
+import os
+import aiofiles
+from fastapi import APIRouter, Depends, Form, UploadFile, status
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import List
+from typing import Annotated, List
 from src.db.main import get_session
 from src.players.dependencies import AccessTokenBearer, CaptainChecker, RoleChecker, get_current_player
 
@@ -33,21 +35,32 @@ async def get_all_teams(
 # TODO - Make the user who created the team a team captain?
 # - How do we ensure that admins who create teams don't get added as captains?
 # - Maybe just have an API parameter of team_captian: optional[str] and have the front-end supply it.
-@team_router.post("/", dependencies=[admin_checker])
+@team_router.post("/", dependencies=[admin_checker], status_code=status.HTTP_201_CREATED)
 async def create_team(
-    team_data: TeamCreateModel,
+    logo: UploadFile,
+    name: str= Form(...),
     player_details = Depends(get_current_player),
     session: AsyncSession = Depends(get_session),
 ):
-    name = team_data.name
     team_exists = await team_service.team_exists(name, session)
     if team_exists:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Team with name '{name}' already exists",
         )
-    new_team = await team_service.create_team(team_data, session)
+    new_team = await team_service.create_team(TeamCreateModel(name=name), session)
     captain = await team_service.create_captain(new_team, player_details, session)
+    filedir = os.path.join(os.getcwd(),'logo_store',str(new_team.id))
+    if not os.path.exists(filedir):
+        os.makedirs(filedir)
+    server_filename = f"{filedir}/{logo.filename}"
+    async with aiofiles.open(server_filename, 'wb') as out_file:
+        while content := await logo.read(1024):
+            await out_file.write(content) 
+    new_team.logo = server_filename
+    session.add(new_team)
+    await session.commit()
+    await session.refresh(new_team)
     return new_team
 
 @team_router.get("/id/{id}")
@@ -63,6 +76,36 @@ async def get_team_by_id(
             detail=f"Team with name '{id}' not found",
         )
     return team
+
+async def get_team_logo(team: Team):
+    if os.path.exists(team.logo):
+        return FileResponse(team.logo)
+
+@team_router.get('/id/{id}/logo')
+async def get_team_logo_by_id(
+    id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    team = await team_service.get_team_by_id(id, session)
+    if team is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Team with name '{id}' not found",
+        )
+    return await get_team_logo(team)
+
+@team_router.get('/name/{name}/logo')
+async def get_team_logo_by_name(
+    name: str,
+    session: AsyncSession = Depends(get_session),
+):
+    team = await team_service.get_team_by_name(name, session)
+    if team is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Team with name '{name}' not found",
+        )
+    return await get_team_logo(team)
 
 @team_router.get("/name/{name}")
 async def get_team_by_name(

@@ -18,3 +18,7 @@ class ResultCreateModel(BaseModel):
     fixture_id: str
     score_team_1: int
     score_team_2: int
+
+class PugCreateModel(BaseModel):
+    team_1: str
+    team_2: str

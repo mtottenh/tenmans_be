@@ -19,28 +19,34 @@
 ## Seasons
 * [ ] Restrict the Season create API to Admins only
 * [ ] Add APIs to remove a season (remove cruft/clutter? maybe keep in the DB but mark as stale?)
-* [ ] Display team logo's in the season league table
+* [x] Display team logo's in the season league table
 
 ## Fixtures
-* [ ] Restrict ability to add a result to Team Captains only
+* [x] Restrict ability to add a result to Team Captains only
 * [x] Add result confirmation process
 * [x] Use confirmation process in fixture page
-* [ ] Create admin view of fixture page
-* [ ] Add result evidence upload
-* [ ] Allow editing of result/evidence until confirmation has taken place.
+* [ ] Add: Admin view of fixture page
+* [ ] Add: Result evidence upload
+* [ ] Add: Editing of result & evidence until confirmation has taken place.
 * [ ] Optional - demo picker?
 * [ ] Confirming a result should check to see whether all fixtures in the round have been played, and advance the knockout rounds.
 
 ## Teams
 * [ ] Should we restrict team creation?
 * [ ] Add: Team Logo upload to 'register a team' dialog
+    * [x] Add: Logo to Model
+    * [x] Add: Logo to POST /teams/
+    * [x] Add: Path for GET /teams/$id/logo
 * [ ] Add: Average ELO of roster to Team information page
 * [ ] Captains: ability to make other team members as a captain
-* [ ] Captain: ability to remove a player from the roster.
+* [ ] Captain: Ability to remove a player from the roster.
 * [ ] Captain: Ability to reject join request
+* [ ] Captain: Add ability to invite player
 * [ ] Player: Ability to cancle join request
 * [ ] Captain: Not allowed to join another team
 * [ ] Player/Captain: Can't request to join more than one team
+* [ ] Add: Past seasons results
+* [ ] Add: Current season results.
 
 ### Open Questions
 * [ ] Maximum active roster size?
@@ -48,6 +54,10 @@
 ## Players
 * [ ] Add Current/Best ELO to Player model
 * [ ] Add ability to scrape ELOs in the background
-* [ ] Integrate login/sign up via Steam
-* [ ] Add a 'link discord' ?
-
+* [ ] Add: Team/Roster & Team Logo to player page.
+* [ ] Add: Roster history to player page.
+* [ ] Integrate: login/sign up via Steam
+* [ ] Integrate:'link discord'
+* [ ] Add: Players dashboard to see all players in the league
+* [ ] Add: Search on players dashboard (captains get invite link to un-rostered players)
+* [ ] Add: Filter to players not on a roster.

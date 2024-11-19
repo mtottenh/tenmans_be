@@ -48,3 +48,26 @@ class Result(SQLModel, table=True):
     confirmed: bool = Field(default=False)
     submitted_by: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     fixture: Fixture = Relationship(back_populates="result", sa_relationship_kwargs={"lazy": "selectin"})
+
+
+class Pug(SQLModel, table=True):
+    __tablename__ = "pugs"
+    id: uuid.UUID = Field(
+        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
+    )
+    team_1: str
+    team_2: str
+    pug_result: "PugResult" = Relationship(
+        back_populates="pug", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+
+class PugResult(SQLModel, table=True):
+    __tablename__ = "pug_results"
+    id: uuid.UUID = Field(
+        sa_column=Column(UUIDType, primary_key=True, default=uuid.uuid4)
+    )
+    pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id")))
+    score_team_1: int = Field(default=0)
+    score_team_2: int = Field(default=0)
+    pug: Pug = Relationship(back_populates="pug_result", sa_relationship_kwargs={"lazy": "selectin"})
+
