@@ -1,4 +1,4 @@
-from typing import Literal, Union
+from typing import List, Literal, Optional, Union
 from fastapi import WebSocket
 from typing_extensions import Annotated
 from pydantic import BaseModel, Field, TypeAdapter
@@ -7,6 +7,21 @@ from enum import StrEnum
 class Side(StrEnum):
     CT="Counter Terrorists"
     T="Terrorists"
+    KN="Knife for Sides"
+
+class MapState(StrEnum):
+    NONE = "none"
+    TEAM_1_BANNED = "team1_ban"
+    TEAM_2_BANNED = "team2_ban"
+    TEAM_1_PICK = "team1_pick"
+    TEAM_2_PICK = "team2_pick"
+
+class Map(BaseModel):
+    name: str
+    state: MapState = MapState.NONE
+    oppo_side: Optional[Side] = None
+    # TODO - add validation that if state == *_pick then 'side' must == CT/T
+    # If we changed it to a regular integer Enum then  we could just use int(not Side) to get the opposing side?
 
 class CmdType(StrEnum):
     chat = "chat"
@@ -26,7 +41,9 @@ class RespType(StrEnum):
     ack = "ack"
     chat = "chat"
     team_chat = "team_chat"
+    team_roster = "team_roster"
     error = "error"
+    map_picks = "map_picks"
 
 class BaseResp(BaseModel):
     resp: RespType
@@ -56,6 +73,16 @@ class TeamChatCmdResp(BaseResp):
     player: str
     team: str
     message: str
+
+class TeamRosterResp(BaseResp):
+    resp: Literal[RespType.team_roster] = RespType.team_roster
+    team: str
+    players: List[str]
+
+# Represents the state of the picker
+class MapPicksResp(BaseResp):
+    resp: Literal[RespType.map_picks] = RespType.map_picks
+    map_pool: List[Map]
 
 class BaseCmd(BaseModel):
     cmd: CmdType
@@ -91,7 +118,6 @@ class SetTeamNameCmd(BaseCmd):
     cmd:  Literal[CmdType.set_team_name] = CmdType.set_team_name
     name: str
     team_id: str
-
 
 class StartMapPickerCmd(BaseCmd):
     cmd:  Literal[CmdType.start_map_picker] = CmdType.start_map_picker

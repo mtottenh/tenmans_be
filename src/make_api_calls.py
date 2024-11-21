@@ -2,16 +2,76 @@
 import httpx
 import json
 import asyncio
+import logging
+logging.basicConfig(
+    format="%(levelname)s [%(asctime)s] %(name)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.DEBUG
+)
 
-teams = { "BongoBabes" : [] , "Old Gits" : [], "YerMum" : [], "Seven Zulu" : [], "GimpsnHoes" : [], "Ultimate Crew" : [] }
+
+teams = { "BongoBabes" : [
+    { 
+        'name' :  'Murphy',
+        'SteamID' : "76561197971721556",
+    },
+    { 
+        'name' :  'Righthearted',
+        'SteamID' : "76561198189100227",
+    },   
+    { 
+        'name' :  'Nigel Mirage',
+        'SteamID' : "76561198061555483",
+    },
+    { 
+        'name' :  'Spicy Nugs',
+        'SteamID' : "76561198104461973",
+    },
+    { 
+        'name' :  'KriBabi',
+        'SteamID' : "76561198074062893",
+    },
+    { 
+        'name' :  'Jonny',
+        'SteamID' : "76561198141940079",
+    },
+    { 
+        'name' :  'Kris',
+        'SteamID' : "76561198141940079",
+    },
+
+] , 
+"Old Gits" : [
+    { 
+        'name' :  'Padwan',
+        'SteamID' : "76561197985524918",
+    },
+    { 
+        'name' :  'Daggerman',
+        'SteamID' : "76561197969684583",
+    }, 
+    { 
+        'name' :  'Gnome',
+        'SteamID' : "76561198019332496",
+    },
+    { 
+        'name' :  'Poke',
+        'SteamID' : "76561197970990202",
+    },
+    { 
+        'name' :  'Shredder',
+        'SteamID' : "76561198253275090",
+    },
+    { 
+        'name' :  'Zan',
+        'SteamID' : "76561198826056418",
+    },
+], 
+"YerMum" : [], "Seven Zulu" : [], "GimpsnHoes" : [], "Ultimate Crew" : [] }
 for t in teams:
-    for i in range(1,7):
-        player= {}
-        player['name'] = t + "-TeamMember-" + str(i)
-        player['email'] = player['name'] + "@gmail.com"
-        player['password'] = 'test-password-' + str(i)
-        player ['SteamID'] = "765612323200262" + str(len(teams[t]))
-        teams[t].append(player)
+    for p in teams[t]:
+        p['email'] = p['name'] + "@gmail.com"
+        p['password'] = 'test-password'
 
 
 async def create_players(client, teams):
@@ -78,16 +138,25 @@ async def confirm_members(client, teams):
 async def create_team(client, token, team):
     try:
         print(f"Creating team with name {team}")
+
+        files={'logo' : (f"{team}_logo.png", open('bongo_drum_logo_24x24.png', 'rb'))}
         response = await client.post("http://localhost:8000/api/v1/teams/", 
-                                        headers={'Authorization' :'Bearer ' + token }, data=json.dumps({ 'name' : team}))
+                                        headers={'Authorization' :'Bearer ' + token
+                                                 }, data={ 'name' : team}, files=files)#data=json.dumps({ 'name' : team}))
+        print(response.text)
         print(response.json())
+        if response.status_code != httpx.codes.CREATED:
+            print("Team create failed")
     except Exception as e:
         print (e)
+        exit(1)
+
 
 async def create_teams(client, teams):
     tasks = []
     for name, players in teams.items():
-        tasks.append(create_team(client, players[0]['token'], name))  # Schedule the join task
+        if len(players) != 0:
+            tasks.append(create_team(client, players[0]['token'], name))  # Schedule the join task
     # Run all join tasks concurrently
     await asyncio.gather(*tasks)
 

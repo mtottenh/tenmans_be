@@ -49,6 +49,12 @@ class FixtureService:
         await session.commit()
         await session.refresh(new_pug)
         return new_pug
+    async def get_pug_team_names(self, pug_id: str, session: AsyncSession) -> tuple[str,str]:
+        stmnt = select(Pug.team_1, Pug.team_2).where(Pug.id == pug_id)
+        result = await session.exec(stmnt)
+        print(f"GOT: {result}")
+        return result.first()
+
 
     async def create_fixture_for_season(self, fixture_data: FixtureCreateModel, session: AsyncSession) -> CreateFixtureError | Fixture:
         scheduled_date = datetime.now()

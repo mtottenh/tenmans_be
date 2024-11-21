@@ -1,5 +1,4 @@
 from datetime import datetime
-import logging
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
@@ -22,7 +21,6 @@ from src.seasons.service import SeasonService
 from src.seasons.dependencies import get_active_season
 from typing import List, Tuple
 from src.config import Config
-logger = logging.getLogger('uvicorn.error')
 API_VERSION_SLUG=f"/api/{Config.API_VERSION}"
 fixture_router = APIRouter(prefix="/fixtures")
 fixture_service = FixtureService()
