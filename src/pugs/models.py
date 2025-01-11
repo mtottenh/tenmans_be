@@ -6,59 +6,70 @@ from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
 
-class ConfirmationStatus(StrEnum):
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    DISPUTED = "disputed"
+class PugStatus(StrEnum):
+    CREATING = "creating"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
-class Result(SQLModel, table=True):
-    __tablename__ = "results"
+class Pug(SQLModel, table=True):
+    __tablename__ = "pugs"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
     )
-    fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
+    status: PugStatus = Field(
+        sa_column=sa.Column(sa.Enum(PugStatus)),
+        default=PugStatus.CREATING
+    )
+    match_format: str  # bo1, bo3
+    max_players_per_team: int
+    require_full_teams: bool = Field(default=True)
+    map_pool: List[uuid.UUID] = Field(sa_column=Column(sl.JSON))  # Array of map IDs
+    created_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    completed_at: Optional[datetime]
+
+    creator: "Player" = Relationship(back_populates="created_pugs")
+    teams: List["PugTeam"] = Relationship(back_populates="pug")
+    players: List["PugPlayer"] = Relationship(back_populates="pug")
+    map_results: List["PugMapResult"] = Relationship(back_populates="pug")
+
+class PugTeam(SQLModel, table=True):
+    __tablename__ = "pug_teams"
+    pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
+    team_number: int = Field(primary_key=True)  # 1 or 2
+    team_name: str
+    captain_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+
+    pug: Pug = Relationship(back_populates="teams")
+    captain: "Player" = Relationship(back_populates="pug_captain_of")
+    players: List["PugPlayer"] = Relationship(back_populates="team")
+
+class PugPlayer(SQLModel, table=True):
+    __tablename__ = "pug_players"
+    pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
+    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))
+    team_number: Optional[int] = Field(default=None)
+    joined_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+
+    pug: Pug = Relationship(back_populates="players")
+    player: "Player" = Relationship(back_populates="pug_participations")
+    team: Optional[PugTeam] = Relationship(back_populates="players")
+
+class PugMapResult(SQLModel, table=True):
+    __tablename__ = "pug_map_results"
+    id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
+    )
+    pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id")))
+    map_number: int
     map_id: uuid.UUID = Field(sa_column=Column(ForeignKey("maps.id")))
-    map_number: int = Field(default=1)
     team_1_score: int
     team_2_score: int
     team_1_side_first: str  # CT or T
-    submitted_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
-    confirmed_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
-    confirmation_status: ConfirmationStatus = Field(
-        sa_column=sa.Column(sa.Enum(ConfirmationStatus)),
-        default=ConfirmationStatus.PENDING
-    )
-    admin_override: bool = Field(default=False)
-    admin_override_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
-    admin_override_reason: Optional[str]
     demo_url: Optional[str]
-    screenshot_urls: List[str] = Field(sa_column=Column(sl.JSON))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-
-    fixture: "Fixture" = Relationship(back_populates="results")
-    map: "Map" = Relationship(back_populates="results")
-    submitter: "Player" = Relationship(
-        back_populates="submitted_results",
-        sa_relationship_kwargs={"foreign_keys": "Result.submitted_by"}
-    )
-    confirmer: Optional["Player"] = Relationship(
-        back_populates="confirmed_results",
-        sa_relationship_kwargs={"foreign_keys": "Result.confirmed_by"}
-    )
-    admin_overrider: Optional["Player"] = Relationship(
-        back_populates="admin_overridden_results",
-        sa_relationship_kwargs={"foreign_keys": "Result.admin_override_by"}
-    )
-
-class MatchPlayer(SQLModel, table=True):
-    __tablename__ = "match_players"
-    fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id"), primary_key=True))
-    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))
-    team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
-    is_substitute: bool = Field(default=False)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
-    fixture: "Fixture" = Relationship(back_populates="match_players")
-    player: "Player" = Relationship(back_populates="match_participations")
-    team: "Team" = Relationship(back_populates="match_players")
+    pug: Pug = Relationship(back_populates="map_results")
+    map: "Map" = Relationship(back_populates="pug_results")
