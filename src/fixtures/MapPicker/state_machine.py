@@ -1,11 +1,15 @@
 
 from copy import deepcopy
-from typing import Dict, List, NamedTuple, NewType, Optional
-from fastapi import WebSocket
+from typing import Dict, List, NamedTuple, NewType, Optional, AsyncGenerator
+from fastapi import WebSocket, WebSocketDisconnect
 from transitions import Machine, State
 from transitions.extensions import HierarchicalAsyncMachine, AsyncMachine
 from .commands import *
 from transitions.extensions.nesting import NestedState
+from asyncio import Event, Task, create_task, CancelledError
+from asyncio import timeout as async_timeout
+from pydantic import BaseModel, ConfigDict
+
 NestedState.separator = '↦'
 import logging
 logging.basicConfig(encoding='utf-8', level=logging.DEBUG)
@@ -20,7 +24,7 @@ class MapPickerModel():
         self.picked_maps:  List[Map] = []
         self.banned_maps:  List[Map] = []
         self.finalized = False
-    
+
     def reset_picks_bans(self):
         self.map_pool = deepcopy(self.original_map_pool)
         self.current_team = self.team_1
@@ -57,47 +61,41 @@ class MapPickerModel():
 
 BO1_CONF={
     "name" : "banning_phase",
-    "states" : [  "waiting_for_team_1", 
-                  "waiting_for_team_2",  
+    "states" : [  "team_1_ban",
+                  "team_2_ban",
                   "final_map"
             ],
     "transitions" : [
-        {"trigger":"ban_map", "source": 'waiting_for_team_1', 'dest':'waiting_for_team_2', 'conditions': ['is_valid_map', 'has_maps_remaining'], 'after' : 'process_ban' },
-        {"trigger":"ban_map", "source": 'waiting_for_team_2', 'dest':'waiting_for_team_1', 'conditions': ['is_valid_map', 'has_maps_remaining'], 'after' : 'process_ban' },
-        {"trigger":"determine_final_map", 'source': ['waiting_for_team_1', 'waiting_for_team_2'], 'dest':'final_map', 'conditions': ['only_one_map_remaining'], 'after' : 'finalize_map' },
+        {"trigger":"team_1_ban_map", "source": 'team_1_ban', 'dest':'team_2_ban', 'conditions': ['is_valid_map', 'has_maps_remaining'], 'after' : 'process_ban' },
+        {"trigger":"team_2_ban_map", "source": 'team_2_ban', 'dest':'team_1_ban', 'conditions': ['is_valid_map', 'has_maps_remaining'], 'after' : 'process_ban' },
+        {"trigger":"determine_final_map", 'source': ['team_1_ban', 'team_2_ban'], 'dest':'final_map', 'conditions': ['only_one_map_remaining'], 'after' : 'finalize_map' },
 
     ],
-    "initial": "waiting_for_team_1"
+    "initial": "team_1_ban"
 }
-    # Initialize the state machine
-    # return HierarchicalMachine(model=model, states=states, transitions=transitions, initial="waiting_for_team_1")
-    
-
-        # Define hierarchical states
+# Define hierarchical states
 BO3_CONF={
     "name" : "pick_phase",
     "states" : [
-            "team_1_pick",
-            "team_2_pick_side",
-            "team_2_pick",
-            "team_1_pick_side",
+            "team_1_map",
+            "team_2_side",
+            "team_2_map",
+            "team_1_side",
             { "name" : "final_maps", "on_enter" : 'finalize_maps' },
             deepcopy(BO1_CONF),
         ],
     "transitions" : [
-        {"trigger": "pick_map", "source": "team_1_pick", "dest" : "team_2_pick_side", "conditions" : ["is_valid_map"], "after" : "process_pick_t1"},
-        {"trigger": "pick_map", "source": "team_2_pick", "dest" : "team_1_pick_side", "conditions" : ["is_valid_map"], "after" : "process_pick_t2"},
-        {"trigger": "pick_side", "source": "team_2_pick_side", "dest" : "team_2_pick", "after" : "record_side"},
-        {"trigger": "pick_side", "source": "team_1_pick_side", "dest" : "banning_phase", "after" : "record_side"},
+        {"trigger": "team_1_pick_map", "source": "team_1_map", "dest" : "team_2_side", "conditions" : ["is_valid_map"], "after" : "process_pick_t1"},
+        {"trigger": "team_2_pick_map", "source": "team_2_map", "dest" : "team_1_side", "conditions" : ["is_valid_map"], "after" : "process_pick_t2"},
+        {"trigger": "team_2_pick_side", "source": "team_2_side", "dest" : "team_2_map", "after" : "record_side"},
+        {"trigger": "team_1_pick_side", "source": "team_1_side", "dest" : "banning_phase", "after" : "record_side"},
 
     ],
-    "initial" : "team_1_pick"
+    "initial" : "team_1_map"
 }
 BO3_CONF['states'][-1]['remap'] = { 'final_map' : 'final_maps'}
 
-WS_CONF={
 
-}
 class BestOfOneStateMachine:
     """State machine for banning maps."""
     def __init__(self, model: MapPickerModel):
@@ -143,15 +141,15 @@ class BestOfThreeStateMachine(BestOfOneStateMachine):
         self._process_pick(event, MapState.TEAM_1_PICK)
 
     def process_pick_t2(self, event):
-        self._process_pick(event, MapState.TEAM_2_PICK)  
+        self._process_pick(event, MapState.TEAM_2_PICK)
 
-    def process_pick(self, event: PickMapCmd, team_pick: MapState):
+    async def process_pick(self, event: PickMapCmd, team_pick: MapState):
         """Handle the picking of a map."""
         map = self.model.get_map_by_name(event.map_name)
         map.state = team_pick
         self.model.map_pool.remove(map)
         self.model.picked_maps.append(map)  # Side to be chosen later
-        print(f"Map {event.map_name} has been picked. Remaining maps: {self.model.map_pool}")
+        logger.info(f"Map {event.map_name} has been picked. Remaining maps: {self.model.map_pool}")
 
     def record_side(self, event: PickSideCmd):
         """Record the side chosen for the last picked map."""
@@ -167,6 +165,9 @@ class BestOfThreeStateMachine(BestOfOneStateMachine):
                 print(f"Game {i + 1}: Map - {map.name} Team - {map.state} Side - {map.oppo_side}")
             else:
                 print(f"Game {i + 1}: Map - {map.name} Side - {map.oppo_side}")
+
+
+ESTABLISHMENT_TIMEOUT=30
 
 class WSConnInvalidAckException(Exception):
     pass
@@ -184,6 +185,9 @@ class WSConnMgr:
         self.ws: Optional[WebSocket] = None
         self.last_seq_no: int = 0
         self.client_id: Optional[str] = None
+        self.name: Optional[str] = None
+        self._establishment_event = Event()
+        self._timeout_task: Optional[Task] = None
 
     async def handle_accept(self, ws: WebSocket): #TODO - pass Player in here so we have more than just client ID (which is really connection ID.)
         await ws.accept()
@@ -192,7 +196,9 @@ class WSConnMgr:
     async def handle_identify_client(self, cmd: IdentifyClientCmd):
         self.last_seq_no = cmd.seq_no
         self.client_id = cmd.client_id
-    
+        self.name = cmd.name
+        self._establishment_event.set()
+
     async def handle_connection_error(self, errmsg):
         if self.ws:
             await self.ws.send_json(ServerErrResp(message=f"{errmsg}").model_dump())
@@ -201,35 +207,81 @@ class WSConnMgr:
 
     async def handle_disconnect(self):
         if self.ws:
+            logger.info(f"Disconnecting client: {self.ws.client}")
             await self.ws.close()
             self.ws = None
+
+    async def identification_timeout(self) -> None:
+        """Watch for identification timeout"""
+        try:
+            async with async_timeout(ESTABLISHMENT_TIMEOUT):
+                await self._establishment_event.wait()
+        except TimeoutError:
+            logger.error("Client identification timeout")
+            if self.ws:
+                await self.ws.close(code=4000, reason="Identification timeout")
+
+            raise
 
     async def ack_last_cmd(self):
         await self.ws.send_json(AckResp(seq_no=self.last_seq_no).model_dump())
 
     async def handle_msg(self, cmd: BaseCmd):
-        if cmd.cmd == CmdType.identify_client:
-            await self.identify_client(cmd)
-        elif cmd.seq_no != (self.last_seq_no + 1):
+        if cmd.seq_no != (self.last_seq_no + 1):
             await self.ws.send_json(InvalidAckResp(got=cmd.seq_no, expected=self.last_seq_no + 1).model_dump())
             raise  WSConnInvalidAckException("Invalid Ack!")
         else:
             self.last_seq_no = cmd.seq_no
 
-    async def start(self):
+    def __repr__(self):
+        return f"WSConnMgr(name={self.name},id={self.client_id},seq_no={self.last_seq_no},sock={self.ws})"
+
+
+    async def start(self) -> AsyncGenerator:
+        """Start both message processing and identification timeout"""
+        # Create the timeout task
+        self._timeout_task = create_task(self.identification_timeout())
+
+        try:
+            async for cmd in self.process_messages():
+                yield cmd
+        finally:
+            # Clean up timeout task if it's still running
+            if self._timeout_task and not self._timeout_task.done():
+                self._timeout_task.cancel()
+                try:
+                    await self._timeout_task
+                except CancelledError:
+                    pass
+
+
+    async def process_messages(self) -> AsyncGenerator:
+        """Process incoming messages"""
         try:
             async for data in self.ws.iter_json():
-                cmd = WSSCommand.validate_python(data)
-                logger.debug(f"Valid Cmd packet recieved {cmd}")
-                await self.new_msg(cmd)
-                yield cmd
-                await self.ack_last_cmd()
-        except Exception as e:
-            await self.handle_connection_error(f"{e}")
-            raise e
-        
+                cmd: WSSCommand = WSSCommand.validate_python(data)
+                logger.debug(f"Valid Cmd packet received {cmd}")
 
-TeamType = NamedTuple('TeamType', [('name', str), ('players', List[WSConnMgr])])
+                if cmd.cmd == 'identify_client':
+                    await self.identify_client(cmd)
+                else:
+                    await self.new_msg(cmd)
+
+                yield cmd
+
+                if self.ws is not None:
+                    await self.ack_last_cmd()
+
+        except CancelledError:
+            logger.info("Message processing cancelled")
+            raise
+
+
+class TeamType(BaseModel):
+    name: str
+    players: List[WSConnMgr]
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
 class WebSocketStateMachine(BestOfThreeStateMachine):
     """Parent state machine with hierarchical map picker integration."""
     def __init__(self, model: MapPickerModel, picker_type: ConnectionManagerMode):
@@ -237,7 +289,7 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
         self.map_picker_conf = None
         self.active_connections: List[WSConnMgr] = []
         self.teams:  tuple[TeamType, TeamType]= (TeamType( name=model.team_1, players=[]), TeamType(name=model.team_2, players=[]))
-
+        logger.info(f"Picker Type: {picker_type}")
         if picker_type == ConnectionManagerMode.BO1:
             self.map_picker = BO1_CONF
         elif picker_type == ConnectionManagerMode.BO3:
@@ -246,21 +298,31 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
             raise ValueError(f"Invalid ConnectionManagerMode {picker_type}")
         self.map_picker['remap'] = { "final_maps" : "done" }
         # Define states
+        logger.debug(f"PType: {picker_type} States: {self.map_picker}")
         states = [
             "ready",
             self.map_picker,
             "done"
         ]
-        
+
         # Initialize the state machine
         self.machine = HierarchicalAsyncMachine(model=self, states=states, initial="ready")
 
         # Add transitions
-        self.machine.add_transition(
-            trigger="start_map_picker",
-            source="ready",
-            dest="pick_phase",
-        )
+        if picker_type == ConnectionManagerMode.BO1:
+            self.machine.add_transition(
+                trigger="start_map_picker",
+                source="ready",
+                dest="banning_phase",
+                after=self.update_game_state
+            )
+        elif picker_type == ConnectionManagerMode.BO3:
+            self.machine.add_transition(
+                trigger="start_map_picker",
+                source="ready",
+                dest="pick_phase",
+                after=self.update_game_state
+            )
         self.machine.add_transition(
             trigger="identify_client",
             source="*",
@@ -270,9 +332,6 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
         general_commands = [
             CmdType.chat,
             CmdType.team_chat,
-            # CmdType.leave,
-            # CmdType.set_team_name,
-            # CmdType.kick_player,
         ]
         for cmd in general_commands:
             self.machine.add_transition(
@@ -310,8 +369,26 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
             after=self.process_join_team
         )
 
+    async def process_ban(self, event: BanMapCmd, mgr: WSConnMgr):
+        await super().process_ban(event)
+        await self.update_game_state(event, None)
+
+    async def process_pick(self, event: PickMapCmd, team_pick: MapState):
+        await super().process_pick(event, team_pick)
+        await self.update_game_state(event, None)
+
+    async def record_side(self, event: PickSideCmd):
+        await super().record_side(event)
+        await self.update_game_state(event, None)
+
+    async def update_game_state(self, cmd: BaseCmd, mgr : WSConnMgr):
+        await self._broadcast(MapPicksResp(map_pool=self.model.get_picker_state()))
+        state = self.state.split(NestedState.separator)[-1] if NestedState.separator in self.state else self.state
+        await self._broadcast(PhaseResp(state=state))
+
     async def process_event(self, event: BaseCmd , ws: WSConnMgr):
         """Process an external event."""
+        logger.debug(f"Trigger {event.cmd} Current State: {self.state}")
         await self.trigger(event.cmd, event, ws)
 
     def get_team_idx_by_team(self, team_name: str) -> Optional[int]:
@@ -325,17 +402,21 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
             if ws in team.players:
                 return team
         return None
-    
+
     async def reset_picks_and_bans(self):
         self.model.reset_picks_bans()
-        await self._broadcast(MapPicksResp(map_pool=self.model.map_pool))
+        await self._broadcast(MapPicksResp(map_pool=self.model.get_picker_state()))
 
     async def process_set_team_name(self, event: SetTeamNameCmd, ws):
-        pass
+        self.teams[event.team_id - 1].name = event.name
+        i = 0
+        for team in self.teams:
+            await self._broadcast(TeamRosterResp(team_idx=i,team_name=team.name, players=[PlayerObj(isCaptain=True, id=x.client_id,  name=x.name) for x in team.players]))
+            i += 1
 
     async def process_chat_cmd(self, event: AllChatCmd | TeamChatCmd, ws: WSConnMgr):
         if event.cmd == CmdType.chat:
-            await self._broadcast(ChatCmdResp(message=event.message, player=ws.client_id))
+            await self._broadcast(ChatCmdResp(message=event.message, player=ws.name))
         elif event.cmd == CmdType.team_chat:
             # Do some validation here that the connection from ws is actually on
             # the right team?
@@ -343,18 +424,26 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
             team = self.get_team_for_ws(ws)
 
             if team:
-                await self._team_broadcast(team, TeamChatCmdResp(team=team, message=event.message, player=ws.client_id))
+                await self._team_broadcast(team, TeamChatCmdResp(team=team.name, message=event.message, player=ws.name))
             else:
                 logger.error(f"Inavlid Team Chat CMD from{ws.client_id}. Could not find team for this client")
                 # TODO - raise an error!
-
 
     def finalize_map_picker(self, event, ws):
         """Clean up the map picker process."""
         print("Map Picker process completed.")
 
     async def add_conn(self, mgr: WSConnMgr):
+        logger.debug(f"Adding new connection {mgr}")
         self.active_connections.append(mgr)
+        await mgr.ws.send_json(MapPicksResp(map_pool=self.model.get_picker_state()).model_dump())
+        i = 0
+        for team in self.teams:
+            await mgr.ws.send_json(TeamRosterResp(team_idx=i,team_name=team.name, players=[PlayerObj(isCaptain=True, id=x.client_id,  name=x.name) for x in team.players]).model_dump())
+            i += 1
+
+    async def remove_conn(self, mgr: WSConnMgr):
+        self.active_connections.remove(mgr)
 
     async def _disconnect(self, websocket: WSConnMgr):
         self.active_connections.remove(websocket)
@@ -362,11 +451,14 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
             if websocket in team.players:
                 team.remove(websocket)
                 await websocket.disconnect()
+
     # TODO  - Figure out how to get a player name from the WSConnMgr? Perhaps part of the client identification?
     # Ideally - we'd just pull the player right out of the auth-token on the WebSocket?
     # But that does make running with a test client a little tricky.
     async def _broadcast(self, cmd: BaseResp):
         for connection in self.active_connections:
+            logger.debug(f"Active conns: {self.active_connections}")
+            logger.debug(f"Sending {cmd} to {connection.client_id}")
             await connection.ws.send_json(cmd.model_dump())
 
     async def _team_broadcast(self, team: TeamType, cmd: BaseResp):
@@ -380,15 +472,15 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
     async def process_join_team(self, event: JoinTeamCmd, ws: WSConnMgr ):
         existing_team = self.get_team_for_ws(ws)
         if existing_team:
-            logger.error(f"Bad request - player already on a team")
+            logger.error("Bad request - player already on a team")
             return
         team_idx = self.get_team_idx_by_team(event.name)
-        if team_idx:
+        if team_idx != None:
             logger.debug(f"client[{ws.client_id}] joining Team[{event.name}]")
             self.teams[team_idx].players.append(ws)
-            await self._broadcast(TeamRosterResp(team=event.name, players=[x.client_id for x in self.teams[team_idx].players]))
+            await self._broadcast(TeamRosterResp(team_idx=team_idx, team_name=event.name, players=[PlayerObj(isCaptain=True, id=x.client_id,  name=x.name) for x in self.teams[team_idx].players]))
         else:
-            logger.debug(f"Couldn't find team with name '{event.name}' in team list {self.teams}")    
+            logger.debug(f"Couldn't find team with name '{event.name}' in team list {self.teams}")
 
     async def process_switch_teams(self, event: SwitchTeamCmd, ws: WSConnMgr):
         team = self.get_team_for_ws(ws)
@@ -396,12 +488,13 @@ class WebSocketStateMachine(BestOfThreeStateMachine):
             logger.error(f"Player not on a team, can't switch!")
             return
         team.players.remove(ws)
-        await self._broadcast(TeamRosterResp(team=team.name, players=[x.client_id for x in team.players]))
+
         team_idx = self.get_team_idx_by_team(team.name)
+        await self._broadcast(TeamRosterResp(team_idx=team_idx, team_name=team.name, players=[PlayerObj(isCaptain=True, id=x.client_id,  name=x.name) for x in team.players]))
         new_team_idx = int(not team_idx)
         new_team = self.teams[new_team_idx]
         new_team.players.append(ws)
-        await self._broadcast(TeamRosterResp(team=new_team.name, players=[x.client_id for x in new_team.players]))
+        await self._broadcast(TeamRosterResp(team_idx=new_team_idx, team_name=new_team.name, players=[PlayerObj(isCaptain=True, id=x.client_id,  name=x.name) for x in new_team.players]))
 
     def _kick_player(self, websocket: WebSocket):
         self._disconnect(websocket)

@@ -32,7 +32,7 @@ async def get_all_teams(
 ):
     return await team_service.get_all_teams(session)
 
-# TODO - Make the user who created the team a team captain?
+# TODO
 # - How do we ensure that admins who create teams don't get added as captains?
 # - Maybe just have an API parameter of team_captian: optional[str] and have the front-end supply it.
 @team_router.post("/", dependencies=[admin_checker], status_code=status.HTTP_201_CREATED)
@@ -56,7 +56,7 @@ async def create_team(
     server_filename = f"{filedir}/{logo.filename}"
     async with aiofiles.open(server_filename, 'wb') as out_file:
         while content := await logo.read(1024):
-            await out_file.write(content) 
+            await out_file.write(content)
     new_team.logo = server_filename
     session.add(new_team)
     await session.commit()
@@ -128,7 +128,7 @@ async def update_team_roster(
     session: AsyncSession = Depends(get_session),
     player_details=Depends(access_token_bearer),
 ):
-    
+
     current_season = await season_service.get_active_season(session)
     if current_season is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No active season configured in DB")
@@ -194,7 +194,7 @@ async def accept_team_join_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No active season configured in DB")
     teams = await roster_service.get_teams_with_min_players(current_season.id, 5, session)
     return teams
-    
+
 
 
 @team_router.get("/name/{team_name}/captains", response_model=List[Player])

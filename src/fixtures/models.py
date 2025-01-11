@@ -5,6 +5,7 @@ from sqlalchemy_utils import UUIDType
 from datetime import datetime
 import uuid
 from enum import StrEnum
+from typing import List, Literal
 
 
 class RoundType(StrEnum):
@@ -57,6 +58,9 @@ class Pug(SQLModel, table=True):
     )
     team_1: str
     team_2: str
+    map_pool: str
+    match_format: str
+    # TODO: Can we do things like List[str] and Literal['bo1'] | Literal['bo3']
     pug_result: "PugResult" = Relationship(
         back_populates="pug", sa_relationship_kwargs={"lazy": "selectin"}
     )
@@ -70,4 +74,3 @@ class PugResult(SQLModel, table=True):
     score_team_1: int = Field(default=0)
     score_team_2: int = Field(default=0)
     pug: Pug = Relationship(back_populates="pug_result", sa_relationship_kwargs={"lazy": "selectin"})
-

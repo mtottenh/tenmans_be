@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse
 
+from asyncio import timeout as async_timeout
+from asyncio import TimeoutError
 from sqlalchemy import Null
-
+import traceback
 from src.fixtures.MapPicker.state_machine import WSConnMgr, WebSocketStateMachine
 from src.fixtures.dependencies import GetWSFixtureOrchestrator, GetWSPugOrchestrator
 from src.fixtures.MapPicker.commands import WSSCommand
@@ -21,6 +23,9 @@ from src.seasons.service import SeasonService
 from src.seasons.dependencies import get_active_season
 from typing import List, Tuple
 from src.config import Config
+import logging
+
+logger = logging.getLogger('FixtureRouter')
 API_VERSION_SLUG=f"/api/{Config.API_VERSION}"
 fixture_router = APIRouter(prefix="/fixtures")
 fixture_service = FixtureService()
@@ -51,7 +56,7 @@ async def add_fixture_result(
     player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
-    
+
     fixture = await fixture_service.get_fixture_by_id(result_data.fixture_id, session)
     if fixture is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Invalid fixture ID {result_data.fixture_id}")
@@ -101,8 +106,8 @@ async def confirm_result(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Result must be confirmed by opposing team captain")
     return result
-    
-    
+
+
 @fixture_router.patch("/{fixture_id}", response_model=Fixture)
 async def update_fixture_date(
     fixture_id: str,
@@ -167,7 +172,7 @@ async def get_all_fixtures_for_team_in_active_season(
     season: Season = Depends(get_active_season),
     session: AsyncSession = Depends(get_session)
 ):
-    
+
     if season is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active season currently set in DB.")
     team = await team_service.get_team_by_name(team_name, session)
@@ -198,13 +203,13 @@ async def get_results_for_team_in_season(
     season_id: str,
     session: AsyncSession = Depends(get_session)
 ):
-    
 
-    
+
+
     season = await season_service.get_season(season_id, session)
     if season is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Season with id {season_id} not found")
-    
+
     team = await team_service.get_team_by_name(team_name, session)
     if team is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Team with name '{team_name}' not found")
@@ -217,7 +222,7 @@ async def create_new_pug(pug_data: PugCreateModel, session: AsyncSession = Depen
     # Insert a pug into the pugs table
     # Should at-least contain team_names - can be updated later
     # Via the websocket
-    # Return a response with the fixture ID to connect the websocket to. 
+    # Return a response with the fixture ID to connect the websocket to.
     return await fixture_service.create_pug(pug_data, session)
 
 
@@ -231,17 +236,33 @@ async def fixture_websocket_handler(
     ws_manager: WebSocketStateMachine = Depends(ws_pug_orchestrator_manager)
 ):
     mgr = WSConnMgr()
-    await mgr.accept(websocket)
-    await ws_manager.add_conn(mgr)
+
     try:
+        await mgr.accept(websocket)
+
+        # Wait for identification before processing any messages
+        identification_done = False
 
         async for cmd in mgr.start():
-            await ws_manager.process_event(cmd, mgr)
+            if not identification_done:
+                # Check if this command was an identification
+                if mgr._establishment_event.is_set():
+                    identification_done = True
+                    await ws_manager.add_conn(mgr)
 
-    except WebSocketDisconnect:
-        ws_manager.remove_conn(mgr)
+            # Only process events after identification
+            if identification_done:
+                await ws_manager.process_event(cmd, mgr)
+
+    except TimeoutError:
+        logger.error(f"Timed out waiting for client identification")
+        await websocket.close(code=4000, reason="Identification timeout")
     except Exception as e:
-        pass
+        logger.error("WebSocket error:", traceback.format_exception(e))
+    finally:
+        if mgr in ws_manager.active_connections:
+            await ws_manager.remove_conn(mgr)
+        await mgr.disconnect()
 
 
 @fixture_router.websocket('/id/{fixture_id}/ws')

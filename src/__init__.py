@@ -4,9 +4,11 @@ from src.players.routes import player_router
 from src.teams.routes import team_router
 from src.seasons.routes import season_router
 from src.fixtures.routes import fixture_router
+from src.maps.routes import map_router
 from contextlib import asynccontextmanager
 from src.db.main import init_db
 from src.config import Config
+
 
 @asynccontextmanager
 async def life_span(app: FastAPI):
@@ -29,3 +31,4 @@ app.include_router(player_router, prefix=f"/api/{version}")
 app.include_router(team_router, prefix=f"/api/{version}" )
 app.include_router(season_router, prefix=f"/api/{version}")
 app.include_router(fixture_router, prefix=f"/api/{version}")
+app.include_router(map_router, prefix=f"/api/{version}")

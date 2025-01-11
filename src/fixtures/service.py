@@ -30,13 +30,13 @@ class FixtureService:
         result = await session.exec(stmnt)
 
         return result.all()
-    
+
     async def get_fixtures_for_team_in_season(self, team: Team, season: Season, session: AsyncSession) -> List[Fixture]:
         stmnt = select(Fixture).where(Fixture.season_id == season.id).where(or_(Fixture.team_1 == team.id, Fixture.team_2 == team.id))
         result = await session.exec(stmnt)
 
         return result.all()
-    
+
     async def get_fixture_by_id(self, fixture_id: str, session: AsyncSession) -> Fixture | None:
         stmnt = select(Fixture).where(Fixture.id == fixture_id)
         result = await session.exec(stmnt)
@@ -44,11 +44,20 @@ class FixtureService:
         return result.first()
 
     async def create_pug(self, pug_data: PugCreateModel, session: AsyncSession) -> Pug:
-        new_pug = Pug(**pug_data.model_dump())
+        pug = pug_data.model_dump()
+        pug['map_pool'] = ",".join(pug['map_pool'])
+        new_pug = Pug(**pug)
         session.add(new_pug)
         await session.commit()
         await session.refresh(new_pug)
         return new_pug
+
+    async def get_pug(self, pug_id: str, session: AsyncSession) -> Pug:
+        pug = (await session.exec(select(Pug).where(Pug.id == pug_id))).first()
+        if not pug:
+            raise ValueError(f"Invalid Pug ID: {pug_id}")
+        return pug
+
     async def get_pug_team_names(self, pug_id: str, session: AsyncSession) -> tuple[str,str]:
         stmnt = select(Pug.team_1, Pug.team_2).where(Pug.id == pug_id)
         result = await session.exec(stmnt)
@@ -62,19 +71,19 @@ class FixtureService:
             scheduled_date = datetime.strptime(fixture_data.scheduled_at, "%Y-%m-%d %H:%M")
         except ValueError as e:
             return CreateFixtureError.INVALID_DATE
-        
+
         team_1 = await team_service.get_team_by_name(fixture_data.team_1, session)
         if team_1 is None:
             return CreateFixtureError.TEAM_1_NO_EXIST
-        
+
         team_2 = await team_service.get_team_by_name(fixture_data.team_2, session)
         if team_2 is None:
             return CreateFixtureError.TEAM_2_NO_EXIST
-        
+
         season = await season_service.get_season_by_name(fixture_data.season, session)
         if season is None:
             return CreateFixtureError.INVALID_SEASON
-        
+
         fixture_data_dict = {}
         fixture_data_dict['team_1'] = team_1.id
         fixture_data_dict['team_2'] = team_2.id
@@ -111,10 +120,10 @@ class FixtureService:
         if len(team_ids) % 2 != 0:
             # If the number of teams is odd, add a 'bye' team (None) for round-robin balancing
             team_ids.append(None)
-        
+
         num_teams = len(team_ids)
         rounds = num_teams - 1  # Total rounds needed for one complete round-robin
-        
+
         # Scheduling parameters
         current_date = datetime.now()  # Start date for scheduling matches
         days_between_rounds = 7  # Days between each round
@@ -135,7 +144,7 @@ class FixtureService:
             for i in range(num_teams // 2):
                 team_1 = team_ids[i]
                 team_2 = team_ids[num_teams - 1 - i]
-                
+
                 if team_1 is not None and team_2 is not None:
                     # Create fixtures with round_id association
                     fixture_home = Fixture(
@@ -145,7 +154,7 @@ class FixtureService:
                         round_id=round_instance.id,
                         scheduled_at=current_date,
                     )
-                    
+
                     fixture_away = Fixture(
                         team_1=team_2,
                         team_2=team_1,
@@ -153,16 +162,16 @@ class FixtureService:
                         round_id=round_instance.id,
                         scheduled_at=current_date + timedelta(days=days_between_rounds * rounds)
                     )
-                    
+
                     # Add fixtures to round's fixture list
                     round_fixtures.extend([fixture_home, fixture_away])
-            
+
             # Rotate teams for the next round
             team_ids = [team_ids[0]] + [team_ids[-1]] + team_ids[1:-1]
-            
+
             # Increment date for next round
             current_date += timedelta(days=days_between_rounds)
-            
+
             # Add round fixtures to the session
             session.add_all(round_fixtures)
             await session.commit()
@@ -276,7 +285,7 @@ class FixtureService:
     # Given the previous round number, schedule the next knockout round
     async def schedule_knockout_round(self, season_id: uuid.UUID, round_number: int, session: AsyncSession) -> List[Fixture]:
         # Fetch results from the previous round
-        previous_round_fixtures = ( await 
+        previous_round_fixtures = ( await
             session.exec(
                 select(Fixture).where(Fixture.round_id == round_number)
             )
@@ -332,12 +341,12 @@ class ResultsService:
         stmnt = select(Result, Fixture.id).where(Result.season_id == season.id, Result.fixture_id == Fixture.id).where(or_(Fixture.team_1 == team.id, Fixture.team_2 == team.id))
         result = await session.exec(stmnt)
         return result.all()
-    
+
     async def get_result_for_fixture(self, fixture_id: str, session: AsyncSession):
         stmnt = select(Result).where(Result.fixture_id == fixture_id)
         result = await session.exec(stmnt)
         return result.first()
-    
+
     async def add_result(self,  result: ResultCreateModel, submitted_by, session: AsyncSession, confirmed=False) -> Result:
         stmnt = select(Result).where(Fixture.id == result.fixture_id).where(Fixture.id == Result.fixture_id)
         result_obj = await session.exec(stmnt)
@@ -353,7 +362,7 @@ class ResultsService:
         await session.commit()
         await session.refresh(r)
         return r
-    
+
     async def confirm_result(self, result:  ResultConfirmModel, session:AsyncSession) -> Result:
         stmnt = select(Result).where(Fixture.id == result.fixture_id).where(Fixture.id == Result.fixture_id)
         result_obj = await session.exec(stmnt)
