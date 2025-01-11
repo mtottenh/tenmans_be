@@ -1,7 +1,6 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
-import sqlalchemy.dialects.sqlite as sl
 from sqlalchemy import ForeignKey
-from sqlalchemy_utils import UUIDType
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from enum import StrEnum
 import uuid
@@ -15,10 +14,10 @@ class AuthType(StrEnum):
 class Role(SQLModel, table=True):
     __tablename__ = "roles"
     id: uuid.UUID = Field(
-        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     name: str = Field(unique=True)
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     permissions: List["Permission"] = Relationship(
         back_populates="roles",
         link_model="RolePermission"
@@ -27,11 +26,11 @@ class Role(SQLModel, table=True):
 class Permission(SQLModel, table=True):
     __tablename__ = "permissions"
     id: uuid.UUID = Field(
-        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     name: str = Field(unique=True)
     description: str
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     roles: List[Role] = Relationship(
         back_populates="permissions",
         link_model="RolePermission"
@@ -56,7 +55,7 @@ class PlayerRole(SQLModel, table=True):
     )
     scope_type: str  # 'global', 'team', 'tournament'
     scope_id: Optional[uuid.UUID] = Field(default=None)
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
 
 class VerificationStatus(StrEnum):
@@ -69,7 +68,7 @@ class Player(SQLModel, table=True):
     __tablename__ = "players"
 
     uid: uuid.UUID = Field(
-        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     name: str
     steam_id: str = Field(unique=True)  # Required for all users
@@ -82,8 +81,8 @@ class Player(SQLModel, table=True):
     verified_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid"), nullable=True))
     verification_notes: Optional[str]
     verification_date: Optional[datetime]
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
     roles: List["Role"] = Relationship(
         back_populates="players",
@@ -97,13 +96,13 @@ class VerificationRequest(SQLModel, table=True):
     __tablename__ = "verification_requests"
     
     id: uuid.UUID = Field(
-        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
     admin_notes: Optional[str]
     submitted_evidence: Optional[str]  # Could store URLs or references to evidence
     status: VerificationStatus = Field(default=VerificationStatus.PENDING)
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
     player: Player = Relationship(back_populates="verification_requests")

@@ -1,8 +1,7 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
-import sqlalchemy.dialects.sqlite as sl
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
-from sqlalchemy_utils import UUIDType
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
@@ -17,7 +16,7 @@ class FixtureStatus(StrEnum):
 class Fixture(SQLModel, table=True):
     __tablename__ = "fixtures"
     id: uuid.UUID = Field(
-        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     tournament_id: uuid.UUID = Field(sa_column=Column(ForeignKey("tournaments.id")))
     round_id: uuid.UUID = Field(sa_column=Column(ForeignKey("rounds.id")))
@@ -32,8 +31,8 @@ class Fixture(SQLModel, table=True):
     forfeit_winner: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("teams.id")))
     forfeit_reason: Optional[str]
     admin_notes: Optional[str]
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
     tournament: Tournament = Relationship(back_populates="fixtures")
     round: Round = Relationship(back_populates="fixtures")
