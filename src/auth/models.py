@@ -91,6 +91,15 @@ class Player(SQLModel, table=True):
     team_rosters: List["Roster"] = Relationship(back_populates="player")
     match_participations: List["MatchPlayer"] = Relationship(back_populates="player")
     captain_of: List["TeamCaptain"] = Relationship(back_populates="player")
+    bans: List["Ban"] = Relationship(back_populates="player")
+    issued_bans: List["Ban"] = Relationship(
+        back_populates="admin",
+        foreign_keys="Ban.issued_by"
+    )
+    substitute_availability: List["SubstituteAvailability"] = Relationship(
+        back_populates="player"
+    )
+
 
 class VerificationRequest(SQLModel, table=True):
     __tablename__ = "verification_requests"

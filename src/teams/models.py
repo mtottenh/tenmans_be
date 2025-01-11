@@ -26,6 +26,7 @@ class Team(SQLModel, table=True):
         back_populates="team_2_rel",
         sa_relationship_kwargs={"foreign_keys": "Fixture.team_2"}
     )
+    bans: List["Ban"] = Relationship(back_populates="team")
 
 class Roster(SQLModel, table=True):
     __tablename__ = "rosters"
