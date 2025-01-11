@@ -17,7 +17,7 @@ from src.auth.dependencies import (
     RefreshTokenBearer,
     get_current_player
 )
-from .state_service import StateService, StateType, get_state_service
+from src.state.service import StateService, StateType, get_state_service
 from starlette.responses import RedirectResponse
 from typing import Optional
 import re

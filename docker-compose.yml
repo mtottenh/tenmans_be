@@ -57,4 +57,4 @@ services:
 volumes:
   postgres_data:
   logo_store:
-  map_store:⎋
+  map_store:
