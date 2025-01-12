@@ -62,6 +62,8 @@ class PlayerUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8)
     steam_id: Optional[str]
 
+    
+
 class PermissionCreate(BaseModel):
     name: str
     description: str
@@ -139,7 +141,7 @@ class VerificationRequestResponse(BaseModel):
         from_attributes = True
 
 class PlayerPrivate(PlayerBase):
-	verification_notes: Optional[str]
+    verification_notes: Optional[str]
     roles: List[PlayerRole]
 
 class PlayerPublic(PlayerBase):

@@ -40,7 +40,9 @@ class TournamentCreate(BaseModel):
             if not all(key in v for key in required_keys):
                 raise ValueError(f'Format must include {required_keys}')
         return v
-
+    class Config:
+        arbitrary_types_allowed=True
+        
 class RoundCreate(BaseModel):
     tournament_id: UUID4
     round_number: int
@@ -142,4 +144,4 @@ class FixtureDetailed(FixtureBase):
     reschedule_reason: Optional[str]
     forfeit_winner: Optional[UUID4]
     forfeit_reason: Optional[str]
-    admin_notes: Optional[str]⎋
+    admin_notes: Optional[str]

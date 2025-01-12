@@ -55,6 +55,22 @@ class RefreshTokenBearer(JWTBearer):
             )
         return token_data
 
+async def get_current_player(
+    token_data: TokenData = Depends(AccessTokenBearer()),
+    session: AsyncSession = Depends(get_session)
+) -> Player:
+    """Gets the current authenticated player"""
+    auth_service = AuthService()
+    player = await auth_service.get_player_by_uid(token_data.player_uid, session)
+    
+    if not player:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Player not found"
+        )
+    
+    return player
+
 class ScopedPermissionChecker:
     """Checks if a player has required permissions within a specific scope"""
     def __init__(
@@ -110,21 +126,6 @@ class TournamentPermissionChecker(ScopedPermissionChecker):
     def __init__(self, required_permissions: List[str]):
         super().__init__(required_permissions, ScopeType.TOURNAMENT)
 
-async def get_current_player(
-    token_data: TokenData = Depends(AccessTokenBearer()),
-    session: AsyncSession = Depends(get_session)
-) -> Player:
-    """Gets the current authenticated player"""
-    auth_service = AuthService()
-    player = await auth_service.get_player_by_uid(token_data.player_uid, session)
-    
-    if not player:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Player not found"
-        )
-    
-    return player
 
 # Type alias for dependency injection
 CurrentPlayer = Annotated[Player, Depends(get_current_player)]

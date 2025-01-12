@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
 from datetime import datetime
 import uuid
 from typing import List, Optional
@@ -8,8 +8,7 @@ from typing import List, Optional
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
-    )
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     name: str = Field(unique=True)
     logo: Optional[str]
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -44,8 +43,8 @@ class Roster(SQLModel, table=True):
 class TeamCaptain(SQLModel, table=True):
     __tablename__ = "team_captains"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
-    )
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
+    
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -53,16 +52,16 @@ class TeamCaptain(SQLModel, table=True):
     team: Team = Relationship(back_populates="captains")
     player: "Player" = Relationship(back_populates="captain_of")
 
-class TeamELOHistory(SQLModel, table=True):
-    __tablename__ = "team_elo_history"
-    id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
-    )
-    team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
-    fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
-    elo_rating: int
-    player_composition: List[uuid.UUID] = Field(sa_column=Column(sl.JSON))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+# class TeamELOHistory(SQLModel, table=True):
+#     __tablename__ = "team_elo_history"
+#     id: uuid.UUID = Field(
+#         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     
-    team: Team = Relationship(back_populates="elo_history")
-    fixture: "Fixture" = Relationship(back_populates="team_elo_changes")
+#     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
+#     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
+#     elo_rating: int
+#     player_composition: List[uuid.UUID] = Field(sa_column=Column(JSON))
+#     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    
+#     team: Team = Relationship(back_populates="elo_history")
+#     fixture: "Fixture" = Relationship(back_populates="team_elo_changes")

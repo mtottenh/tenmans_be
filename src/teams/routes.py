@@ -1,230 +1,277 @@
-import os
-import aiofiles
-from fastapi import APIRouter, Depends, Form, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.exceptions import HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import Annotated, List
-from src.db.main import get_session
-from src.players.dependencies import AccessTokenBearer, CaptainChecker, RoleChecker, get_current_player
+from typing import List
+import os
 
-from .models import Team
-from .schemas import TeamCreateModel,  RosterUpdateModel, PlayerId, PlayerName, RosterEntryModel,RosterPendingUpdateModel
-from .service import TeamService, RosterService
-from src.players.service import PlayerService
-from src.seasons.service import SeasonService
-from src.players.models import Player
+from src.db.main import get_session
+from src.auth.dependencies import get_current_player
+from src.auth.models import Player
+from src.auth.service import AuthService
+from src.competitions.season.service import SeasonService
+from src.teams.models import Team
+from src.teams.schemas import (
+    TeamCreate,
+    TeamUpdate,
+)
+from src.teams.service import TeamService, TeamServiceError
+from src.state.service import StateService
+from src.upload.service import UploadService
+from .dependencies import require_team_captain
+from src.config import Config
 
 team_router = APIRouter(prefix="/teams")
-
-access_token_bearer = AccessTokenBearer()
-player_service = PlayerService()
 team_service = TeamService()
 season_service = SeasonService()
-roster_service = RosterService()
-admin_checker = Depends(RoleChecker(["admin", "user"]))
-captain_checker=  Depends(CaptainChecker)
+state_service = StateService(Config.REDIS_URL)
+upload_service = UploadService(state_service)
+auth_service = AuthService()
+
 
 @team_router.get("/", response_model=List[Team])
 async def get_all_teams(
     session: AsyncSession = Depends(get_session),
-    player_details=Depends(access_token_bearer),
+    current_player: Player = Depends(get_current_player)
 ):
+    """Get all teams."""
     return await team_service.get_all_teams(session)
 
-# TODO
-# - How do we ensure that admins who create teams don't get added as captains?
-# - Maybe just have an API parameter of team_captian: optional[str] and have the front-end supply it.
-@team_router.post("/", dependencies=[admin_checker], status_code=status.HTTP_201_CREATED)
+@team_router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_team(
-    logo: UploadFile,
-    name: str= Form(...),
-    player_details = Depends(get_current_player),
-    session: AsyncSession = Depends(get_session),
+    name: str = Form(...),
+    logo: UploadFile = File(...),
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
 ):
-    team_exists = await team_service.team_exists(name, session)
-    if team_exists:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Team with name '{name}' already exists",
-        )
-    new_team = await team_service.create_team(TeamCreateModel(name=name), session)
-    captain = await team_service.create_captain(new_team, player_details, session)
-    filedir = os.path.join(os.getcwd(),'logo_store',str(new_team.id))
-    if not os.path.exists(filedir):
-        os.makedirs(filedir)
-    server_filename = f"{filedir}/{logo.filename}"
-    async with aiofiles.open(server_filename, 'wb') as out_file:
-        while content := await logo.read(1024):
-            await out_file.write(content)
-    new_team.logo = server_filename
-    session.add(new_team)
-    await session.commit()
-    await session.refresh(new_team)
-    return new_team
+    """Create a new team with the current player as captain."""
+    try:
+        # Check if team exists
+        team_exists = await team_service.team_exists(name, session)
+        if team_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Team with name '{name}' already exists"
+            )
 
-@team_router.get("/id/{id}")
+        # Handle logo upload
+        upload_path = None
+        if logo:
+            upload_request = await upload_service.validate_team_logo(logo)
+            upload_path = await upload_service.store_uploaded_file(
+                logo,
+                upload_request,
+                session
+            )
+
+        # Create team
+        new_team = await team_service.create_team(
+            team_data=TeamCreate(name=name),
+            captain=current_player,
+            actor=current_player,
+            logo_path=upload_path,
+            session=session
+        )
+
+        return new_team
+
+    except TeamServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@team_router.get("/id/{id}", response_model=Team)
 async def get_team_by_id(
     id: str,
     session: AsyncSession = Depends(get_session),
-    player_details=Depends(access_token_bearer),
+    current_player: Player = Depends(get_current_player)
 ):
+    """Get team by ID."""
     team = await team_service.get_team_by_id(id, session)
-    if team is None:
+    if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team with name '{id}' not found",
+            detail=f"Team with ID '{id}' not found"
         )
     return team
 
-async def get_team_logo(team: Team):
-    if os.path.exists(team.logo):
-        return FileResponse(team.logo)
-
 @team_router.get('/id/{id}/logo')
-async def get_team_logo_by_id(
-    id: str,
-    session: AsyncSession = Depends(get_session),
-):
+async def get_team_logo_by_id(id: str, session: AsyncSession = Depends(get_session)):
+    """Get team logo by team ID."""
     team = await team_service.get_team_by_id(id, session)
-    if team is None:
+    if not team or not team.logo or not os.path.exists(team.logo):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team with name '{id}' not found",
+            detail="Logo not found"
         )
-    return await get_team_logo(team)
+    return FileResponse(team.logo)
 
-@team_router.get('/name/{name}/logo')
-async def get_team_logo_by_name(
-    name: str,
-    session: AsyncSession = Depends(get_session),
-):
-    team = await team_service.get_team_by_name(name, session)
-    if team is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team with name '{name}' not found",
-        )
-    return await get_team_logo(team)
-
-@team_router.get("/name/{name}")
+@team_router.get("/name/{name}", response_model=Team)
 async def get_team_by_name(
     name: str,
     session: AsyncSession = Depends(get_session),
-    player_details=Depends(access_token_bearer),
+    current_player: Player = Depends(get_current_player)
 ):
+    """Get team by name."""
     team = await team_service.get_team_by_name(name, session)
-    if team is None:
+    if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team with name '{name}' not found",
+            detail=f"Team with name '{name}' not found"
         )
     return team
 
-@team_router.patch("/name/{team_name}/roster", dependencies=[captain_checker])
-async def update_team_roster(
-    team_name: str,
-    roster: RosterUpdateModel,
-    session: AsyncSession = Depends(get_session),
-    player_details=Depends(access_token_bearer),
-):
+@team_router.get('/name/{name}/logo')
+async def get_team_logo_by_name(name: str, session: AsyncSession = Depends(get_session)):
+    """Get team logo by team name."""
+    team = await team_service.get_team_by_name(name, session)
+    if not team or not team.logo or not os.path.exists(team.logo):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Logo not found"
+        )
+    return FileResponse(team.logo)
 
-    current_season = await season_service.get_active_season(session)
-    if current_season is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No active season configured in DB")
-    team = await team_service.get_team_by_name(team_name, session)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Team with name '{team_name}' not found")
-    skipped =[]
-    validated_players=[]
-    for p in roster.players:
-        player = None
-        if isinstance(p, PlayerName):
-            player = await player_service.get_player_by_name(p.name, session)
-        if isinstance(p, PlayerId):
-            player = await player_service.get_player(p.id, session)
-        if player is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Player with name {p} not found")
-        validated_players.append(player)
-    for player in validated_players:
-        player_already_on_roster = await roster_service.player_on_team(player, team, current_season, session)
-        if player_already_on_roster:
-            skipped.append(player.name)
-        else:
-            await roster_service.add_player_to_team_roster(player, team, current_season, session)
-    if skipped:
-        return JSONResponse(content={"players_already_team" : { "team" : team.name, "players" : skipped}})
+# @team_router.patch(
+#     "/name/{team_name}/roster",
+#     dependencies=[Depends(require_team_captain)]
+# )
+# async def update_team_roster(
+#     team_name: str,
+#     roster: RosterUpdateModel,
+#     current_player: Player = Depends(get_current_player),
+#     session: AsyncSession = Depends(get_session)
+# ):
+#     """Update team roster. Requires team captain permission."""
+#     try:
+#         season = await season_service.get_active_season(session)
+#         if not season:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="No active season configured"
+#             )
 
+#         team = await team_service.get_team_by_name(team_name, session)
+        
+#         return await team_service.update_roster(
+#             team=team,
+#             roster=roster,
+#             season=season,
+#             actor=current_player,
+#             session=session
+#         )
 
-@team_router.patch("/name/{team_name}/roster/active", dependencies=[captain_checker])
-async def accept_team_join_request(
-    team_name: str,
-    roster_update:  RosterPendingUpdateModel,
-    session: AsyncSession = Depends(get_session),
-    player_details = Depends(get_current_player)
-):
-    current_season = await season_service.get_active_season(session)
-    if current_season is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No active season configured in DB")
-    team = await team_service.get_team_by_name(team_name, session)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Team with name '{team_name}' not found")
+#     except TeamServiceError as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=str(e)
+#         )
 
-    player_is_captain = await team_service.player_is_team_captain(player_details, team, session)
-    if not player_is_captain:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Only team captains can perform roster updates")
+# @team_router.get(
+#     "/name/{team_name}/roster",
+#     response_model=List[RosterEntryModel]
+# )
+# async def get_team_roster(
+#     team_name: str,
+#     session: AsyncSession = Depends(get_session),
+#     current_player: Player = Depends(get_current_player)
+# ):
+#     """Get team roster."""
+#     season = await season_service.get_active_season(session)
+#     if not season:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail="No active season configured"
+#         )
 
-    player = await player_service.get_player(roster_update.player.id, session)
-    if player is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Player with uid {roster_update.player} not found")
-    player_is_pending = await roster_service.player_is_pending(player,team,current_season,session)
-    if not player_is_pending:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Player with uid {roster_update.player} not pending on the roster")
-    roster_update = await roster_service.set_player_active(player, team, current_season, session)
-    return roster_update
+#     return await team_service.get_roster(team_name, season, session)
 
-
-@team_router.get("/name/{team_name}/roster/active", response_model=List[Team])
-async def accept_team_join_request(
-    team_name: str,
-    session: AsyncSession = Depends(get_session),
-):
-    current_season = await season_service.get_active_season(session)
-    if current_season is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No active season configured in DB")
-    teams = await roster_service.get_teams_with_min_players(current_season.id, 5, session)
-    return teams
-
-
-
-@team_router.get("/name/{team_name}/captains", response_model=List[Player])
+@team_router.get(
+    "/name/{team_name}/captains",
+    response_model=List[Player]
+)
 async def get_team_captains(
     team_name: str,
-    session: AsyncSession = Depends(get_session)
-):
-    captains = await team_service.get_team_captains(team_name, session)
-    return captains
-
-@team_router.patch("/name/{team_name}/captains", dependencies=[captain_checker])
-async def add_team_captains(
-    team_name: str,
-
-    session: AsyncSession = Depends(get_session)
-):
-    #captains = await team_service.create_captain(team_name, player_name)
-    pass
-
-@team_router.get("/name/{team_name}/roster", response_model=List[RosterEntryModel])
-async def get_team_roster(
-    team_name: str,
     session: AsyncSession = Depends(get_session),
-    player_details=Depends(access_token_bearer),
+    current_player: Player = Depends(get_current_player)
 ):
-    current_season = await season_service.get_active_season(session)
-    if current_season == None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active season configured.")
-    current_roster = await roster_service.get_roster(team_name,current_season,session)
-    team_roster = []
-    for (player, pending) in current_roster:
-        team_roster.append(RosterEntryModel(player=player,pending=pending))
-    return team_roster
+    """Get team captains."""
+    return await team_service.get_team_captains(team_name, session)
+
+@team_router.post(
+    "/name/{team_name}/captains/{player_id}",
+    dependencies=[Depends(require_team_captain)]
+)
+async def add_team_captain(
+    team_name: str,
+    player_id: str,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Add a team captain. Requires team captain permission."""
+    try:
+        team = await team_service.get_team_by_name(team_name, session)
+        new_captain = await auth_service.get_player_by_uid(player_id, session)
+        
+        if not new_captain:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Player with ID '{player_id}' not found"
+            )
+
+        return await team_service.create_captain(
+            team=team,
+            player=new_captain,
+            actor=current_player,
+            session=session
+        )
+
+    except TeamServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@team_router.delete(
+    "/name/{team_name}/captains/{player_id}",
+    dependencies=[Depends(require_team_captain)]
+)
+async def remove_team_captain(
+    team_name: str,
+    player_id: str,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Remove a team captain. Requires team captain permission."""
+    try:
+        team = await team_service.get_team_by_name(team_name, session)
+        player = await auth_service.get_player_by_uid(player_id, session)
+        
+        if not player:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Player with ID '{player_id}' not found"
+            )
+
+        # Check this won't remove the last captain
+        captains = await team_service.get_team_captains(team_name, session)
+        if len(captains) <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove the last team captain"
+            )
+
+        await team_service.remove_captain(
+            team=team,
+            player=player,
+            actor=current_player,
+            session=session
+        )
+        
+        return {"status": "success"}
+
+    except TeamServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

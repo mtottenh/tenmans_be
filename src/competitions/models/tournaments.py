@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from enum import StrEnum
 from typing import List
-
+import uuid
 
 class TournamentType(StrEnum):
     REGULAR = "regular"
@@ -21,8 +21,7 @@ class TournamentState(StrEnum):
 class Tournament(SQLModel, table=True):
     __tablename__ = "tournaments"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
-    )
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id")))
     name: str
     type: TournamentType = Field(sa_column=sa.Column(sa.Enum(TournamentType)))
@@ -31,7 +30,7 @@ class Tournament(SQLModel, table=True):
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
-    season: Season = Relationship(back_populates="tournaments")
+    season: "Season" = Relationship(back_populates="tournaments")
     rounds: List["Round"] = Relationship(back_populates="tournament")
     fixtures: List["Fixture"] = Relationship(back_populates="tournament")
     maps: List["Map"] = Relationship(back_populates="tournaments", link_model="TournamentMap")

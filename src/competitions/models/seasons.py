@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from enum import StrEnum
 from typing import List
+import uuid
 
 class SeasonState(StrEnum):
     NOT_STARTED = "not_started"
@@ -14,8 +15,7 @@ class SeasonState(StrEnum):
 class Season(SQLModel, table=True):
     __tablename__ = "seasons"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
-    )
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     name: str = Field(unique=True)
     state: SeasonState = Field(sa_column=sa.Column(sa.Enum(SeasonState)))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))

@@ -2,8 +2,8 @@ from pydantic import BaseModel
 from typing import Optional, Literal
 
 
-class UploadType(Literal["team_logo", "map_image", "player_avatar"]):
-    pass
+UploadType = Literal["team_logo", "map_image", "player_avatar"]
+
 
 class UploadRequest(BaseModel):
     """Request for an upload token"""
