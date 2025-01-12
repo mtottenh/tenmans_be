@@ -2,7 +2,8 @@ from pydantic import BaseModel, UUID4, Field, validator
 from typing import List, Optional
 from datetime import datetime
 from enum import StrEnum
-
+from auth.schemas import PlayerPublic
+from teams.schemas import TeamBasic
 class BanScope(StrEnum):
     MATCH = "match"
     TOURNAMENT = "tournament"
@@ -59,8 +60,8 @@ class BanBase(BaseModel):
         from_attributes = True
 
 class BanDetailed(BanBase):
-    player: Optional["PlayerPublic"]
-    team: Optional["TeamBasic"]
-    issued_by: "PlayerPublic"
-    revoked_by: Optional["PlayerPublic"]
+    player: Optional[PlayerPublic]
+    team: Optional[TeamBasic]
+    issued_by: PlayerPublic
+    revoked_by: Optional[PlayerPublic]
     revoke_reason: Optional[str]

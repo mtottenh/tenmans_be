@@ -3,19 +3,20 @@ from fastapi.security import HTTPBearer
 from fastapi.security.http import HTTPAuthorizationCredentials
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.db.main import get_session
-from src.fixtures.MapPicker.commands import ConnectionManagerMode, Map
-from src.fixtures.MapPicker.state_machine import MapPickerModel, WebSocketStateMachine
-from src.fixtures.service import FixtureService
-from src.players.dependencies import get_current_player, get_current_season
-from src.players.models import Player
-from src.seasons.models import Season
-from src.maps.service import MapService
+from db.main import get_session
+from fixtures.MapPicker.commands import ConnectionManagerMode, Map
+from fixtures.MapPicker.state_machine import MapPickerModel, WebSocketStateMachine
+from fixtures.service import FixtureService
+from auth.dependencies import get_current_player
+from auth.models import Player
+from competitions.models.seasons import Season
+from competitions.season.dependencies import get_active_season
+from maps.service import MapService
 
 
 FIXTURE_ORCHESTRATORS={}
 class GetWSFixtureOrchestrator:
-    async def __call__(self, request: Request, current_player: Player = Depends(get_current_player), current_season: Season = Depends(get_current_season), session=Depends(get_session)) -> WebSocketStateMachine:
+    async def __call__(self, request: Request, current_player: Player = Depends(get_current_player), current_season: Season = Depends(get_active_season), session=Depends(get_session)) -> WebSocketStateMachine:
         if not 'fixture_id' in request.path_params and not 'pug_id' in request.path_params:
                     return False
 

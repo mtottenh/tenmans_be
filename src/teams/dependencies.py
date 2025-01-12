@@ -1,11 +1,11 @@
 from fastapi import Depends, HTTPException, Path, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import Optional
-from src.auth.models import Player
-from src.auth.dependencies import get_current_player
-from src.db.main import get_session
-from src.teams.service import TeamService
-from src.auth.service import AuthService
+from auth.models import Player
+from auth.dependencies import get_current_player
+from db.main import get_session
+from teams.service import TeamService
+from auth.service import AuthService
 
 team_service = TeamService()
 auth_service = AuthService()
@@ -13,10 +13,10 @@ auth_service = AuthService()
 from fastapi import Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import Optional
-from src.auth.models import Player
-from src.auth.service import AuthService
-from src.db.main import get_session
-from src.teams.service import TeamService
+from auth.models import Player
+from auth.service import AuthService
+from db.main import get_session
+from teams.service import TeamService
 
 team_service = TeamService()
 auth_service = AuthService()

@@ -6,15 +6,15 @@ from pathlib import Path
 import aiofiles
 import os
 import shutil
-from src.upload.models import UploadRequest, UploadToken
-from src.upload.service import UploadService
+from upload.models import UploadRequest, UploadToken
+from upload.service import UploadService
 from werkzeug.utils import secure_filename
 from datetime import timedelta
 
-from src.db.main import get_session
-from src.auth.dependencies import get_current_player
-from src.auth.models import Player
-from src.state.service import StateService, StateType, get_state_service
+from db.main import get_session
+from auth.dependencies import get_current_player
+from auth.models import Player
+from state.service import StateService, StateType, get_state_service
 
 
 upload_router = APIRouter(prefix="/uploads")

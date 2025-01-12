@@ -1,8 +1,8 @@
 from functools import wraps
 from typing import Any, Callable, Dict, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.audit.models import AuditLog
-from src.auth.models import Player
+from audit.models import AuditLog
+from auth.models import Player
 from sqlmodel import select, desc
 import inspect
 import uuid

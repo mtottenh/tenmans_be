@@ -4,7 +4,7 @@ from uuid import uuid4
 import httpx
 import websockets
 import json
-from src.fixtures.MapPicker.commands import *
+from fixtures.MapPicker.commands import *
 
 # Base API URL
 API_BASE_URL = "localhost:8000/api/v1/fixtures"

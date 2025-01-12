@@ -3,7 +3,7 @@ from fastapi import WebSocket
 from typing_extensions import Annotated
 from pydantic import BaseModel, Field, TypeAdapter
 from enum import StrEnum
-from src.maps.schema import MapRespModel
+from maps.schemas import MapBase as MapRespModel
 
 class Side(StrEnum):
     CT="Counter Terrorists"

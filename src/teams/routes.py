@@ -4,21 +4,21 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List
 import os
 
-from src.db.main import get_session
-from src.auth.dependencies import get_current_player
-from src.auth.models import Player
-from src.auth.service import AuthService
-from src.competitions.season.service import SeasonService
-from src.teams.models import Team
-from src.teams.schemas import (
+from db.main import get_session
+from auth.dependencies import get_current_player
+from auth.models import Player
+from auth.service import AuthService
+from competitions.season.service import SeasonService
+from teams.models import Team
+from teams.schemas import (
     TeamCreate,
     TeamUpdate,
 )
-from src.teams.service import TeamService, TeamServiceError
-from src.state.service import StateService
-from src.upload.service import UploadService
+from teams.service import TeamService, TeamServiceError
+from state.service import StateService
+from upload.service import UploadService
 from .dependencies import require_team_captain
-from src.config import Config
+from config import Config
 
 team_router = APIRouter(prefix="/teams")
 team_service = TeamService()

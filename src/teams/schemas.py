@@ -2,7 +2,7 @@ from pydantic import BaseModel, UUID4, Field
 from typing import List, Optional
 from datetime import datetime
 from .models import Team, Roster, TeamCaptain
-from src.auth.schemas import PlayerPublic
+from auth.schemas import PlayerPublic
 
 # Request Schemas
 class TeamCreate(BaseModel):

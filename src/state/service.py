@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import timedelta
 from fastapi import Depends
-from src.config import Config
+from config import Config
 
 T = TypeVar('T', bound=BaseModel)
 

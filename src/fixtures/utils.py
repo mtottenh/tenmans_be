@@ -2,8 +2,10 @@ from typing import List, Tuple
 from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from datetime import timedelta, datetime
-from .models import Round, Fixture, Result
-from src.teams.models import Team, Roster
+from competitions.models.fixtures import Fixture
+from competitions.models.rounds import Round
+from matches.models import Result
+from teams.models import Team, Roster
 import uuid
 
 

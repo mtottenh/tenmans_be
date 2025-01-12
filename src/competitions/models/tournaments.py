@@ -7,6 +7,8 @@ from enum import StrEnum
 from typing import List, Optional
 import uuid
 
+from maps.models import TournamentMap
+
 
 class TournamentType(StrEnum):
     REGULAR = "regular"
@@ -63,7 +65,7 @@ class Tournament(SQLModel, table=True):
     fixtures: List["Fixture"] = Relationship(back_populates="tournament")
     maps: List["Map"] = Relationship(
         back_populates="tournaments",
-        link_model="TournamentMap"
+        link_model=TournamentMap
     )
     registrations: List["TournamentRegistration"] = Relationship(back_populates="tournament")
 

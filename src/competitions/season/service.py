@@ -1,7 +1,7 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
 from typing import List, Optional
-from src.competitions.models.seasons import Season, SeasonState
+from competitions.models.seasons import Season, SeasonState
 from ..schemas import SeasonCreate
 import uuid
 

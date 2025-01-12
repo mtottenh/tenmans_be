@@ -98,6 +98,14 @@ class Player(SQLModel, table=True):
     substitute_availability: List["SubstituteAvailability"] = Relationship(
         back_populates="player"
     )
+    join_requests: List["TeamJoinRequest"] = Relationship(
+        back_populates="player",
+        sa_relationship_kwargs={"foreign_keys": "TeamJoinRequest.player_uid"}
+    )
+    handled_join_requests: List["TeamJoinRequest"] = Relationship(
+        back_populates="responder",
+        sa_relationship_kwargs={"foreign_keys": "TeamJoinRequest.responded_by"}
+    )
 
 
 class VerificationRequest(SQLModel, table=True):

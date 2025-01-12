@@ -1,9 +1,9 @@
 
 from fastapi import Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.auth.dependencies import get_current_player
-from src.auth.models import Player
-from src.db.main import get_session
+from auth.dependencies import get_current_player
+from auth.models import Player
+from db.main import get_session
 from .service import SeasonService
 
 season_service = SeasonService()

@@ -3,9 +3,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
 import uuid
 
-from src.db.main import get_session
-from src.auth.models import Player
-from src.auth.dependencies import (
+from db.main import get_session
+from auth.models import Player
+from auth.dependencies import (
     get_current_player,
     GlobalPermissionChecker,
     TournamentPermissionChecker

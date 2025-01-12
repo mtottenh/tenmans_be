@@ -3,14 +3,14 @@ from typing import List, Optional, Tuple, Dict
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.sql.operators import is_
 from sqlmodel import select, desc, or_
-from src.auth.models import Player, Permission, Role, PlayerRole
-from src.auth.schemas import TokenResponse, AuthType, PlayerEmailCreate, PlayerLogin, PlayerUpdate
+from auth.models import Player, Permission, Role, PlayerRole
+from auth.schemas import TokenResponse, AuthType, PlayerEmailCreate, PlayerLogin, PlayerUpdate
 from passlib.context import CryptContext
 import httpx
 import jwt
 from enum import StrEnum
 import uuid
-from src.config import Config
+from config import Config
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -318,7 +318,7 @@ class AuthService:
             update_data = player_data.model_dump()
             for k, v in update_data.items():
                 if v is not None:
-                    if k is "password":
+                    if k == "password":
                         setattr(player_to_update, 'password_hash', self.get_password_hash(v))
                     else:
                         setattr(player_to_update, k, v)

@@ -7,22 +7,22 @@ from asyncio import timeout as async_timeout
 from asyncio import TimeoutError
 from sqlalchemy import Null
 import traceback
-from src.fixtures.MapPicker.state_machine import WSConnMgr, WebSocketStateMachine
-from src.fixtures.dependencies import GetWSFixtureOrchestrator, GetWSPugOrchestrator
-from src.fixtures.MapPicker.commands import WSSCommand
-from src.players.models import Player, PlayerRoles
+from fixtures.MapPicker.state_machine import WSConnMgr, WebSocketStateMachine
+from fixtures.dependencies import GetWSFixtureOrchestrator, GetWSPugOrchestrator
+from fixtures.MapPicker.commands import WSSCommand
+from auth.models import Player, PlayerRoles
 from .service import FixtureService, CreateFixtureError, ResultsService
 from .schemas import FixtureCreateModel, FixtureDate, PugCreateModel, ResultConfirmModel, ResultCreateModel
 from .models import Fixture, Pug,  Result, Round
-from src.db.main import get_session
+from db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.players.dependencies import AccessTokenBearer, get_current_player
-from src.teams.service import TeamService
-from src.seasons.models import Season
-from src.seasons.service import SeasonService
-from src.seasons.dependencies import get_active_season
+from auth.dependencies import AccessTokenBearer, get_current_player
+from teams.service import TeamService
+from seasons.models import Season
+from seasons.service import SeasonService
+from seasons.dependencies import get_active_season
 from typing import List, Tuple
-from src.config import Config
+from config import Config
 import logging
 
 logger = logging.getLogger('FixtureRouter')

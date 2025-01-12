@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.auth.schemas import (
+from auth.schemas import (
     PlayerEmailCreate, 
     TokenResponse,
     PlayerUpdate,
@@ -12,8 +12,8 @@ from src.auth.schemas import (
     # PasswordResetConfirm,
     # EmailVerificationRequest
 )
-from src.auth.service import AuthService
-from src.auth.dependencies import (
+from auth.service import AuthService
+from auth.dependencies import (
     get_session,
     RefreshTokenBearer,
     AccessTokenBearer,
@@ -21,11 +21,11 @@ from src.auth.dependencies import (
     CurrentPlayer
 )
 from pydantic import BaseModel
-from src.state.service import StateService, StateType, get_state_service
+from state.service import StateService, StateType, get_state_service
 from starlette.responses import RedirectResponse
 from typing import Optional, List
 import re
-from src.config import Config
+from config import Config
 from openid.consumer.consumer import Consumer, SUCCESS, FAILURE
 from openid.store.memstore import MemoryStore
 

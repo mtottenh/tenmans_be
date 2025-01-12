@@ -4,14 +4,14 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
-from src.competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
-from src.competitions.models.rounds import Round
-from src.competitions.models.fixtures import Fixture
-from src.teams.service import TeamService
-from src.teams.models import Team
+from competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
+from competitions.models.rounds import Round
+from competitions.models.fixtures import Fixture
+from teams.service import TeamService
+from teams.models import Team
 from .schemas import RegistrationReviewRequest, RegistrationStatus, RegistrationWithdrawRequest, TournamentCreate, TournamentRegistrationList, TournamentRegistrationRequest, TournamentUpdate, TournamentTeam, TournamentStandings
-from src.audit.service import AuditService
-from src.auth.models import Player
+from audit.service import AuditService
+from auth.models import Player
 
 class TournamentServiceError(Exception):
     """Base exception for tournament service errors"""

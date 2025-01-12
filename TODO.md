@@ -38,10 +38,10 @@
     * [x] Add: Logo to POST /teams/
     * [x] Add: Path for GET /teams/$id/logo
 * [ ] Add: Average ELO of roster to Team information page
-* [ ] Captains: ability to make other team members as a captain
+* [ ] Captains: Ability to make other team members as a captain
 * [ ] Captain: Ability to remove a player from the roster.
 * [ ] Captain: Ability to reject join request
-* [ ] Captain: Add ability to invite player
+* [ ] Captain: Ability to invite player
 * [ ] Player: Ability to cancle join request
 * [ ] Captain: Not allowed to join another team
 * [ ] Player/Captain: Can't request to join more than one team
@@ -61,3 +61,25 @@
 * [ ] Add: Players dashboard to see all players in the league
 * [ ] Add: Search on players dashboard (captains get invite link to un-rostered players)
 * [ ] Add: Filter to players not on a roster.
+
+
+
+
+#### New Data model integrations
+
+* Roster Service
+* Fixtures/Results
+* Pugs
+* Integrate the map picker state machines
+* Go back and integrate the Audit module in all Services for actions that must be audited.
+* Go back across all Routes and implement RBAC where nessecary
+* Utils - Non Web based
+    * [ ] Creating an admin user
+    * [ ] Updating and displaying a users permissions/roles
+    * [ ] Seeding a season
+* Backups
+* Migrations
+* Upload service
+* Map service
+* State Service
+* Add Redis to the Dockerfile.

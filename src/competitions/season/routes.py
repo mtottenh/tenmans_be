@@ -3,9 +3,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
 import uuid
 
-from src.db.main import get_session
-from src.auth.dependencies import get_current_player, GlobalPermissionChecker
-from src.auth.models import Player
+from db.main import get_session
+from auth.dependencies import get_current_player, GlobalPermissionChecker
+from auth.models import Player
 from ..models.seasons import Season
 from .service import SeasonService, SeasonStateError
 

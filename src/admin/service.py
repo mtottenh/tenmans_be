@@ -4,12 +4,12 @@ from typing import List, Optional
 from datetime import datetime
 import uuid
 
-from src.auth.models import Player, Role, VerificationStatus
-from src.auth.schemas import PlayerVerificationUpdate, PlayerRoleAssign
-from src.auth.service import AuthService, ScopeType
-from src.moderation.models import Ban, BanStatus
-from src.moderation.schemas import BanCreate
-from src.audit.service import AuditService
+from auth.models import Player, Role, VerificationStatus
+from auth.schemas import PlayerVerificationUpdate, PlayerRoleAssign
+from auth.service import AuthService, ScopeType
+from moderation.models import Ban, BanStatus
+from moderation.schemas import BanCreate
+from audit.service import AuditService
 
 class AdminServiceError(Exception):
     """Base exception for admin service errors"""

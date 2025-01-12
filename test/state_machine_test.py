@@ -1,7 +1,7 @@
 from sys import stderr
 import pytest
-from src.fixtures.MapPicker.state_machine import MapPickerModel, WebSocketStateMachine
-from src.fixtures.MapPicker.commands import *
+from fixtures.MapPicker.state_machine import MapPickerModel, WebSocketStateMachine
+from fixtures.MapPicker.commands import *
 import logging
 logging.basicConfig(encoding='utf-8', level=logging.DEBUG)
 pytest_plugins = ('pytest_asyncio',)

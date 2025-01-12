@@ -2,9 +2,9 @@ from typing import Annotated, List, Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.db.main import get_session
-from src.auth.models import Player
-from src.auth.service import AuthService, PermissionScope, ScopeType
+from db.main import get_session
+from auth.models import Player
+from auth.service import AuthService, PermissionScope, ScopeType
 from pydantic import BaseModel
 import uuid
 

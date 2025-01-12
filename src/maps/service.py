@@ -1,4 +1,4 @@
-from src.maps.schema import MapCreateModel
+from .schemas import MapCreate
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
 from typing import Sequence
@@ -28,7 +28,7 @@ class MapService:
             raise MapNotFoundException(f"Map {name} not found")
         return map
 
-    async def create_map(self, map: MapCreateModel, session: AsyncSession) -> Map:
+    async def create_map(self, map: MapCreate, session: AsyncSession) -> Map:
         map_data_dict = map.model_dump()
         new_map = Map(**map_data_dict)
         session.add(new_map)

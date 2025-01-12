@@ -27,7 +27,7 @@ class Fixture(SQLModel, table=True):
     rescheduled_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
     reschedule_reason: Optional[str]
     status: FixtureStatus = Field(sa_column=sa.Column(sa.Enum(FixtureStatus)))
-    forfeit_winner: Optional[UUID] = Field(sa_column=Column(ForeignKey("teams.id")))
+    forfeit_winner: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("teams.id")))
     forfeit_reason: Optional[str]
     admin_notes: Optional[str]
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))

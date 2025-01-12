@@ -1,28 +1,8 @@
 from pydantic import BaseModel, Field, UUID4
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from enum import StrEnum
+from ..base_schemas import TournamentType, RegistrationStatus, TournamentBase, TournamentRegistrationBase
 
-
-
-class RegistrationStatus(StrEnum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    WITHDRAWN = "withdrawn"
-    DISQUALIFIED = "disqualified"
-
-
-class TournamentType(StrEnum):
-    REGULAR = "regular"
-    KNOCKOUT = "knockout"
-    PUG = "pug"
-
-class TournamentState(StrEnum):
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
 
 # Request Schemas
 class TournamentCreate(BaseModel):
@@ -57,19 +37,6 @@ class RegistrationWithdrawRequest(BaseModel):
     reason: str
 
 # Response Schemas
-class TournamentBase(BaseModel):
-    """Base tournament response schema"""
-    id: UUID4
-    name: str
-    type: TournamentType
-    state: TournamentState
-    season_id: UUID4
-    max_team_size: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 class TournamentWithStats(TournamentBase):
     """Tournament response with additional statistics"""
@@ -111,19 +78,7 @@ class TournamentStandings(BaseModel):
 #     matches_completed: int
 #     matches_remaining: int
 
-class TournamentRegistrationBase(BaseModel):
-    """Base schema for tournament registration responses"""
-    id: UUID4
-    tournament_id: UUID4
-    team_id: UUID4
-    status: RegistrationStatus
-    requested_at: datetime
-    seed: Optional[int]
-    group: Optional[str]
-    final_position: Optional[int]
 
-    class Config:
-        from_attributes = True
 
 class TournamentRegistrationDetail(TournamentRegistrationBase):
     """Detailed tournament registration response"""

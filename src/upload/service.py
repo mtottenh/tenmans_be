@@ -9,10 +9,10 @@ import shutil
 from werkzeug.utils import secure_filename
 from datetime import timedelta
 
-from src.db.main import get_session
-from src.auth.dependencies import get_current_player
-from src.auth.models import Player
-from src.state.service import StateService, StateType, get_state_service
+from db.main import get_session
+from auth.dependencies import get_current_player
+from auth.models import Player
+from state.service import StateService, StateType, get_state_service
 from .models import UploadRequest, UploadToken, UploadType
 class UploadConfig:
     """Configuration for different upload types"""

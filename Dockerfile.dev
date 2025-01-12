@@ -12,6 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    coreutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements file
@@ -27,4 +28,5 @@ RUN mkdir -p logo_store map_store
 EXPOSE 8000
 
 # Command to run the application with auto-reload
-CMD ["uvicorn", "src.__init__:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+#CMD ["uvicorn", "src.__init__:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["tail", "-f", "/dev/null"]

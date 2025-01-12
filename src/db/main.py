@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from src.config import Config
+from config import Config
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import event
@@ -18,9 +18,10 @@ def get_postgres_config() -> Dict:
     }
 
 
+DB_URL= f"postgresql+asyncpg://{Config.POSTGRES_USER}:{Config.POSTGRES_PASSWORD}@db:5432/{Config.POSTGRES_DB}"
 # Create async engine with PostgreSQL-specific configurations
 engine = create_async_engine(
-    f"postgresql+asyncpg://{Config.POSTGRES_USER}:{Config.POSTGRES_PASSWORD}@db:5432/{Config.POSTGRES_DB}",
+    DB_URL,
     echo=Config.DB_ECHO,
     future=True,
     **get_postgres_config()

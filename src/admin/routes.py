@@ -3,20 +3,20 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
 from datetime import datetime
 
-from src.db.main import get_session
-from src.auth.models import Player
-from src.auth.schemas import (
+from db.main import get_session
+from auth.models import Player
+from auth.schemas import (
     PlayerPrivate,
     PlayerVerificationUpdate,
     PlayerRoleAssign,
     VerificationRequestResponse
 )
-from src.auth.dependencies import (
+from auth.dependencies import (
     get_current_player,
     GlobalPermissionChecker,
 )
-from src.moderation.schemas import BanCreate, BanDetailed
-from src.audit.schemas import AuditLogBase
+from moderation.schemas import BanCreate, BanDetailed
+from audit.schemas import AuditLogBase
 from .service import AdminService, AdminServiceError
 
 admin_router = APIRouter(prefix="/admin/players")

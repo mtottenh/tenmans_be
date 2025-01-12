@@ -6,13 +6,18 @@ from datetime import datetime
 from enum import StrEnum
 from typing import List
 import uuid
+
+class RoundType(StrEnum):
+    GROUP_STAGE = "group"
+    KNOCKOUT = "knockout"
+
 class Round(SQLModel, table=True):
     __tablename__ = "rounds"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     tournament_id: uuid.UUID = Field(sa_column=Column(ForeignKey("tournaments.id")))
     round_number: int
-    type: str  # group_stage, knockout, etc.
+    type: RoundType  # group_stage, knockout, etc.
     best_of: int  # Number of maps in series
     start_date: datetime
     end_date: datetime

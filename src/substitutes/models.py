@@ -1,19 +1,16 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy.dialects.sqlite as sl
-import sqlalchemy as sa
 from sqlalchemy import ForeignKey
-from sqlalchemy_utils import UUIDType
+from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
-from enum import StrEnum
 from typing import List, Optional
-
+import uuid
 
 
 class SubstituteAvailability(SQLModel, table=True):
     __tablename__ = "substitute_availability"
     id: uuid.UUID = Field(
-        sa_column=Column(UUIDType, nullable=False, primary_key=True, default=uuid.uuid4)
-    )
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
     tournament_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("tournaments.id")))
     season_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("seasons.id")))

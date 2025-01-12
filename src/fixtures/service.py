@@ -1,11 +1,17 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
-from .schemas import FixtureCreateModel, PugCreateModel, ResultConfirmModel, ResultCreateModel
 from sqlmodel import select, desc, or_
-from .models import Fixture, Pug, Result, Round, RoundType
-from src.teams.models import Team
-from src.teams.service import TeamService, RosterService
-from src.seasons.service import SeasonService
-from src.seasons.models import Season
+from teams.models import Team
+from teams.service import TeamService, RosterService
+from competitions.season.service import SeasonService
+from competitions.models.seasons import Season
+from competitions.models.fixtures import Fixture
+from competitions.models.rounds import Round, RoundType
+from competitions.fixtures.schemas import FixtureCreate as FixtureCreateModel
+from matches.models import Result
+from matches.schemas import ResultConfirm as ResultConfirmModel, ResultCreate as ResultCreateModel
+from pugs.models import Pug
+from pugs.schemas import PugCreate as PugCreateModel
+
 from enum import Enum, StrEnum
 from datetime import datetime, timedelta
 from typing import List, Optional

@@ -4,19 +4,18 @@ from fastapi import APIRouter, Depends, Form, UploadFile, status
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.players.dependencies import RoleChecker
-from src.db.main import get_session
+from auth.dependencies import require_admin
+from db.main import get_session
 from .models import Map
-from .schema import MapCreateModel, MapRespModel
+from .schemas import MapBase, MapCreate
 from .service import MapService
 from typing import List
 
-admin_checker = Depends(RoleChecker(["admin", "user"]))
 map_router = APIRouter(prefix="/maps")
 map_service = MapService()
 
 
-@map_router.post("/", dependencies=[admin_checker], status_code=status.HTTP_201_CREATED)
+@map_router.post("/", dependencies=[require_admin], status_code=status.HTTP_201_CREATED)
 async def create_team(
     img: UploadFile,
     name: str = Form(...),
@@ -28,7 +27,7 @@ async def create_team(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Map with name '{name}' already exists",
         )
-    new_map = await map_service.create_map(MapCreateModel(name=name), session)
+    new_map = await map_service.create_map(MapCreate(name=name), session)
     filedir = os.path.join(os.getcwd(), 'map_store', str(new_map.id))
     if not os.path.exists(filedir):
         os.makedirs(filedir)
@@ -48,13 +47,13 @@ async def get_map_img(map: Map):
         return FileResponse(map.img)
 
 
-@map_router.get('/', response_model=List[MapRespModel])
+@map_router.get('/', response_model=List[MapBase])
 async def get_all_maps(
     session: AsyncSession = Depends(get_session),
 ):
     db_maps = await map_service.get_all_maps(session)
 
-    maps = [MapRespModel(name=m.name, id=str(m.id), img=map_service.get_map_img_path(m)) for m in db_maps]
+    maps = [MapBase(name=m.name, id=str(m.id), img=map_service.get_map_img_path(m)) for m in db_maps]
     return maps
 
 
