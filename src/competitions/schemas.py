@@ -2,22 +2,12 @@ from pydantic import BaseModel, UUID4, Field, validator
 from typing import List, Optional, Dict
 from datetime import datetime
 from enum import StrEnum
+from .tournament.schemas import TournamentBase
 
 class SeasonState(StrEnum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
-
-class TournamentType(StrEnum):
-    REGULAR = "regular"
-    KNOCKOUT = "knockout"
-    PUG = "pug"
-
-class TournamentState(StrEnum):
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
 
 # Request Schemas
 class SeasonCreate(BaseModel):
@@ -25,24 +15,6 @@ class SeasonCreate(BaseModel):
     start_date: datetime
     end_date: datetime
 
-class TournamentCreate(BaseModel):
-    name: str = Field(..., min_length=3, max_length=50)
-    type: TournamentType
-    season_id: UUID4
-    max_team_size: int = Field(..., ge=5, le=10)
-    map_pool: List[UUID4]
-    format: Dict[str, any]  # Flexible format configuration
-
-    @validator('format')
-    def validate_format(cls, v, values):
-        if values['type'] == TournamentType.REGULAR:
-            required_keys = {'group_size', 'teams_per_group', 'teams_advancing'}
-            if not all(key in v for key in required_keys):
-                raise ValueError(f'Format must include {required_keys}')
-        return v
-    class Config:
-        arbitrary_types_allowed=True
-        
 class RoundCreate(BaseModel):
     tournament_id: UUID4
     round_number: int
@@ -73,18 +45,6 @@ class SeasonBase(BaseModel):
     name: str
     state: SeasonState
     created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-class TournamentBase(BaseModel):
-    id: UUID4
-    name: str
-    type: TournamentType
-    state: TournamentState
-    max_team_size: int
-    created_at: datetime
-    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -124,12 +84,6 @@ class SeasonDetailed(SeasonBase):
     total_teams: int
     total_matches: int
 
-class TournamentDetailed(TournamentBase):
-    season: SeasonBase
-    rounds: List[RoundBase]
-    participating_teams: int
-    matches_completed: int
-    matches_remaining: int
 
 class RoundDetailed(RoundBase):
     tournament: TournamentBase

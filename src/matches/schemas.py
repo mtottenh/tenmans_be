@@ -21,7 +21,7 @@ class ResultCreate(BaseModel):
 
     @validator('team_1_score', 'team_2_score')
     def validate_scores(cls, v):
-        if v > 30:  # Max rounds in regulation
+        if v > 100:  # TODO: Max rounds in regulation - set to 100 for now as we haven't got OT sorted
             raise ValueError('Score exceeds maximum possible rounds')
         return v
 

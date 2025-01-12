@@ -4,10 +4,12 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
-from src.competitions.models.tournaments import Tournament, TournamentType, TournamentState
+from src.competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
 from src.competitions.models.rounds import Round
 from src.competitions.models.fixtures import Fixture
-from .schemas import TournamentCreate, TournamentUpdate, TournamentTeam, TournamentStandings
+from src.teams.service import TeamService
+from src.teams.models import Team
+from .schemas import RegistrationReviewRequest, RegistrationStatus, RegistrationWithdrawRequest, TournamentCreate, TournamentRegistrationList, TournamentRegistrationRequest, TournamentUpdate, TournamentTeam, TournamentStandings
 from src.audit.service import AuditService
 from src.auth.models import Player
 
@@ -15,9 +17,14 @@ class TournamentServiceError(Exception):
     """Base exception for tournament service errors"""
     pass
 
+class RegistrationError(Exception):
+    """Base exception for registration errors"""
+    pass
+
 class TournamentService:
     def __init__(self):
         self.audit_service = AuditService()
+        self.team_service = TeamService()
 
     def _tournament_audit_details(self, tournament: Tournament) -> dict:
         """Extracts audit details from a tournament operation"""
@@ -197,8 +204,10 @@ class TournamentService:
             raise TournamentServiceError("Group size must be an integer greater than 1")
         if not isinstance(config['teams_per_group'], int) or config['teams_per_group'] < 2:
             raise TournamentServiceError("Teams per group must be an integer greater than 1")
-        if not isinstance(config['teams_advancing'], int) or config['teams_advancing'] < 1:
-            raise TournamentServiceError("Teams advancing must be an integer greater than 0")
+        # teams_advancing is optional, defaults to all teams (-1)
+        if 'teams_advancing' in config:
+            if not isinstance(config['teams_advancing'], int) or (config['teams_advancing'] != -1 and config['teams_advancing'] < 1):
+                raise TournamentServiceError("Teams advancing must be -1 (all teams) or a positive integer")
 
     def _validate_knockout_tournament_config(self, config: Dict[str, Any]):
         """Validates configuration for knockout tournament format"""
@@ -257,3 +266,248 @@ class TournamentService:
         # 2. Track which teams have advanced/been eliminated
         # 3. Calculate current positions
         pass
+
+    def _registration_audit_details(self, registration) -> dict:
+        """Extract audit details for registration operations"""
+        return {
+            "registration_id": str(registration.id),
+            "tournament_id": str(registration.tournament_id),
+            "team_id": str(registration.team_id),
+            "status": registration.status,
+            "requested_at": registration.requested_at.isoformat(),
+            "reviewed_at": registration.reviewed_at.isoformat() if registration.reviewed_at else None,
+            "withdrawn_at": registration.withdrawn_at.isoformat() if registration.withdrawn_at else None
+        }
+
+    async def get_registration(
+        self,
+        tournament_id: uuid.UUID,
+        registration_id: uuid.UUID,
+        session: AsyncSession
+    ):
+        """Get a specific tournament registration"""
+        stmt = select(TournamentRegistration).where(
+            TournamentRegistration.tournament_id == tournament_id,
+            TournamentRegistration.id == registration_id
+        )
+        result = await session.exec(stmt)
+        return result.first()
+
+    async def get_registrations(
+        self,
+        tournament_id: uuid.UUID,
+        status: Optional[RegistrationStatus],
+        session: AsyncSession
+    ) -> TournamentRegistrationList:
+        """Get all registrations for a tournament, optionally filtered by status"""
+        stmt = select(TournamentRegistration).where(
+            TournamentRegistration.tournament_id == tournament_id
+        )
+        if status:
+            stmt = stmt.where(TournamentRegistration.status == status)
+        
+        result = await session.exec(stmt)
+        registrations = result.all()
+        
+        # Calculate summary stats
+        total_registered = len([r for r in registrations 
+                              if r.status == RegistrationStatus.APPROVED])
+        total_pending = len([r for r in registrations 
+                           if r.status == RegistrationStatus.PENDING])
+        
+        return TournamentRegistrationList(
+            total_registered=total_registered,
+            total_pending=total_pending,
+            registrations=registrations
+        )
+
+    @AuditService.audited_transaction(
+        action_type="tournament_registration_request",
+        entity_type="tournament_registration",
+        details_extractor=_registration_audit_details
+    )
+    async def request_registration(
+        self,
+        tournament_id: uuid.UUID,
+        registration_request: TournamentRegistrationRequest,
+        actor: Player,
+        session: AsyncSession
+    ) -> TournamentRegistration:
+        """Request registration in a tournament"""
+        # Get tournament and team
+        tournament = await self.get_tournament(tournament_id, session)
+        if not tournament:
+            raise RegistrationError("Tournament not found")
+            
+        team = await self.team_service.get_team_by_id(
+            registration_request.team_id,
+            session
+        )
+        if not team:
+            raise RegistrationError("Team not found")
+            
+        # Validate registration is allowed
+        await self._validate_registration_request(
+            tournament,
+            team,
+            actor,
+            session
+        )
+        
+        # Create registration
+        registration = TournamentRegistration(
+            tournament_id=tournament_id,
+            team_id=team.id,
+            status=RegistrationStatus.PENDING,
+            requested_by=actor.uid,
+            requested_at=datetime.now(),
+            notes=registration_request.notes
+        )
+        
+        session.add(registration)
+        return registration
+
+    @AuditService.audited_transaction(
+        action_type="tournament_registration_review",
+        entity_type="tournament_registration",
+        details_extractor=_registration_audit_details
+    )
+    async def review_registration(
+        self,
+        tournament_id: uuid.UUID,
+        registration_id: uuid.UUID,
+        review: RegistrationReviewRequest,
+        actor: Player,
+        session: AsyncSession
+    ) -> TournamentRegistration:
+        """Review a tournament registration request"""
+        registration = await self.get_registration(
+            tournament_id,
+            registration_id,
+            session
+        )
+        if not registration:
+            raise RegistrationError("Registration not found")
+            
+        if registration.status != RegistrationStatus.PENDING:
+            raise RegistrationError("Can only review pending registrations")
+            
+        # Update registration
+        registration.status = review.status
+        registration.reviewed_by = actor.uid
+        registration.reviewed_at = datetime.now()
+        registration.review_notes = review.notes
+        
+        session.add(registration)
+        return registration
+
+    @AuditService.audited_transaction(
+        action_type="tournament_registration_withdraw",
+        entity_type="tournament_registration",
+        details_extractor=_registration_audit_details
+    )
+    async def withdraw_registration(
+        self,
+        tournament_id: uuid.UUID,
+        registration_id: uuid.UUID,
+        withdrawal: RegistrationWithdrawRequest,
+        actor: Player,
+        session: AsyncSession
+    ) -> TournamentRegistration:
+        """Withdraw from a tournament"""
+        registration = await self.get_registration(
+            tournament_id,
+            registration_id,
+            session
+        )
+        if not registration:
+            raise RegistrationError("Registration not found")
+            
+        tournament = await self.get_tournament(tournament_id, session)
+        
+        # Verify actor is team captain
+        is_captain = await self.team_service.player_is_team_captain(
+            actor,
+            registration.team,
+            session
+        )
+        if not is_captain:
+            raise RegistrationError("Only team captains can withdraw from tournaments")
+            
+        # Handle withdrawal based on tournament state
+        if tournament.state == TournamentState.REGISTRATION_OPEN:
+            # Simple withdrawal before registration closes
+            registration.status = RegistrationStatus.WITHDRAWN
+        elif tournament.state in [TournamentState.REGISTRATION_CLOSED, 
+                                TournamentState.IN_PROGRESS]:
+            # Withdrawal after registration closes - handle forfeits
+            registration.status = RegistrationStatus.WITHDRAWN
+            # TODO: Integration with fixture service to handle forfeits
+        else:
+            raise RegistrationError(
+                "Cannot withdraw in current tournament state"
+            )
+            
+        registration.withdrawn_by = actor.uid
+        registration.withdrawn_at = datetime.now()
+        registration.withdrawal_reason = withdrawal.reason
+        
+        session.add(registration)
+        return registration
+
+    async def _validate_registration_request(
+        self,
+        tournament: Tournament,
+        team: Team,
+        actor: Player,
+        session: AsyncSession
+    ):
+        """Validate a registration request"""
+        # Check tournament state
+        if tournament.state != TournamentState.REGISTRATION_OPEN:
+            if (tournament.state == TournamentState.REGISTRATION_CLOSED and
+                tournament.allow_late_registration and
+                datetime.now() <= tournament.late_registration_end):
+                pass  # Allow late registration
+            else:
+                raise RegistrationError("Tournament registration is not open")
+                
+        # Check if team is already registered
+        existing = await session.exec(
+            select(TournamentRegistration).where(
+                TournamentRegistration.tournament_id == tournament.id,
+                TournamentRegistration.team_id == team.id,
+                TournamentRegistration.status.in_([
+                    RegistrationStatus.PENDING,
+                    RegistrationStatus.APPROVED
+                ])
+            )
+        )
+        if existing.first():
+            raise RegistrationError("Team is already registered")
+            
+        # Verify actor is team captain
+        is_captain = await self.team_service.player_is_team_captain(
+            actor,
+            team,
+            session
+        )
+        if not is_captain:
+            raise RegistrationError("Only team captains can register for tournaments")
+            
+        # Check team size requirements
+        roster_size = await self.team_service.get_active_roster_size(team, session)
+        if roster_size < tournament.min_team_size:
+            raise RegistrationError(
+                f"Team must have at least {tournament.min_team_size} players"
+            )
+            
+        # Check maximum registrations not exceeded
+        current_registrations = await session.exec(
+            select(TournamentRegistration).where(
+                TournamentRegistration.tournament_id == tournament.id,
+                TournamentRegistration.status == RegistrationStatus.APPROVED
+            )
+        )
+        if len(current_registrations.all()) >= tournament.max_teams:
+            raise RegistrationError("Tournament has reached maximum team capacity")

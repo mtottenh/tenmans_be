@@ -1,10 +1,11 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
+import uuid
 
 class PugStatus(StrEnum):
     CREATING = "creating"
@@ -15,7 +16,7 @@ class PugStatus(StrEnum):
 class Pug(SQLModel, table=True):
     __tablename__ = "pugs"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     status: PugStatus = Field(
         sa_column=sa.Column(sa.Enum(PugStatus)),
@@ -24,7 +25,7 @@ class Pug(SQLModel, table=True):
     match_format: str  # bo1, bo3
     max_players_per_team: int
     require_full_teams: bool = Field(default=True)
-    map_pool: List[uuid.UUID] = Field(sa_column=Column(sl.JSON))  # Array of map IDs
+    map_pool: List[uuid.UUID] = Field(sa_column=Column(JSON))  # Array of map IDs
     created_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     completed_at: Optional[datetime]
@@ -60,7 +61,7 @@ class PugPlayer(SQLModel, table=True):
 class PugMapResult(SQLModel, table=True):
     __tablename__ = "pug_map_results"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id")))
     map_number: int

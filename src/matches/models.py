@@ -1,10 +1,11 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
+import uuid
 
 class ConfirmationStatus(StrEnum):
     PENDING = "pending"
@@ -14,7 +15,7 @@ class ConfirmationStatus(StrEnum):
 class Result(SQLModel, table=True):
     __tablename__ = "results"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
     map_id: uuid.UUID = Field(sa_column=Column(ForeignKey("maps.id")))
@@ -32,7 +33,7 @@ class Result(SQLModel, table=True):
     admin_override_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
     admin_override_reason: Optional[str]
     demo_url: Optional[str]
-    screenshot_urls: List[str] = Field(sa_column=Column(sl.JSON))
+    screenshot_urls: List[str] = Field(sa_column=Column(JSON))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
