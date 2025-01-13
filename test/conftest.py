@@ -56,7 +56,7 @@ async def prepare_test_database():
 # Apply dependency overrides
 @pytest.fixture(scope="function", autouse=True)
 def override_dependencies():
-    from src.main import app  # Replace with your FastAPI app import
+    from main import app  # Replace with your FastAPI app import
     app.dependency_overrides[get_session] = override_get_session
 
 

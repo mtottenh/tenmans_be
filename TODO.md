@@ -67,19 +67,41 @@
 
 #### New Data model integrations
 
-* Roster Service
-* Fixtures/Results
+* [x] Roster Service
+* [x] Fixtures/Results
 * Pugs
 * Integrate the map picker state machines
 * Go back and integrate the Audit module in all Services for actions that must be audited.
 * Go back across all Routes and implement RBAC where nessecary
 * Utils - Non Web based
-    * [ ] Creating an admin user
-    * [ ] Updating and displaying a users permissions/roles
+    * [ ] Creating an admin user (done sorta, not tested)
+    * [ ] Updating and displaying a users permissions/roles (done sorta, not tested)
     * [ ] Seeding a season
 * Backups
 * Migrations
+    * Started ish?
 * Upload service
 * Map service
 * State Service
 * Add Redis to the Dockerfile.
+
+
+* [ ] Map pool data modle & service rework
+    * [ ] Map pool routes
+    * [ ] Final map pool size - make configurable (default = 7)
+* [ ] Permissions service Routes - currently only CLI tool, but global Admins should be able to use the service.
+* [ ] Substitutes
+
+* Tournament service:
+    * Basic group stage generation
+    * Simple playoff bracket creation
+* [ ] Fixture Service Routes
+* [ ] Integration of Map picker into the fixture routes/service
+* [ ] Server Data Model. 
+
+
+
+### RCON API
+* Need a separate web service that allows TLS Mutual Auth
+    * Requires a valid client cert
+    * 
