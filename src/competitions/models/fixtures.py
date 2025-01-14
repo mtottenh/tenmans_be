@@ -6,6 +6,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
 import uuid
+
+from matches.models import MatchFormat
+from matches.schemas import ConfirmationStatus
 class FixtureStatus(StrEnum):
     SCHEDULED = "scheduled"
     IN_PROGRESS = "in_progress"
@@ -46,3 +49,65 @@ class Fixture(SQLModel, table=True):
     results: List["Result"] = Relationship(back_populates="fixture")
     match_players: List["MatchPlayer"] = Relationship(back_populates="fixture")
     #team_elo_changes: List["TeamELOHistory"] = Relationship(back_populates="fixture")
+
+
+    @property
+    def maps_completed(self) -> int:
+        """Number of completed maps"""
+        return len([r for r in self.results if r.confirmation_status == ConfirmationStatus.CONFIRMED])
+    
+    @property
+    def maps_needed(self) -> int:
+        """Maps needed to win based on format"""
+        format_maps = {
+            MatchFormat.BO1: 1,
+            MatchFormat.BO3: 2,
+            MatchFormat.BO5: 3
+        }
+        return format_maps[self.match_format]
+    
+    @property
+    def winner_id(self) -> Optional[uuid.UUID]:
+        """Get winner ID if match is complete"""
+        if self.status == FixtureStatus.FORFEITED:
+            return self.forfeit_winner
+            
+        if self.status != FixtureStatus.COMPLETED:
+            return None
+            
+        team_1_wins = 0
+        team_2_wins = 0
+        
+        for result in self.results:
+            if result.confirmation_status != ConfirmationStatus.CONFIRMED:
+                continue
+            if result.winner_id == self.team_1:
+                team_1_wins += 1
+            elif result.winner_id == self.team_2:
+                team_2_wins += 1
+                
+        if team_1_wins >= self.maps_needed:
+            return self.team_1
+        elif team_2_wins >= self.maps_needed:
+            return self.team_2
+            
+        return None
+
+    @property 
+    def can_complete(self) -> bool:
+        """Check if fixture has enough confirmed results to complete"""
+        if self.status != FixtureStatus.IN_PROGRESS:
+            return False
+            
+        team_1_wins = 0
+        team_2_wins = 0
+        
+        for result in self.results:
+            if result.confirmation_status != ConfirmationStatus.CONFIRMED:
+                continue
+            if result.winner_id == self.team_1:
+                team_1_wins += 1
+            elif result.winner_id == self.team_2:
+                team_2_wins += 1
+                
+        return team_1_wins >= self.maps_needed or team_2_wins >= self.maps_needed

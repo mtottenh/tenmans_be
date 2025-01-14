@@ -54,7 +54,7 @@ class TournamentService:
         """Retrieve a tournament by ID"""
         stmt = select(Tournament).where(Tournament.id == tournament_id)
         result = await session.execute(stmt)
-        return result.first()
+        return result.scalars().first()
 
     async def get_tournaments_by_season(
         self,

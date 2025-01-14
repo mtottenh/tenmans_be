@@ -35,7 +35,7 @@ class TestTournamentProgression:
         # Start tournament
         started_tournament = await service.start_tournament(
             tournament.id,
-            admin_user,
+            admin_user,  
             session
         )
         
@@ -62,43 +62,39 @@ class TestTournamentProgression:
         tournament = regular_tournament_setup['tournament']
         builder = regular_tournament_setup['builder']
         service = TournamentService()
-        
-        # Setup tournament with some completed matches
+
         tournament.state = TournamentState.IN_PROGRESS
-        round = await builder.create_round(tournament, 1, RoundType.GROUP_STAGE, "active", session)
-        
-        # Create and complete fixtures
-        fixtures = []
-        for i in range(0, len(regular_tournament_setup['teams']), 2):
-            fixture = await builder.create_fixture(
-                tournament,
-                round,
-                regular_tournament_setup['teams'][i],
-                regular_tournament_setup['teams'][i+1],
-                FixtureStatus.COMPLETED,
-                session
-            )
-            await builder.create_match_result(fixture, 16, 14, admin_user)
-            fixtures.append(fixture)
-            
-        session.add(round)
-        for fixture in fixtures:
-            session.add(fixture)
+        session.add(tournament)
         await session.commit()
-        
-        # Complete the round
+
+        round = await builder.create_round(
+            tournament=tournament,
+            round_number=1,
+            round_type=RoundType.GROUP_STAGE,
+            status="active",
+        )
+
+        teams = builder.teams[:4]  # First 4 teams
+        for i in range(0, len(teams), 2):
+            fixture = await builder.create_fixture_with_results(
+                tournament=tournament,
+                round=round,
+                team_1=teams[i],
+                team_2=teams[i+1],
+                team_1_wins=2,  # Win 2-0
+                user=admin_user
+            )[0]
+
         updated_tournament = await service.complete_round(
             tournament.id,
             1,
             admin_user,
             session
         )
-        
-        # Verify round status
+
         completed_round = await service._get_round_by_number(tournament.id, 1, session)
         assert completed_round.status == "completed"
-        
-        # Verify next round status
+
         next_round = await service._get_round_by_number(tournament.id, 2, session)
         if next_round:
             assert next_round.status == "active"
@@ -114,54 +110,56 @@ class TestTournamentProgression:
         builder = knockout_tournament_setup['builder']
         service = TournamentService()
         
-        # Setup tournament with completed matches
         tournament.state = TournamentState.IN_PROGRESS
-        round = await builder.create_round(tournament, 1, RoundType.KNOCKOUT, "active")
-        next_round = await builder.create_round(tournament, 2, RoundType.KNOCKOUT, "pending", session)
-        
-        # Create and complete fixtures
-        fixtures = []
-        winners = []
-        for i in range(0, len(knockout_tournament_setup['teams']), 2):
-            fixture = await builder.create_fixture(
-                tournament,
-                round,
-                knockout_tournament_setup['teams'][i],
-                knockout_tournament_setup['teams'][i+1],
-                FixtureStatus.COMPLETED,
-                session
-            )
-            # Alternate winners
-            if i % 4 == 0:
-                await builder.create_match_result(fixture, 16, 14, admin_user, session)
-                winners.append(knockout_tournament_setup['teams'][i])
-            else:
-                await builder.create_match_result(fixture, 14, 16, admin_user, session)
-                winners.append(knockout_tournament_setup['teams'][i+1])
-            fixtures.append(fixture)
-            
-        session.add(round)
-        session.add(next_round)
-        for fixture in fixtures:
-            session.add(fixture)
+        session.add(tournament)
         await session.commit()
-        
-        # Complete the round
+
+        # First round
+        round = await builder.create_round(
+            tournament=tournament,
+            round_number=1,
+            round_type=RoundType.KNOCKOUT,
+            status="active",
+        )
+
+        # Setup next round for winners
+        next_round = await builder.create_round(
+            tournament=tournament,
+            round_number=2,
+            round_type=RoundType.KNOCKOUT,
+            status="pending",
+        )
+
+        # Create fixtures with alternating winners
+        teams = builder.teams[:4]
+        winners = []
+        for i in range(0, len(teams), 2):
+            fixture, results = await builder.create_fixture_with_results(
+                tournament=tournament,
+                round=round,
+                team_1=teams[i],
+                team_2=teams[i+1],
+                team_1_wins=2 if i % 4 == 0 else 0,  # Alternate winners
+                user=admin_user
+            )
+            winners.append(teams[i] if i % 4 == 0 else teams[i+1])
+
+        # Complete first round
         updated_tournament = await service.complete_round(
             tournament.id,
             1,
             admin_user,
             session
         )
-        
+
         # Verify round completion
         completed_round = await service._get_round_by_number(tournament.id, 1, session)
         assert completed_round.status == "completed"
-        
+
         # Verify next round
         next_round = await service._get_round_by_number(tournament.id, 2, session)
         assert next_round.status == "active"
-        
+
         # Verify next round fixtures
         next_fixtures = await service._get_round_fixtures(next_round.id, session)
         next_round_teams = {f.team_1 for f in next_fixtures} | {f.team_2 for f in next_fixtures}
@@ -178,39 +176,40 @@ class TestTournamentProgression:
         tournament = regular_tournament_setup['tournament']
         builder = regular_tournament_setup['builder']
         service = TournamentService()
-        
-        # Setup round with mix of completed and forfeited matches
+
         tournament.state = TournamentState.IN_PROGRESS
-        round = await builder.create_round(tournament, 1, RoundType.GROUP_STAGE, "active", session)
-        
-        fixtures = []
-        for i in range(0, len(regular_tournament_setup['teams']), 2):
-            fixture = await builder.create_fixture(
-                tournament,
-                round,
-                regular_tournament_setup['teams'][i],
-                regular_tournament_setup['teams'][i+1], session
-            )
-            if i < 2:
-                # Normal completion
-                fixture.status = FixtureStatus.COMPLETED
-                await builder.create_match_result(fixture, 16, 14, admin_user, session)
-            else:
-                # Forfeit
-                fixture.status = FixtureStatus.FORFEITED
-                fixture.forfeit_winner = regular_tournament_setup['teams'][i].id
-                await builder.create_forfeit_result(
-                    fixture,
-                    regular_tournament_setup['teams'][i].id,
-                    admin_user, session
-                )
-            fixtures.append(fixture)
-            
-        session.add(round)
-        for fixture in fixtures:
-            session.add(fixture)
+        session.add(tournament)
         await session.commit()
-        
+
+        round = await builder.create_round(
+            tournament=tournament,
+            round_number=1,
+            round_type=RoundType.GROUP_STAGE,
+            status="active",
+        )
+
+        teams = builder.teams[:4]
+
+        # Create one normal fixture
+        await builder.create_fixture_with_results(
+            tournament=tournament,
+            round=round,
+            team_1=teams[0],
+            team_2=teams[1],
+            team_1_wins=2,
+            user=admin_user
+        )
+
+        # Create one forfeited fixture
+        await builder.create_forfeited_fixture(
+            tournament=tournament,
+            round=round,
+            team_1=teams[2],
+            team_2=teams[3],
+            forfeit_winner=teams[2],
+            forfeit_reason="Team did not show"
+        )
+
         # Complete round
         updated_tournament = await service.complete_round(
             tournament.id,
@@ -218,10 +217,18 @@ class TestTournamentProgression:
             admin_user,
             session
         )
+
+        # Verify standings include forfeits correctly
+        standings = await service.get_tournament_standings(tournament.id, session)
+        team_standings = {team.team_id: team for team in standings.teams}
         
-        # Verify round completion
-        completed_round = await service._get_round_by_number(tournament.id, 1, session)
-        assert completed_round.status == "completed"
+        # Teams 0 and 2 should have wins
+        assert team_standings[teams[0].id].matches_won == 1  # Normal win
+        assert team_standings[teams[2].id].matches_won == 1  # Forfeit win
+        
+        # Teams 1 and 3 should have losses 
+        assert team_standings[teams[1].id].matches_lost == 1  # Normal loss
+        assert team_standings[teams[3].id].matches_lost == 1  # Forfeit loss
 
     async def test_incomplete_round_completion(
         self,
@@ -229,45 +236,46 @@ class TestTournamentProgression:
         session,
         admin_user
     ):
-        """Test attempting to complete round with incomplete matches"""
+        """Test trying to complete a round with unfinished matches"""
         tournament = regular_tournament_setup['tournament']
         builder = regular_tournament_setup['builder']
         service = TournamentService()
-        
-        # Setup round with incomplete matches
+
         tournament.state = TournamentState.IN_PROGRESS
-        round = await builder.create_round(tournament, 1, RoundType.GROUP_STAGE, "active", session)
-        
-        fixtures = []
-        for i in range(0, len(regular_tournament_setup['teams']), 2):
-            fixture = await builder.create_fixture(
-                tournament,
-                round,
-                regular_tournament_setup['teams'][i],
-                regular_tournament_setup['teams'][i+1], session
-            )
-            if i == 0:
-                # One completed match
-                fixture.status = FixtureStatus.COMPLETED
-                await builder.create_match_result(fixture, 16, 14, admin_user, session)
-            else:
-                # Rest incomplete
-                fixture.status = FixtureStatus.SCHEDULED
-            fixtures.append(fixture)
-            
-        session.add(round)
-        for fixture in fixtures:
-            session.add(fixture)
+        session.add(tournament)
         await session.commit()
-        
+
+        round = await builder.create_round(
+            tournament=tournament,
+            round_number=1,
+            round_type=RoundType.GROUP_STAGE,
+            status="active",
+        )
+
+        teams = builder.teams[:4]
+
+        # Create one completed fixture
+        await builder.create_fixture_with_results(
+            tournament=tournament,
+            round=round,
+            team_1=teams[0],
+            team_2=teams[1],
+            team_1_wins=2,
+            user=admin_user
+        )
+
+        # Create one incomplete fixture
+        await builder.create_fixture(
+            tournament=tournament,
+            round=round,
+            team_1=teams[2],
+            team_2=teams[3],
+            status=FixtureStatus.SCHEDULED,
+        )
+
         # Attempt to complete round
         with pytest.raises(TournamentServiceError, match="All fixtures must be completed"):
-            await service.complete_round(
-                tournament.id,
-                1,
-                admin_user,
-                session
-            )
+            await service.complete_round(tournament.id,  1, admin_user,  session)
 
     async def test_final_round_completion(
         self,
@@ -279,25 +287,28 @@ class TestTournamentProgression:
         tournament = knockout_tournament_setup['tournament']
         builder = knockout_tournament_setup['builder']
         service = TournamentService()
-        
-        # Setup final round
+
         tournament.state = TournamentState.IN_PROGRESS
-        final_round = await builder.create_round(tournament, 3, RoundType.KNOCKOUT, "active", session)
-        
-        # Create and complete final fixture
-        final = await builder.create_fixture(
-            tournament,
-            final_round,
-            knockout_tournament_setup['teams'][0],
-            knockout_tournament_setup['teams'][1],
-            FixtureStatus.COMPLETED, session
-        )
-        await builder.create_match_result(final, 16, 14, admin_user, session)
-        
-        session.add(final_round)
-        session.add(final)
+        session.add(tournament)
         await session.commit()
-        
+
+        final_round = await builder.create_round(
+            tournament=tournament,
+            round_number=3,  # Finals
+            round_type=RoundType.KNOCKOUT,
+            status="active",
+        )
+
+        # Create and complete final fixture
+        final_fixture, results = await builder.create_fixture_with_results(
+            tournament=tournament,
+            round=final_round,
+            team_1=builder.teams[0],
+            team_2=builder.teams[1],
+            team_1_wins=2,  # Team 1 wins finals
+            user=admin_user
+        )
+
         # Complete final round
         updated_tournament = await service.complete_round(
             tournament.id,
@@ -305,7 +316,15 @@ class TestTournamentProgression:
             admin_user,
             session
         )
-        
+
         # Verify tournament completion
         assert updated_tournament.state == TournamentState.COMPLETED
         assert updated_tournament.actual_end_date is not None
+        
+        # Verify final standings
+        standings = await service.get_tournament_standings(tournament.id, session)
+        team_standings = {team.team_id: team for team in standings.teams}
+        
+        # Winner should be team 1
+        assert team_standings[builder.teams[0].id].final_position == 1
+        assert team_standings[builder.teams[1].id].final_position == 2
