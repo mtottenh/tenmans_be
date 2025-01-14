@@ -3,6 +3,8 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        - INSTALL_DEV=true
     ports:
       - "8000:8000" # Expose API to the host machine
     volumes:

@@ -4,6 +4,7 @@ from sqlmodel import select, desc
 from datetime import datetime, timedelta
 import uuid
 
+from competitions.base_schemas import FixtureStatus
 from competitions.models.rounds import Round, RoundType
 from competitions.models.tournaments import Tournament, TournamentState
 from competitions.models.fixtures import Fixture
@@ -233,3 +234,144 @@ class RoundService:
             "cancelled_fixtures": cancelled_fixtures,
             "completion_percentage": (completed_fixtures / total_fixtures * 100) if total_fixtures > 0 else 0
         }
+    
+
+    @AuditService.audited_transaction(
+        action_type="round_extend",
+        entity_type="round",
+        details_extractor=_round_audit_details
+    )
+    async def extend_round_deadline(
+        self,
+        round: Round,
+        new_end_date: datetime,
+        reason: str,
+        actor: Player,
+        session: AsyncSession
+    ) -> Round:
+        """Extend a round's deadline"""
+        if round.status == "completed":
+            raise RoundServiceError("Cannot extend completed round")
+            
+        if new_end_date <= round.end_date:
+            raise RoundServiceError("New deadline must be after current deadline")
+
+        # Get next round if it exists
+        next_round = await self._get_next_round(round, session)
+        if next_round and new_end_date >= next_round.start_date:
+            # Automatically push back next round start
+            time_diff = new_end_date - round.end_date
+            await self._cascade_round_dates(next_round, time_diff, session)
+
+        # Update round end date
+        round.end_date = new_end_date
+        round.admin_notes = f"{round.admin_notes}\nDeadline extended by {actor.name}: {reason}" if round.admin_notes else f"Deadline extended by {actor.name}: {reason}"
+        
+        session.add(round)
+        return round
+
+    @AuditService.audited_transaction(
+        action_type="round_forfeit_unplayed",
+        entity_type="round",
+        details_extractor=_round_audit_details
+    )
+    async def forfeit_unplayed_fixtures(
+        self,
+        round: Round,
+        forfeit_notes: str,
+        actor: Player,
+        session: AsyncSession
+    ) -> List[Fixture]:
+        """Forfeit all unplayed fixtures in a round after deadline"""
+        if round.status == "completed":
+            raise RoundServiceError("Round already completed")
+
+        # Get all unplayed fixtures
+        stmt = select(Fixture).where(
+            Fixture.round_id == round.id,
+            Fixture.status.in_([FixtureStatus.SCHEDULED, FixtureStatus.IN_PROGRESS])
+        )
+        result = await session.exec(stmt)
+        unplayed_fixtures = result.all()
+
+        for fixture in unplayed_fixtures:
+            fixture.status = FixtureStatus.FORFEITED
+            # In case of mutual forfeit, no winner is set
+            fixture.admin_notes = f"Auto-forfeited due to round deadline: {forfeit_notes}"
+            session.add(fixture)
+
+        # Update round status
+        round.status = "completed"
+        session.add(round)
+
+        return unplayed_fixtures
+
+    @AuditService.audited_transaction(
+        action_type="round_reopen",
+        entity_type="round",
+        details_extractor=_round_audit_details
+    )
+    async def reopen_round(
+        self,
+        round: Round,
+        new_end_date: datetime,
+        reason: str,
+        actor: Player,
+        session: AsyncSession
+    ) -> Round:
+        """Reopen a completed round"""
+        if round.status != "completed":
+            raise RoundServiceError("Can only reopen completed rounds")
+
+        # Validate new end date
+        if new_end_date <= datetime.now():
+            raise RoundServiceError("New end date must be in the future")
+
+        # Get tournament to check if reopening is possible
+        tournament = await session.get(Tournament, round.tournament_id)
+        if tournament.state == TournamentState.COMPLETED:
+            raise RoundServiceError("Cannot reopen round in completed tournament")
+
+        # Update round status and dates
+        round.status = "active"
+        round.end_date = new_end_date
+        round.admin_notes = f"{round.admin_notes}\nRound reopened by {actor.name}: {reason}" if round.admin_notes else f"Round reopened by {actor.name}: {reason}"
+
+        # Handle next round if it exists
+        next_round = await self._get_next_round(round, session)
+        if next_round:
+            next_round.status = "pending"
+            next_round.start_date = new_end_date
+            session.add(next_round)
+
+        session.add(round)
+        return round
+
+    async def _get_next_round(
+        self,
+        round: Round,
+        session: AsyncSession
+    ) -> Optional[Round]:
+        """Get the next round in the tournament"""
+        stmt = select(Round).where(
+            Round.tournament_id == round.tournament_id,
+            Round.round_number == round.round_number + 1
+        )
+        result = await session.exec(stmt)
+        return result.first()
+
+    async def _cascade_round_dates(
+        self,
+        start_round: Round,
+        time_diff: timedelta,
+        session: AsyncSession
+    ):
+        """Cascade date changes through subsequent rounds"""
+        current_round = start_round
+        while current_round:
+            current_round.start_date += time_diff
+            current_round.end_date += time_diff
+            session.add(current_round)
+
+            # Get next round
+            current_round = await self._get_next_round(current_round, session)

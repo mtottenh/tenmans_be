@@ -45,4 +45,4 @@ class Fixture(SQLModel, table=True):
     )
     results: List["Result"] = Relationship(back_populates="fixture")
     match_players: List["MatchPlayer"] = Relationship(back_populates="fixture")
-    team_elo_changes: List["TeamELOHistory"] = Relationship(back_populates="fixture")
+    #team_elo_changes: List["TeamELOHistory"] = Relationship(back_populates="fixture")

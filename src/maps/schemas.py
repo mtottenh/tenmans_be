@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4, Field, HttpUrl
+from pydantic import BaseModel, UUID4, ConfigDict, Field, HttpUrl
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -18,8 +18,7 @@ class MapBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MapDetailed(MapBase):
     times_played: int
@@ -33,8 +32,7 @@ class TournamentMapPool(BaseModel):
     maps: List[MapBase]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Map Statistics Schemas
 class MapStatistics(BaseModel):
@@ -48,8 +46,7 @@ class MapStatistics(BaseModel):
     longest_match_duration: float  # in minutes
     shortest_match_duration: float  # in minutes
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MapTournamentStatistics(MapStatistics):
     tournament_id: UUID4

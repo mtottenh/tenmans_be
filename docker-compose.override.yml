@@ -1,0 +1,16 @@
+services:
+  api:
+    environment:
+      - POSTGRES_DB=test_db
+      - DB_ECHO=false
+    command: tail -f /dev/null
+
+  db:
+    environment:
+      - POSTGRES_DB=test_db
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+
+volumes:
+  postgres_test_data:

@@ -1,5 +1,5 @@
-from pydantic import BaseModel, UUID4, Field, validator
-from typing import List, Optional
+from pydantic import BaseModel, UUID4, ConfigDict, Field, model_validator
+from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
 
@@ -9,12 +9,11 @@ class SubstituteAvailabilityCreate(BaseModel):
     is_available: bool = True
     availability_notes: Optional[str]
 
-    @validator('tournament_id', 'season_id')
-    def validate_scope(cls, v, values):
-        if 'tournament_id' in values and 'season_id' in values:
-            if (values['tournament_id'] is not None and values['season_id'] is not None):
-                raise ValueError('Cannot be available for both tournament and season')
-        return v
+    @model_validator(mode='after')
+    def validate_scope(self) -> Self:
+        if self.tournament_id is not None and self.season_id is not None:
+            raise ValueError('Cannot be available for both tournament and season')
+        return self
 
 class SubstituteAvailabilityUpdate(BaseModel):
     is_available: bool
@@ -30,8 +29,7 @@ class SubstituteBase(BaseModel):
     last_substitute_date: Optional[datetime]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class SubstituteDetailed(SubstituteBase):
     player: "PlayerPublic"

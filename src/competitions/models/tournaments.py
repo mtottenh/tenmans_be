@@ -68,6 +68,7 @@ class Tournament(SQLModel, table=True):
         link_model=TournamentMap
     )
     registrations: List["TournamentRegistration"] = Relationship(back_populates="tournament")
+    substitutes: List["SubstituteAvailability"] = Relationship(back_populates="tournament")
 
 class RegistrationStatus(StrEnum):
     PENDING = "pending"
@@ -107,10 +108,10 @@ class TournamentRegistration(SQLModel, table=True):
     tournament: "Tournament" = Relationship(back_populates="registrations")
     team: "Team" = Relationship(back_populates="tournament_registrations")
     requester: "Player" = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "TournamentRegistration.requested_by"},
+        sa_relationship_kwargs={"primaryjoin": "TournamentRegistration.requested_by == Player.uid"},
         back_populates="tournament_registration_requests"
     )
     reviewer: Optional["Player"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "TournamentRegistration.reviewed_by"},
+        sa_relationship_kwargs={"primaryjoin": "TournamentRegistration.reviewed_by == Player.uid"},
         back_populates="tournament_registration_reviews"
     )

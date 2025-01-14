@@ -3,6 +3,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from typing import List, Optional
+from pugs.models import PugMapResult
 import uuid
 
 class TournamentMap(SQLModel, table=True):
@@ -26,5 +27,6 @@ class Map(SQLModel, table=True):
         link_model=TournamentMap
     )
     results: List["Result"] = Relationship(back_populates="map")
-    pug_results: List["PugMapResult"] = Relationship(back_populates="map")
+    pug_results: List[PugMapResult] = Relationship(back_populates="map")
+
 

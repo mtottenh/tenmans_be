@@ -358,3 +358,103 @@ async def withdraw_from_tournament(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+    
+# Permission checkers
+require_tournament_manage = GlobalPermissionChecker(["manage_tournaments"])
+require_tournament_view = GlobalPermissionChecker(["view_tournaments"])
+
+# Tournament Management Routes
+@tournament_router.post(
+    "/{tournament_id}/generate",
+    response_model=TournamentWithStats,
+    dependencies=[Depends(require_tournament_manage)]
+)
+async def generate_tournament_structure(
+    tournament_id: uuid.UUID,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Generate tournament structure including rounds and fixtures"""
+    try:
+        tournament = await tournament_service.generate_tournament_structure(
+            tournament_id,
+            current_player,
+            session
+        )
+        
+        # Add extended stats to response
+        return await tournament_service.get_tournament_with_stats(tournament.id, session)
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@tournament_router.post(
+    "/{tournament_id}/start",
+    response_model=TournamentBase,
+    dependencies=[Depends(require_tournament_manage)]
+)
+async def start_tournament(
+    tournament_id: uuid.UUID,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Start a tournament"""
+    try:
+        return await tournament_service.start_tournament(
+            tournament_id,
+            current_player,
+            session
+        )
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@tournament_router.post(
+    "/{tournament_id}/rounds/{round_number}/complete",
+    response_model=TournamentBase,
+    dependencies=[Depends(require_tournament_manage)]
+)
+async def complete_tournament_round(
+    tournament_id: uuid.UUID,
+    round_number: int,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Complete a tournament round and progress to next"""
+    try:
+        return await tournament_service.complete_round(
+            tournament_id,
+            round_number,
+            current_player,
+            session
+        )
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@tournament_router.get(
+    "/{tournament_id}/standings",
+    response_model=TournamentStandings,
+    dependencies=[Depends(require_tournament_view)]
+)
+async def get_tournament_standings(
+    tournament_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session)
+):
+    """Get current tournament standings"""
+    try:
+        return await tournament_service.get_tournament_standings(
+            tournament_id,
+            session
+        )
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

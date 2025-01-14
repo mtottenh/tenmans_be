@@ -1,5 +1,5 @@
-from pydantic import BaseModel, UUID4, Field, validator
-from typing import List, Optional
+from pydantic import BaseModel, UUID4, ConfigDict, Field, model_validator, validator
+from typing import List, Optional, Self
 from datetime import datetime
 from auth.schemas import PlayerPublic
 from competitions.schemas import RoundBase
@@ -25,11 +25,11 @@ class FixtureCreate(BaseModel):
     match_format: str = Field(..., pattern="^(bo1|bo3|bo5)$")
     scheduled_at: datetime
 
-    @validator('team_1', 'team_2')
-    def teams_must_be_different(cls, v, values):
-        if 'team_1' in values and v == values['team_1']:
+    @model_validator(mode='after')
+    def teams_must_be_different(self) -> Self:
+        if self.team_1 == self.team_2:
             raise ValueError('team_1 and team_2 cannot be the same')
-        return v
+        return self
 
 class FixtureUpdate(BaseModel):
     """Schema for updating a fixture"""
@@ -57,8 +57,7 @@ class MatchPlayerDetailed(MatchPlayerBase):
     team: TeamBasic
     fixture: FixtureBase
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class FixtureDetailed(FixtureBase):
     """Detailed fixture response schema"""
@@ -75,9 +74,7 @@ class FixtureDetailed(FixtureBase):
     round: RoundBase
     match_players: List[MatchPlayerBase]
     results: List[ResultBase]
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class FixtureSummary(BaseModel):
     """Summary of a fixture's status and results"""
@@ -94,8 +91,7 @@ class FixtureSummary(BaseModel):
     is_forfeit: bool
     winner_id: Optional[UUID4]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class FixtureList(BaseModel):
     """List of fixtures with pagination metadata"""
@@ -106,8 +102,7 @@ class FixtureList(BaseModel):
     cancelled_count: int
     forfeited_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 
@@ -133,8 +128,7 @@ class FixtureStats(BaseModel):
     has_demos: bool
     has_complete_stats: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TeamPerformance(BaseModel):
     """Team performance metrics in a fixture"""
@@ -148,5 +142,4 @@ class TeamPerformance(BaseModel):
     eco_rounds_won: int
     objective_rounds_won: int  # bomb plants/defuses
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

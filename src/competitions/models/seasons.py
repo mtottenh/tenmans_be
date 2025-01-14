@@ -22,3 +22,5 @@ class Season(SQLModel, table=True):
     
     tournaments: List["Tournament"] = Relationship(back_populates="season")
     rosters: List["Roster"] = Relationship(back_populates="season")
+    substitutes: List["SubstituteAvailability"] = Relationship(back_populates="season")
+    join_requests: List["TeamJoinRequest"] = Relationship(back_populates="season")

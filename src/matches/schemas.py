@@ -1,5 +1,5 @@
-from pydantic import BaseModel, UUID4, Field, HttpUrl, validator
-from typing import List, Optional
+from pydantic import BaseModel, UUID4, ConfigDict, Field, HttpUrl, model_validator
+from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
 
@@ -19,11 +19,11 @@ class ResultCreate(BaseModel):
     demo_url: Optional[HttpUrl]
     screenshot_urls: Optional[List[HttpUrl]]
 
-    @validator('team_1_score', 'team_2_score')
-    def validate_scores(cls, v):
-        if v > 100:  # TODO: Max rounds in regulation - set to 100 for now as we haven't got OT sorted
+    @model_validator(mode='after')
+    def validate_scores(self) -> Self:
+        if self.team_1_score > 100 or self.team_2_score > 100:  # TODO: Max rounds in regulation - set to 100 for now as we haven't got OT sorted
             raise ValueError('Score exceeds maximum possible rounds')
-        return v
+        return self
 
 class ResultConfirm(BaseModel):
     result_id: UUID4
@@ -59,8 +59,7 @@ class ResultBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ResultDetailed(ResultBase):
     submitted_by: UUID4
@@ -78,8 +77,7 @@ class MatchPlayerDetail(BaseModel):
     is_substitute: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MatchStatsBase(BaseModel):
     kills: int
@@ -92,8 +90,7 @@ class MatchStatsBase(BaseModel):
     first_kills: int
     clutches_won: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MatchPlayerStats(MatchStatsBase):
     player_id: UUID4
@@ -114,5 +111,4 @@ class MatchSummary(BaseModel):
     has_demos: bool
     has_all_stats: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

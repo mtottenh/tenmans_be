@@ -4,14 +4,19 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
+from competitions.base_schemas import FixtureStatus
 from competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
 from competitions.models.rounds import Round
 from competitions.models.fixtures import Fixture
+from competitions.tournament.standings import get_standings_calculator
+from matches.service import MatchService
 from teams.service import TeamService
 from teams.models import Team
 from .schemas import RegistrationReviewRequest, RegistrationStatus, RegistrationWithdrawRequest, TournamentCreate, TournamentRegistrationList, TournamentRegistrationRequest, TournamentUpdate, TournamentTeam, TournamentStandings
 from audit.service import AuditService
 from auth.models import Player
+from .generation.strategies import get_generation_strategy, GenerationError
+from .generation.validators import TournamentValidator, ValidationError
 
 class TournamentServiceError(Exception):
     """Base exception for tournament service errors"""
@@ -25,6 +30,8 @@ class TournamentService:
     def __init__(self):
         self.audit_service = AuditService()
         self.team_service = TeamService()
+        self.match_service = MatchService()
+        self.validator = TournamentValidator()
 
     def _tournament_audit_details(self, tournament: Tournament) -> dict:
         """Extracts audit details from a tournament operation"""
@@ -38,12 +45,13 @@ class TournamentService:
             "updated_at": tournament.updated_at.isoformat() if tournament.updated_at else None
         }
 
+ 
     async def get_tournament(
         self,
         tournament_id: uuid.UUID,
         session: AsyncSession
     ) -> Optional[Tournament]:
-        """Retrieves a tournament by ID"""
+        """Retrieve a tournament by ID"""
         stmt = select(Tournament).where(Tournament.id == tournament_id)
         result = await session.exec(stmt)
         return result.first()
@@ -54,7 +62,7 @@ class TournamentService:
         session: AsyncSession,
         include_completed: bool = True
     ) -> List[Tournament]:
-        """Retrieves all tournaments for a season"""
+        """Retrieve all tournaments for a season"""
         stmt = select(Tournament).where(Tournament.season_id == season_id)
         if not include_completed:
             stmt = stmt.where(Tournament.state != TournamentState.COMPLETED)
@@ -73,22 +81,23 @@ class TournamentService:
         actor: Player,
         session: AsyncSession
     ) -> Tournament:
-        """Creates a new tournament"""
-        # Validate tournament configuration based on type
-        if tournament_data.type == TournamentType.REGULAR:
-            self._validate_regular_tournament_config(tournament_data.format_config)
-        elif tournament_data.type == TournamentType.KNOCKOUT:
-            self._validate_knockout_tournament_config(tournament_data.format_config)
-
-        tournament_dict = tournament_data.model_dump()
-        new_tournament = Tournament(
-            **tournament_dict,
-            state=TournamentState.NOT_STARTED,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        session.add(new_tournament)
-        return new_tournament
+        """Create a new tournament"""
+        try:
+            # Validate configuration using validator
+            self.validator.validate_tournament_config(tournament_data)
+            
+            tournament_dict = tournament_data.model_dump()
+            new_tournament = Tournament(
+                **tournament_dict,
+                state=TournamentState.NOT_STARTED,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            session.add(new_tournament)
+            return new_tournament
+            
+        except ValidationError as e:
+            raise TournamentServiceError(str(e))
 
     @AuditService.audited_transaction(
         action_type="tournament_update",
@@ -102,50 +111,96 @@ class TournamentService:
         actor: Player,
         session: AsyncSession
     ) -> Tournament:
-        """Updates tournament details"""
+        """Update tournament details"""
         if tournament.state != TournamentState.NOT_STARTED:
             raise TournamentServiceError("Cannot update tournament after it has started")
 
-        update_dict = update_data.model_dump(exclude_unset=True)
-        
-        # Validate format config if it's being updated
-        if 'format_config' in update_dict:
-            if tournament.type == TournamentType.REGULAR:
-                self._validate_regular_tournament_config(update_dict['format_config'])
-            elif tournament.type == TournamentType.KNOCKOUT:
-                self._validate_knockout_tournament_config(update_dict['format_config'])
-
-        for key, value in update_dict.items():
-            setattr(tournament, key, value)
+        try:
+            # Validate updated configuration
+            if 'format_config' in update_data.model_dump(exclude_unset=True):
+                self.validator.validate_tournament_config({
+                    **tournament.model_dump(),
+                    **update_data.model_dump(exclude_unset=True)
+                })
             
-        tournament.updated_at = datetime.now()
-        session.add(tournament)
-        return tournament
+            # Apply updates
+            update_dict = update_data.model_dump(exclude_unset=True)
+            for key, value in update_dict.items():
+                setattr(tournament, key, value)
+                
+            tournament.updated_at = datetime.now()
+            session.add(tournament)
+            return tournament
+            
+        except ValidationError as e:
+            raise TournamentServiceError(str(e))
 
+    # Tournament lifecycle methods
     @AuditService.audited_transaction(
-        action_type="tournament_start",
+        action_type="tournament_generate",
         entity_type="tournament",
         details_extractor=_tournament_audit_details
     )
-    async def start_tournament(
+    async def generate_tournament_structure(
         self,
-        tournament: Tournament,
+        tournament_id: uuid.UUID,
         actor: Player,
         session: AsyncSession
     ) -> Tournament:
-        """Starts a tournament"""
-        if tournament.state != TournamentState.NOT_STARTED:
-            raise TournamentServiceError("Tournament has already started")
+        """Generate tournament structure including rounds and fixtures"""
+        tournament = await self.get_tournament(tournament_id, session)
+        if not tournament:
+            raise TournamentServiceError("Tournament not found")
+            
+        if tournament.state != TournamentState.REGISTRATION_CLOSED:
+            raise TournamentServiceError(
+                "Tournament must be in REGISTRATION_CLOSED state for generation"
+            )
 
-        # Additional validation could go here
-        # - Check minimum number of teams
-        # - Verify all teams have minimum roster size
-        # - etc.
+        # Get registered teams
+        teams = await self._get_registered_teams(tournament, session)
+        
+        try:
+            # Validate tournament setup
+            self.validator.validate_tournament_config(tournament)
+            self.validator.validate_tournament_dates(tournament)
+            self.validator.validate_teams(teams, tournament)
+            
+            # Get generation strategy and generate structure
+            strategy = get_generation_strategy(tournament.type)
+            rounds = await strategy.generate_rounds(tournament, teams, session)
+            
+            # Validate rounds
+            self.validator.validate_round_dates(rounds, tournament)
+            
+            # Save rounds
+            session.add_all(rounds)
+            await session.flush()
+            
+            # Generate and save fixtures
+            all_fixtures = []
+            for round in rounds:
+                fixtures = await strategy.generate_fixtures(
+                    tournament,
+                    round,
+                    teams,
+                    session
+                )
+                all_fixtures.extend(fixtures)
+            
+            session.add_all(all_fixtures)
+            
+            # Update tournament state
+            tournament.state = TournamentState.NOT_STARTED
+            tournament.actual_start_date = rounds[0].start_date
+            tournament.updated_at = datetime.now()
+            
+            session.add(tournament)
+            return tournament
+            
+        except (ValidationError, GenerationError) as e:
+            raise TournamentServiceError(str(e))
 
-        tournament.state = TournamentState.IN_PROGRESS
-        tournament.updated_at = datetime.now()
-        session.add(tournament)
-        return tournament
 
     @AuditService.audited_transaction(
         action_type="tournament_complete",
@@ -192,36 +247,6 @@ class TournamentService:
         session.add(tournament)
         return tournament
 
-    def _validate_regular_tournament_config(self, config: Dict[str, Any]):
-        """Validates configuration for regular tournament format"""
-        required_keys = {'group_size', 'teams_per_group', 'teams_advancing'}
-        missing_keys = required_keys - set(config.keys())
-        if missing_keys:
-            raise TournamentServiceError(f"Missing required configuration keys: {missing_keys}")
-
-        # Additional validation logic for regular tournament format
-        if not isinstance(config['group_size'], int) or config['group_size'] < 2:
-            raise TournamentServiceError("Group size must be an integer greater than 1")
-        if not isinstance(config['teams_per_group'], int) or config['teams_per_group'] < 2:
-            raise TournamentServiceError("Teams per group must be an integer greater than 1")
-        # teams_advancing is optional, defaults to all teams (-1)
-        if 'teams_advancing' in config:
-            if not isinstance(config['teams_advancing'], int) or (config['teams_advancing'] != -1 and config['teams_advancing'] < 1):
-                raise TournamentServiceError("Teams advancing must be -1 (all teams) or a positive integer")
-
-    def _validate_knockout_tournament_config(self, config: Dict[str, Any]):
-        """Validates configuration for knockout tournament format"""
-        required_keys = {'seeding_type', 'third_place_playoff'}
-        missing_keys = required_keys - set(config.keys())
-        if missing_keys:
-            raise TournamentServiceError(f"Missing required configuration keys: {missing_keys}")
-
-        # Additional validation logic for knockout tournament format
-        valid_seeding_types = {'random', 'group_position', 'elo'}
-        if config['seeding_type'] not in valid_seeding_types:
-            raise TournamentServiceError(f"Invalid seeding type. Must be one of: {valid_seeding_types}")
-        if not isinstance(config['third_place_playoff'], bool):
-            raise TournamentServiceError("Third place playoff must be a boolean")
 
     async def get_tournament_standings(
         self,
@@ -511,3 +536,198 @@ class TournamentService:
         )
         if len(current_registrations.all()) >= tournament.max_teams:
             raise RegistrationError("Tournament has reached maximum team capacity")
+    async def _get_registered_teams(
+        self,
+        tournament: Tournament,
+        session: AsyncSession
+    ) -> List[Team]:
+        """Get all teams registered for the tournament"""
+        stmt = select(Team).join(
+            tournament.registrations
+        ).where(
+            tournament.registrations.status == 'approved'
+        )
+        result = await session.exec(stmt)
+        return result.all()
+
+    @AuditService.audited_transaction(
+        action_type="tournament_generate",
+        entity_type="tournament",
+        details_extractor=_tournament_audit_details
+    )
+   
+    async def start_tournament(
+        self,
+        tournament_id: uuid.UUID,
+        actor: Player,
+        session: AsyncSession
+    ) -> Tournament:
+        """Start a tournament"""
+        tournament = await self.get_tournament(tournament_id, session)
+        if not tournament:
+            raise TournamentServiceError("Tournament not found")
+
+        if tournament.state != TournamentState.NOT_STARTED:
+            raise TournamentServiceError(
+                "Tournament must be in NOT_STARTED state to begin"
+            )
+
+        # Get first round
+        first_round = await self._get_round_by_number(tournament.id, 1, session)
+        if not first_round:
+            raise TournamentServiceError("No rounds found for tournament")
+
+        # Update tournament state
+        tournament.state = TournamentState.IN_PROGRESS
+        tournament.actual_start_date = datetime.now()
+        tournament.updated_at = datetime.now()
+
+        # Activate first round
+        first_round.status = "active"
+        
+        session.add(tournament)
+        session.add(first_round)
+        return tournament
+
+    async def complete_round(
+        self,
+        tournament_id: uuid.UUID,
+        round_number: int,
+        actor: Player,
+        session: AsyncSession
+    ) -> Tournament:
+        """Complete a tournament round and progress to next if available"""
+        tournament = await self.get_tournament(tournament_id, session)
+        if not tournament:
+            raise TournamentServiceError("Tournament not found")
+
+        current_round = await self._get_round_by_number(
+            tournament.id,
+            round_number,
+            session
+        )
+        if not current_round:
+            raise TournamentServiceError("Round not found")
+
+        # Verify all fixtures are completed
+        fixtures = await self._get_round_fixtures(current_round.id, session)
+        if not all(f.status in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED] 
+                  for f in fixtures):
+            raise TournamentServiceError("All fixtures must be completed")
+
+        # Complete current round
+        current_round.status = "completed"
+        session.add(current_round)
+
+        # Get next round
+        next_round = await self._get_round_by_number(
+            tournament.id,
+            round_number + 1,
+            session
+        )
+
+        if next_round:
+            # Start next round
+            next_round.status = "active"
+            session.add(next_round)
+
+            if tournament.type == TournamentType.KNOCKOUT:
+                # Generate fixtures for next knockout round
+                strategy = get_generation_strategy(tournament.type)
+                winning_teams = await self._get_round_winners(current_round.id, session)
+                
+                fixtures = await strategy.generate_fixtures(
+                    tournament,
+                    next_round,
+                    winning_teams,
+                    session
+                )
+                session.add_all(fixtures)
+        else:
+            # No more rounds, complete tournament
+            tournament.state = TournamentState.COMPLETED
+            tournament.actual_end_date = datetime.now()
+            tournament.updated_at = datetime.now()
+            session.add(tournament)
+
+        return tournament
+
+    async def _get_round_by_number(
+        self,
+        tournament_id: uuid.UUID,
+        round_number: int,
+        session: AsyncSession
+    ) -> Optional[Round]:
+        """Get a specific round by number"""
+        stmt = select(Round).where(
+            Round.tournament_id == tournament_id,
+            Round.round_number == round_number
+        )
+        result = await session.exec(stmt)
+        return result.first()
+
+    async def _get_round_fixtures(
+        self,
+        round_id: uuid.UUID,
+        session: AsyncSession
+    ) -> List[Fixture]:
+        """Get all fixtures for a round"""
+        stmt = select(Fixture).where(Fixture.round_id == round_id)
+        result = await session.exec(stmt)
+        return result.all()
+
+
+    async def get_tournament_standings(
+        self,
+        tournament_id: uuid.UUID,
+        session: AsyncSession
+    ) -> TournamentStandings:
+        """Get current tournament standings"""
+        tournament = await self.get_tournament(tournament_id, session)
+        if not tournament:
+            raise TournamentServiceError("Tournament not found")
+
+        try:
+            calculator = get_standings_calculator(tournament.type)
+            return await calculator.calculate_standings(
+                tournament=tournament,
+                match_service=self.match_service,
+                session=session
+            )
+        except ValueError as e:
+            raise TournamentServiceError(str(e))
+
+    async def get_round_winners(
+        self,
+        round_id: uuid.UUID,
+        session: AsyncSession
+    ) -> List[Team]:
+        """Get winning teams from a round's completed fixtures"""
+        # Get all fixtures for the round
+        fixtures = await self._get_round_fixtures(round_id, session)
+        winners = []
+
+        for fixture in fixtures:
+            if fixture.status == FixtureStatus.FORFEITED:
+                if not fixture.forfeit_winner:
+                    raise TournamentServiceError(
+                        f"Fixture {fixture.id} is forfeited but has no winner set"
+                    )
+                winner_id = fixture.forfeit_winner
+            else:
+                # TODO - This returns a list of Result objects which are *per-map*
+                # Get match result from match service
+                match_result = await self.match_service.get_match_results(
+                    fixture.id,
+                    session
+                )
+                if not match_result:
+                    raise TournamentServiceError(
+                        f"No result found for completed fixture {fixture.id}"
+                    )
+                winner_id = match_result.winner_id
+
+            winner = await self.team_service.get_team_by_id(winner_id, session)
+            winners.append(winner)
+
+        return winners

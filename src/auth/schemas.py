@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, UUID4, validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, UUID4, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import StrEnum
@@ -26,7 +26,7 @@ class PlayerEmailCreate(BaseModel):
     steam_id: str
     submitted_evidence: Optional[str]  # For verification process
 
-    @validator('steam_id')
+    @field_validator('steam_id')
     def validate_steam_id(cls, v):
         if not v.isdigit():
             raise ValueError('Steam ID must be numeric')
@@ -36,7 +36,7 @@ class PlayerSteamCreate(BaseModel):
     steam_id: str
     name: Optional[str] = None  # Can be pulled from Steam profile if not provided
 
-    @validator('steam_id')
+    @field_validator('steam_id')
     def validate_steam_id(cls, v):
         if not v.isdigit():
             raise ValueError('Steam ID must be numeric')
@@ -77,9 +77,9 @@ class PlayerRoleAssign(BaseModel):
     scope_type: str = Field(..., pattern="^(global|team|tournament)$")
     scope_id: Optional[UUID4] = None
 
-    @validator('scope_id')
-    def validate_scope_id(cls, v, values):
-        if values['scope_type'] != 'global' and v is None:
+    @model_validator(mode='after')
+    def validate_scope_id(self):
+        if self.scope_type != 'global' and self.scope_id is None:
             raise ValueError('scope_id is required for non-global scopes')
         return v
 
@@ -89,24 +89,21 @@ class Permission(BaseModel):
     name: str
     description: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class Role(BaseModel):
     id: UUID4
     name: str
     permissions: List[Permission]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PlayerRole(BaseModel):
     role: Role
     scope_type: str
     scope_id: Optional[UUID4]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PlayerBase(BaseModel):
     uid: UUID4
@@ -120,8 +117,7 @@ class PlayerBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VerificationRequestCreate(BaseModel):
@@ -137,9 +133,8 @@ class VerificationRequestResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
+    model_config = ConfigDict(from_attributes=True)
+    
 class PlayerPrivate(PlayerBase):
     verification_notes: Optional[str]
     roles: List[PlayerRole]

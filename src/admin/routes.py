@@ -1,8 +1,14 @@
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
 from datetime import datetime
 
+from admin.schemas import ExtendRoundRequest, RoundForfeitRequest, UndoForfeitRequest
+from competitions.models.fixtures import Fixture
+from competitions.models.rounds import Round
+from competitions.rounds.service import RoundService, RoundServiceError
+from competitions.tournament.service import TournamentService
 from db.main import get_session
 from auth.models import Player
 from auth.schemas import (
@@ -185,3 +191,161 @@ async def assign_player_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+    
+
+
+tournament_service = TournamentService()
+round_manager = RoundService()
+
+# Permission checker
+require_tournament_admin = GlobalPermissionChecker(["tournament_admin"])
+
+@admin_router.patch(
+    "/{tournament_id}/rounds/{round_number}/extend",
+    response_model=Round,
+    dependencies=[Depends(require_tournament_admin)]
+)
+async def extend_round_deadline(
+    tournament_id: uuid.UUID,
+    round_number: int,
+    extension: ExtendRoundRequest,
+    current_admin: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Extend a round's deadline"""
+    try:
+        # Get the round
+        round = await tournament_service._get_round_by_number(
+            tournament_id, 
+            round_number, 
+            session
+        )
+        if not round:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found"
+            )
+
+        return await round_manager.extend_round_deadline(
+            round=round,
+            new_end_date=extension.new_end_date,
+            reason=extension.reason,
+            actor=current_admin,
+            session=session
+        )
+    except RoundServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@admin_router.post(
+    "/{tournament_id}/rounds/{round_number}/forfeit-unplayed",
+    response_model=List[Fixture],
+    dependencies=[Depends(require_tournament_admin)]
+)
+async def forfeit_unplayed_matches(
+    tournament_id: uuid.UUID,
+    round_number: int,
+    forfeit_data: RoundForfeitRequest,
+    current_admin: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Forfeit all unplayed matches in a round"""
+    try:
+        round = await tournament_service._get_round_by_number(
+            tournament_id, 
+            round_number, 
+            session
+        )
+        if not round:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found"
+            )
+
+        return await round_manager.forfeit_unplayed_fixtures(
+            round=round,
+            forfeit_notes=forfeit_data.forfeit_notes,
+            actor=current_admin,
+            session=session
+        )
+    except RoundServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@admin_router.post(
+    "/{tournament_id}/rounds/{round_number}/reopen",
+    response_model=Round,
+    dependencies=[Depends(require_tournament_admin)]
+)
+async def reopen_round(
+    tournament_id: uuid.UUID,
+    round_number: int,
+    extension: ExtendRoundRequest,
+    current_admin: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Reopen a completed round"""
+    try:
+        round = await tournament_service._get_round_by_number(
+            tournament_id, 
+            round_number, 
+            session
+        )
+        if not round:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Round not found"
+            )
+
+        return await round_manager.reopen_round(
+            round=round,
+            new_end_date=extension.new_end_date,
+            reason=extension.reason,
+            actor=current_admin,
+            session=session
+        )
+    except RoundServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@admin_router.post(
+    "/{tournament_id}/fixtures/{fixture_id}/undo-forfeit",
+    response_model=Fixture,
+    dependencies=[Depends(require_tournament_admin)]
+)
+async def undo_fixture_forfeit(
+    tournament_id: uuid.UUID,
+    fixture_id: uuid.UUID,
+    undo_data: UndoForfeitRequest,
+    current_admin: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Undo a fixture forfeit"""
+    try:
+        fixture = await tournament_service._get_fixture(fixture_id, session)
+        if not fixture or fixture.tournament_id != tournament_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Fixture not found"
+            )
+
+        return await round_manager.undo_fixture_forfeit(
+            fixture=fixture,
+            reason=undo_data.reason,
+            actor=current_admin,
+            session=session
+        )
+    except RoundServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+# Extend round request
+# forefit request
+# undo forefit request    

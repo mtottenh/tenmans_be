@@ -41,15 +41,15 @@ class Result(SQLModel, table=True):
     map: "Map" = Relationship(back_populates="results")
     submitter: "Player" = Relationship(
         back_populates="submitted_results",
-        sa_relationship_kwargs={"foreign_keys": "Result.submitted_by"}
+        sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.uid"}
     )
     confirmer: Optional["Player"] = Relationship(
         back_populates="confirmed_results",
-        sa_relationship_kwargs={"foreign_keys": "Result.confirmed_by"}
+        sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.uid"}
     )
     admin_overrider: Optional["Player"] = Relationship(
         back_populates="admin_overridden_results",
-        sa_relationship_kwargs={"foreign_keys": "Result.admin_override_by"}
+        sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.uid"}
     )
 
 class MatchPlayer(SQLModel, table=True):

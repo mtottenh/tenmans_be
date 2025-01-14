@@ -1,5 +1,5 @@
-from pydantic import BaseModel, UUID4, Field, validator
-from typing import List, Optional
+from pydantic import BaseModel, UUID4, ConfigDict, Field, model_validator
+from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
 
@@ -22,11 +22,11 @@ class PugTeamCreate(BaseModel):
     team_name: str
     captain_id: UUID4
 
-    @validator('team_number')
-    def validate_team_number(cls, v):
-        if v not in [1, 2]:
+    @model_validator(mode='after')
+    def validate_team_number(self) -> Self:
+        if self.team_number not in [1, 2]:
             raise ValueError('team_number must be 1 or 2')
-        return v
+        return self
 
 class PugPlayerJoin(BaseModel):
     pug_id: UUID4
@@ -52,8 +52,7 @@ class PugBase(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PugTeamBase(BaseModel):
     pug_id: UUID4
@@ -62,8 +61,7 @@ class PugTeamBase(BaseModel):
     captain_id: UUID4
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PugPlayerBase(BaseModel):
     pug_id: UUID4
@@ -71,8 +69,7 @@ class PugPlayerBase(BaseModel):
     team_number: Optional[int]
     joined_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PugMapResultBase(BaseModel):
     id: UUID4
@@ -85,8 +82,7 @@ class PugMapResultBase(BaseModel):
     demo_url: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Detailed Response Schemas
 class PugTeamDetailed(PugTeamBase):
@@ -112,5 +108,4 @@ class PugSummary(BaseModel):
     completed_at: Optional[datetime]
     total_players: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

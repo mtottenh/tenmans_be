@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, UUID4
+from pydantic import BaseModel, ConfigDict, Field, UUID4
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..base_schemas import TournamentType, RegistrationStatus, TournamentBase, TournamentRegistrationBase
@@ -58,8 +58,7 @@ class TournamentTeam(BaseModel):
     points: int
     status: str  # "active", "eliminated", "qualified", etc.
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TournamentStandings(BaseModel):
     """Schema for tournament standings"""
@@ -68,8 +67,7 @@ class TournamentStandings(BaseModel):
     teams: List[TournamentTeam]
     last_updated: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 # TODO - I don't know if we need this.
 # class TournamentDetailed(TournamentBase):
 #     season: SeasonBase
@@ -96,5 +94,4 @@ class TournamentRegistrationList(BaseModel):
     total_pending: int
     registrations: List[TournamentRegistrationBase]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 from enum import StrEnum
@@ -45,8 +45,7 @@ class SeasonBase(BaseModel):
     state: SeasonState
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class RoundBase(BaseModel):
     id: UUID4
@@ -59,8 +58,7 @@ class RoundBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamELOHistoryBase(BaseModel):
@@ -72,8 +70,7 @@ class TeamELOHistoryBase(BaseModel):
     player_composition: List[UUID4]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 
@@ -85,9 +82,7 @@ class MatchPlayerBase(BaseModel):
     is_substitute: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
+    model_config = ConfigDict(from_attributes=True)
 
 class FixtureBase(BaseModel):
     """Base fixture response schema"""
@@ -102,8 +97,7 @@ class FixtureBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TournamentBase(BaseModel):
@@ -117,8 +111,7 @@ class TournamentBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TournamentRegistrationBase(BaseModel):
@@ -132,5 +125,4 @@ class TournamentRegistrationBase(BaseModel):
     group: Optional[str]
     final_position: Optional[int]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

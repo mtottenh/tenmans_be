@@ -52,7 +52,7 @@ class Ban(SQLModel, table=True):
     # Relationships
     player: Optional["Player"] = Relationship(
         back_populates="bans",
-        sa_relationship_kwargs={"foreign_keys": "Ban.player_uid"}
+        sa_relationship_kwargs={"primaryjoin": "Ban.player_uid == Player.uid"}
     )
     team: Optional["Team"] = Relationship(back_populates="bans")
     admin: "Player" = Relationship(

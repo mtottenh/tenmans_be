@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import uuid
 
 from auth.schemas import PlayerPublic
@@ -33,8 +33,7 @@ class JoinRequestBase(BaseModel):
     responded_at: Optional[datetime]
     response_message: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class JoinRequestDetailed(JoinRequestBase):
     """Detailed join request information"""
@@ -48,8 +47,7 @@ class JoinRequestDetailed(JoinRequestBase):
     team: TeamBasic      # From your team schemas
     responder: Optional[PlayerPublic]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class JoinRequestList(BaseModel):
     """List of join requests with summary stats"""
@@ -57,8 +55,7 @@ class JoinRequestList(BaseModel):
     pending_count: int
     requests: List[JoinRequestDetailed]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Update schemas
 class JoinRequestUpdate(BaseModel):
@@ -76,5 +73,4 @@ class JoinRequestStats(BaseModel):
     expired_requests: int
     average_response_time: Optional[float] = None  # in hours
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

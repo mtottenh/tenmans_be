@@ -93,7 +93,10 @@
 * [ ] Substitutes
 
 * Tournament service:
-    * Basic group stage generation
+    * [x]  Basic group stage generation
+        * [ ] Add option for Home + Away v.s. Single matchup 
+        * [ ] Configurable time between rounds 
+        * 
     * Simple playoff bracket creation
 * [ ] Fixture Service Routes
 * [ ] Integration of Map picker into the fixture routes/service

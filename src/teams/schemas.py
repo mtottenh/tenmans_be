@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4, Field
+from pydantic import BaseModel, UUID4, ConfigDict, Field
 from typing import List, Optional
 from datetime import datetime
 from .models import Team, Roster, TeamCaptain
@@ -30,16 +30,14 @@ class RosterMember(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TeamCaptainInfo(BaseModel):
     id: UUID4
     player: PlayerPublic
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TeamELOHistory(BaseModel):
     id: UUID4
@@ -48,8 +46,7 @@ class TeamELOHistory(BaseModel):
     created_at: datetime
     fixture_id: UUID4
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TeamBase(BaseModel):
     id: UUID4
@@ -58,8 +55,7 @@ class TeamBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TeamDetailed(TeamBase):
     roster: List[RosterMember]
@@ -81,8 +77,7 @@ class TeamStats(BaseModel):
     highest_win_streak: int
     average_team_elo: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Special purpose schemas
 class TeamInviteResponse(BaseModel):

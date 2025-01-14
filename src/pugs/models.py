@@ -7,6 +7,8 @@ from enum import StrEnum
 from typing import List, Optional
 import uuid
 
+from auth.models import Player
+
 class PugStatus(StrEnum):
     CREATING = "creating"
     IN_PROGRESS = "in_progress"
@@ -30,7 +32,7 @@ class Pug(SQLModel, table=True):
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     completed_at: Optional[datetime]
 
-    creator: "Player" = Relationship(back_populates="created_pugs")
+    creator: Player = Relationship(back_populates="created_pugs")
     teams: List["PugTeam"] = Relationship(back_populates="pug")
     players: List["PugPlayer"] = Relationship(back_populates="pug")
     map_results: List["PugMapResult"] = Relationship(back_populates="pug")
@@ -45,7 +47,9 @@ class PugTeam(SQLModel, table=True):
 
     pug: Pug = Relationship(back_populates="teams")
     captain: "Player" = Relationship(back_populates="pug_captain_of")
-    players: List["PugPlayer"] = Relationship(back_populates="team")
+    players: List["PugPlayer"] = Relationship(back_populates="team", 
+                                               sa_relationship_kwargs={"primaryjoin": "and_(PugPlayer.pug_id == PugTeam.pug_id, foreign(PugPlayer.team_number) == PugTeam.team_number)"}
+                                              )
 
 class PugPlayer(SQLModel, table=True):
     __tablename__ = "pug_players"
@@ -55,8 +59,10 @@ class PugPlayer(SQLModel, table=True):
     joined_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
     pug: Pug = Relationship(back_populates="players")
-    player: "Player" = Relationship(back_populates="pug_participations")
-    team: Optional[PugTeam] = Relationship(back_populates="players")
+    player: Player = Relationship(back_populates="pug_participations")
+    team: Optional[PugTeam] = Relationship(back_populates="players",
+                                            sa_relationship_kwargs={"primaryjoin": "and_(PugPlayer.pug_id == PugTeam.pug_id, foreign(PugPlayer.team_number) == PugTeam.team_number)"}
+                                           )
 
 class PugMapResult(SQLModel, table=True):
     __tablename__ = "pug_map_results"
