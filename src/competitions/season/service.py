@@ -95,7 +95,7 @@ class SeasonService:
     ) -> Optional[Season]:
         """Get a season by ID"""
         stmt = select(Season).where(Season.id == season_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_season_by_name(
@@ -105,7 +105,7 @@ class SeasonService:
     ) -> Optional[Season]:
         """Get a season by name"""
         stmt = select(Season).where(Season.name == name)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_all_seasons(
@@ -118,7 +118,7 @@ class SeasonService:
         if not include_completed:
             stmt = stmt.where(Season.state != SeasonState.COMPLETED)
         stmt = stmt.order_by(desc(Season.created_at))
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def get_active_season(
@@ -127,5 +127,5 @@ class SeasonService:
     ) -> Optional[Season]:
         """Get the current active season"""
         stmt = select(Season).where(Season.state == SeasonState.IN_PROGRESS)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()

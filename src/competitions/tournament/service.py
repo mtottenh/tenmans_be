@@ -53,7 +53,7 @@ class TournamentService:
     ) -> Optional[Tournament]:
         """Retrieve a tournament by ID"""
         stmt = select(Tournament).where(Tournament.id == tournament_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_tournaments_by_season(
@@ -67,7 +67,7 @@ class TournamentService:
         if not include_completed:
             stmt = stmt.where(Tournament.state != TournamentState.COMPLETED)
         stmt = stmt.order_by(desc(Tournament.created_at))
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     @AuditService.audited_transaction(
@@ -315,7 +315,7 @@ class TournamentService:
             TournamentRegistration.tournament_id == tournament_id,
             TournamentRegistration.id == registration_id
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_registrations(
@@ -331,7 +331,7 @@ class TournamentService:
         if status:
             stmt = stmt.where(TournamentRegistration.status == status)
         
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         registrations = result.all()
         
         # Calculate summary stats
@@ -498,7 +498,7 @@ class TournamentService:
                 raise RegistrationError("Tournament registration is not open")
                 
         # Check if team is already registered
-        existing = await session.exec(
+        existing = await session.execute(
             select(TournamentRegistration).where(
                 TournamentRegistration.tournament_id == tournament.id,
                 TournamentRegistration.team_id == team.id,
@@ -528,7 +528,7 @@ class TournamentService:
             )
             
         # Check maximum registrations not exceeded
-        current_registrations = await session.exec(
+        current_registrations = await session.execute(
             select(TournamentRegistration).where(
                 TournamentRegistration.tournament_id == tournament.id,
                 TournamentRegistration.status == RegistrationStatus.APPROVED
@@ -547,7 +547,7 @@ class TournamentService:
         ).where(
             tournament.registrations.status == 'approved'
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     @AuditService.audited_transaction(
@@ -663,7 +663,7 @@ class TournamentService:
             Round.tournament_id == tournament_id,
             Round.round_number == round_number
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def _get_round_fixtures(
@@ -673,7 +673,7 @@ class TournamentService:
     ) -> List[Fixture]:
         """Get all fixtures for a round"""
         stmt = select(Fixture).where(Fixture.round_id == round_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
 

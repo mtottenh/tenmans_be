@@ -40,19 +40,19 @@ class TeamService:
     async def get_all_teams(self, session: AsyncSession) -> List[Team]:
         """Retrieves all teams ordered by creation date"""
         stmt = select(Team).order_by(desc(Team.created_at))
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
     
     async def get_team_by_name(self, name: str, session: AsyncSession) -> Optional[Team]:
         """Retrieves a team by name"""
         stmt = select(Team).where(Team.name == name)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_team_by_id(self, id: uuid.UUID, session: AsyncSession) -> Optional[Team]:
         """Retrieves a team by ID"""
         stmt = select(Team).where(Team.id == id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def team_exists(self, name: str, session: AsyncSession) -> bool:
@@ -138,7 +138,7 @@ class TeamService:
             TeamCaptain.team_id == team.id,
             TeamCaptain.player_uid == player.uid
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         captain = result.first()
         
         if not captain:
@@ -154,7 +154,7 @@ class TeamService:
             Team.id == TeamCaptain.team_id,
             Player.uid == TeamCaptain.player_uid
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def player_is_team_captain(self, player: Player, team: Team, session: AsyncSession) -> bool:
@@ -163,7 +163,7 @@ class TeamService:
             TeamCaptain.team_id == team.id,
             TeamCaptain.player_uid == player.uid
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first() is not None
 
     @AuditService.audited_transaction(
@@ -282,7 +282,7 @@ class RosterService:
             raise RosterServiceError("Player not found on team roster")
 
         # Check if removing team captain
-        is_captain = await session.exec(
+        is_captain = await session.execute(
             select(TeamCaptain).where(
                 TeamCaptain.team_id == team.id,
                 TeamCaptain.player_uid == player.uid
@@ -316,7 +316,7 @@ class RosterService:
         if not include_pending:
             stmt = stmt.where(Roster.pending == False)
             
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def get_active_roster_count(
@@ -331,7 +331,7 @@ class RosterService:
             Roster.season_id == season.id,
             Roster.pending == False
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return len(result.all())
 
     async def get_team_roster_history(
@@ -371,7 +371,7 @@ class RosterService:
             Roster.player_uid == player.uid,
             Roster.season_id == season.id
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_teams_with_min_players(
@@ -387,7 +387,7 @@ class RosterService:
         ).group_by(Team.id).having(
             count(Roster.player_uid) >= min_players
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def validate_roster_size(

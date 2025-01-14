@@ -163,7 +163,7 @@ class TeamJoinRequestService:
         stmt = select(TeamJoinRequest).where(TeamJoinRequest.team_id == team.id)
         if not include_resolved:
             stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def get_player_requests(
@@ -176,7 +176,7 @@ class TeamJoinRequestService:
         stmt = select(TeamJoinRequest).where(TeamJoinRequest.player_uid == player.uid)
         if not include_resolved:
             stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def _get_active_request(
@@ -191,7 +191,7 @@ class TeamJoinRequestService:
             TeamJoinRequest.season_id == season.id,
             TeamJoinRequest.status == JoinRequestStatus.PENDING
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def cleanup_expired_requests(
@@ -205,7 +205,7 @@ class TeamJoinRequestService:
             TeamJoinRequest.status == JoinRequestStatus.PENDING,
             TeamJoinRequest.created_at < expiry_date
         )
-        expired_requests = (await session.exec(stmt)).all()
+        expired_requests = (await session.execute(stmt)).all()
         
         for request in expired_requests:
             request.status = JoinRequestStatus.EXPIRED

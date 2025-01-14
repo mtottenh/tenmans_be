@@ -65,7 +65,7 @@ async def get_session() -> AsyncSession:
     
     async with async_session() as session:
         # Set session-specific timeouts
-        await session.execute("SET LOCAL statement_timeout = '60s'")
-        await session.execute("SET LOCAL lock_timeout = '30s'")
+        await session.executeute("SET LOCAL statement_timeout = '60s'")
+        await session.executeute("SET LOCAL lock_timeout = '30s'")
         
         yield session

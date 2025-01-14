@@ -41,7 +41,7 @@ class RoundService:
     ) -> Optional[Round]:
         """Get a round by ID"""
         stmt = select(Round).where(Round.id == round_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_tournament_rounds(
@@ -55,7 +55,7 @@ class RoundService:
         if round_type:
             stmt = stmt.where(Round.type == round_type)
         stmt = stmt.order_by(Round.round_number)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     @AuditService.audited_transaction(
@@ -170,7 +170,7 @@ class RoundService:
             Round.tournament_id == tournament_id,
             Round.round_number == round_number
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_active_round(
@@ -183,7 +183,7 @@ class RoundService:
             Round.tournament_id == tournament_id,
             Round.status == "active"
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_round_fixtures(
@@ -193,7 +193,7 @@ class RoundService:
     ) -> List[Fixture]:
         """Get all fixtures for a round"""
         stmt = select(Fixture).where(Fixture.round_id == round_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def validate_round_dates(
@@ -291,7 +291,7 @@ class RoundService:
             Fixture.round_id == round.id,
             Fixture.status.in_([FixtureStatus.SCHEDULED, FixtureStatus.IN_PROGRESS])
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         unplayed_fixtures = result.all()
 
         for fixture in unplayed_fixtures:
@@ -357,7 +357,7 @@ class RoundService:
             Round.tournament_id == round.tournament_id,
             Round.round_number == round.round_number + 1
         )
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def _cascade_round_dates(

@@ -20,7 +20,7 @@ class RoleService:
         """Create a new role with specified permissions"""
         # Check if role exists
         stmt = select(Role).where(Role.name == name)
-        result = await self.session.execute(stmt)
+        result = await self.session.executeute(stmt)
         if result.scalar_one_or_none():
             raise ValueError(f"Role {name} already exists")
 
@@ -31,7 +31,7 @@ class RoleService:
 
         # Get and assign permissions
         stmt = select(Permission).where(Permission.name.in_(permissions))
-        result = await self.session.execute(stmt)
+        result = await self.session.executeute(stmt)
         role.permissions = result.scalars().all()
 
         if len(role.permissions) != len(permissions):
@@ -49,7 +49,7 @@ class RoleService:
 
         # Get new permissions
         stmt = select(Permission).where(Permission.name.in_(new_permissions))
-        result = await self.session.execute(stmt)
+        result = await self.session.executeute(stmt)
         permissions = result.scalars().all()
 
         if len(permissions) != len(new_permissions):
@@ -68,7 +68,7 @@ class RoleService:
 
         # Remove role from all users
         stmt = select(PlayerRole).where(PlayerRole.role_id == role_id)
-        result = await self.session.execute(stmt)
+        result = await self.session.executeute(stmt)
         player_roles = result.scalars().all()
 
         for pr in player_roles:
@@ -80,7 +80,7 @@ class RoleService:
     async def get_or_create_role(self, name: str, permissions: List[str]) -> Role:
         """Get existing role or create new one with specified permissions"""
         stmt = select(Role).where(Role.name == name)
-        result = await self.session.execute(stmt)
+        result = await self.session.executeute(stmt)
         role = result.scalar_one_or_none()
 
         if not role:
@@ -92,7 +92,7 @@ class RoleService:
         """Get or create the admin role with all permissions"""
         # Check if admin role exists
         stmt = select(Role).where(Role.name == "admin")
-        result = await self.session.execute(stmt)
+        result = await self.session.executeute(stmt)
         admin_role = result.scalar_one_or_none()
         
         if not admin_role:
@@ -103,7 +103,7 @@ class RoleService:
 
             # Get all permissions
             stmt = select(Permission)
-            result = await self.session.execute(stmt)
+            result = await self.session.executeute(stmt)
             permissions = result.scalars().all()
 
             # Assign all permissions to admin role

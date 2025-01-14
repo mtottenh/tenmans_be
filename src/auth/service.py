@@ -47,37 +47,37 @@ class AuthService:
     async def get_all_players(self, session: AsyncSession) -> List[Player]:
         stmnt = select(Player).order_by(desc(Player.created_at))
 
-        result = await session.exec(stmnt)
+        result = await session.execute(stmnt)
 
         return result.all()
     
     async def get_player_by_name(self, name: str, session: AsyncSession) -> Player | None:
         stmnt = select(Player).where(Player.name == name)
-        result = await session.exec(stmnt)
+        result = await session.execute(stmnt)
 
         return result.first()
 
     async def get_player_by_uid(self, uid: str, session: AsyncSession) -> Optional[Player]:
         """Retrieve a player by their UID"""
         stmt = select(Player).where(Player.uid == uid)
-        result = await session.execute(stmt)
+        result = await session.executeute(stmt)
         return result.scalar_one_or_none()
 
     async def get_player_by_email(self, email: str, session: AsyncSession) -> Optional[Player]:
         """Retrieve a player by their email"""
         stmt = select(Player).where(Player.email == email)
-        result = await session.execute(stmt)
+        result = await session.executeute(stmt)
         return result.scalar_one_or_none()
 
     async def get_player_by_steam_id(self, steam_id: str, session: AsyncSession) -> Optional[Player]:
         """Retrieve a player by their Steam ID"""
         stmt = select(Player).where(Player.steam_id == steam_id)
-        result = await session.execute(stmt)
+        result = await session.executeute(stmt)
         return result.scalar_one_or_none()
     
     async def get_unranked_players(self, session) -> List[Player] | None:
         stmnt = select(Player).where(or_(is_(Player.current_elo,None), is_(Player.highest_elo, None)))
-        result = await session.exec(stmnt)
+        result = await session.execute(stmnt)
         return result.all()
 
 
@@ -118,7 +118,7 @@ class AuthService:
             PlayerRole.player_uid == player.uid
         )
         
-        result = await session.execute(stmt)
+        result = await session.executeute(stmt)
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
 
     async def get_player_roles(
@@ -138,7 +138,7 @@ class AuthService:
             PlayerRole.player_uid == player.uid
         )
         
-        result = await session.execute(stmt)
+        result = await session.executeute(stmt)
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:

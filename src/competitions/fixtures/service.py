@@ -53,7 +53,7 @@ class FixtureService:
     ) -> Optional[Fixture]:
         """Get a fixture by ID"""
         stmt = select(Fixture).where(Fixture.id == fixture_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()
 
     async def get_tournament_fixtures(
@@ -67,7 +67,7 @@ class FixtureService:
         if status:
             stmt = stmt.where(Fixture.status == status)
         stmt = stmt.order_by(Fixture.scheduled_at)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     @AuditService.audited_transaction(
@@ -268,7 +268,7 @@ class FixtureService:
         if status:
             stmt = stmt.where(Fixture.status == status)
         stmt = stmt.order_by(Fixture.scheduled_at)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     @AuditService.audited_transaction(
@@ -310,7 +310,7 @@ class FixtureService:
             Fixture.status == FixtureStatus.SCHEDULED,
             Fixture.scheduled_at <= end_date
         ).order_by(Fixture.scheduled_at)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
     async def get_fixture_with_details(
@@ -322,5 +322,5 @@ class FixtureService:
         stmt = select(Fixture).where(
             Fixture.id == fixture_id
         ).join(Tournament).join(Round).join(Team, Fixture.team_1 == Team.id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.first()

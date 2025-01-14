@@ -32,7 +32,7 @@ class StandingsCalculator(ABC):
     ) -> List[Fixture]:
         """Get fixtures for a round"""
         stmt = select(Fixture).where(Fixture.round_id == round_id)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()
 
 class RegularStandingsCalculator(StandingsCalculator):
@@ -49,7 +49,7 @@ class RegularStandingsCalculator(StandingsCalculator):
             Round.tournament_id == tournament.id,
             Round.type == RoundType.GROUP_STAGE
         ).order_by(Round.round_number)
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         rounds = result.all()
         
         # Initialize team statistics
@@ -161,7 +161,7 @@ class KnockoutStandingsCalculator(StandingsCalculator):
             Round.tournament_id == tournament.id,
             Round.type == RoundType.KNOCKOUT
         ).order_by(Round.round_number.desc())
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         rounds = result.all()
         
         # Track team progress and elimination

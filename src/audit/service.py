@@ -104,5 +104,5 @@ class AuditService:
             AuditLog.entity_type == entity_type,
             AuditLog.entity_id == entity_id
         ).order_by(desc(AuditLog.created_at))
-        result = await session.exec(stmt)
+        result = await session.execute(stmt)
         return result.all()

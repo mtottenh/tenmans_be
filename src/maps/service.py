@@ -12,18 +12,18 @@ class MapNotFoundException(Exception):
 class MapService:
     async def get_all_maps(self, session: AsyncSession) -> Sequence[Map]:
         stmnt = select(Map).order_by(desc(Map.name))
-        return (await session.exec(stmnt)).all()
+        return (await session.execute(stmnt)).all()
 
     async def get_map(self, id: str, session: AsyncSession) -> Map:
         stmnt = select(Map).where(Map.id == id)
-        map = (await session.exec(stmnt)).first()
+        map = (await session.execute(stmnt)).first()
         if map is None:
             raise MapNotFoundException(f"Map id={id} not found")
         return map
 
     async def get_map_by_name(self, name: str, session: AsyncSession) -> Map:
         stmnt = select(Map).where(Map.name == name)
-        map = (await session.exec(stmnt)).first()
+        map = (await session.execute(stmnt)).first()
         if map is None:
             raise MapNotFoundException(f"Map {name} not found")
         return map
