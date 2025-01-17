@@ -29,7 +29,7 @@ RUN mkdir -p logo_store map_store
 
 # Expose port
 EXPOSE 8000
-
+WORKDIR /app/src
 # Command to run the application with auto-reload
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 #CMD ["tail", "-f", "/dev/null"]

@@ -7,8 +7,8 @@ from .base_schemas import TournamentBase, RoundBase, SeasonBase, FixtureBase
 # Request Schemas
 class SeasonCreate(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
-    start_date: datetime
-    end_date: datetime
+    # start_date: datetime
+    # end_date: datetime
 
 class RoundCreate(BaseModel):
     tournament_id: UUID4

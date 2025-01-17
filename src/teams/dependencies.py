@@ -95,4 +95,5 @@ class CaptainCheckerByTeamId(CaptainCheckerBase):
         return await super().__call__(team_id, "id", current_player, session)
     
 # Create dependency
-require_team_captain = CaptainCheckerByTeamName()
+require_team_captain_by_name = CaptainCheckerByTeamName()
+require_team_captain_by_id = CaptainCheckerByTeamId()

@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
+import pprint
 from typing import List, Optional, Tuple, Dict
+from sqlalchemy import inspect
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.sql.operators import is_
+from sqlalchemy.orm import selectinload
 from sqlmodel import select, desc, or_
 from auth.models import Player, Permission, Role, PlayerRole
 from auth.schemas import TokenResponse, AuthType, PlayerEmailCreate, PlayerLogin, PlayerUpdate
@@ -11,7 +14,11 @@ import jwt
 from enum import StrEnum
 import uuid
 from config import Config
+import logging
 
+from roles.service import RoleService
+
+LOG = logging.getLogger('uvicorn.error')
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class InvalidSteamResponseException(Exception):
@@ -43,41 +50,55 @@ class PermissionScope:
 class AuthService:
     def __init__(self):
         self.pwd_context = pwd_context
+        self.role_service = RoleService()
 
     async def get_all_players(self, session: AsyncSession) -> List[Player]:
-        stmnt = select(Player).order_by(desc(Player.created_at))
+        stmnt = select(Player).order_by(desc(Player.created_at)).options(
+            selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
 
-        result = await session.execute(stmnt)
+        result = (await session.execute(stmnt)).scalars()
 
         return result.all()
     
     async def get_player_by_name(self, name: str, session: AsyncSession) -> Player | None:
         stmnt = select(Player).where(Player.name == name)
-        result = await session.execute(stmnt)
+        result = (await session.execute(stmnt)).scalars()
 
         return result.first()
 
     async def get_player_by_uid(self, uid: str, session: AsyncSession) -> Optional[Player]:
         """Retrieve a player by their UID"""
-        stmt = select(Player).where(Player.uid == uid)
-        result = await session.executeute(stmt)
-        return result.scalar_one_or_none()
+        stmt = select(Player).where(Player.uid == uid).options(
+            selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
+        result = await session.execute(stmt)
+        return result.scalars().first()
+        
 
     async def get_player_by_email(self, email: str, session: AsyncSession) -> Optional[Player]:
         """Retrieve a player by their email"""
-        stmt = select(Player).where(Player.email == email)
-        result = await session.executeute(stmt)
+        stmt = select(Player).where(Player.email == email).options(
+            selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
+        result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_player_by_steam_id(self, steam_id: str, session: AsyncSession) -> Optional[Player]:
         """Retrieve a player by their Steam ID"""
-        stmt = select(Player).where(Player.steam_id == steam_id)
-        result = await session.executeute(stmt)
+        stmt = select(Player).where(Player.steam_id == steam_id).options(
+            selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
+        result = await session.execute(stmt)
         return result.scalar_one_or_none()
     
     async def get_unranked_players(self, session) -> List[Player] | None:
         stmnt = select(Player).where(or_(is_(Player.current_elo,None), is_(Player.highest_elo, None)))
-        result = await session.execute(stmnt)
+        result = (await session.execute(stmnt)).scalars()
         return result.all()
 
 
@@ -118,7 +139,7 @@ class AuthService:
             PlayerRole.player_uid == player.uid
         )
         
-        result = await session.executeute(stmt)
+        result = await session.execute(stmt)
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
 
     async def get_player_roles(
@@ -138,7 +159,7 @@ class AuthService:
             PlayerRole.player_uid == player.uid
         )
         
-        result = await session.executeute(stmt)
+        result = await session.execute(stmt)
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
@@ -272,7 +293,10 @@ class AuthService:
         session.add(new_player)
         await session.commit()
         await session.refresh(new_player)
+        # TODO - Create 'role creation' services.
 
+        user_role = await self.role_service.get_role_by_name("user", session)
+        await self.assign_role(new_player, user_role, ScopeType.GLOBAL, None, session)
         # Create tokens
         tokens = self.create_tokens(str(new_player.uid), new_player.auth_type)
         return new_player, tokens
@@ -280,7 +304,7 @@ class AuthService:
     async def create_steam_player(self, steam_id: str, session: AsyncSession) -> Player:
         """Create a new player from Steam authentication"""
         # Here you could optionally fetch additional player info from Steam Web API
-
+        
         base_url = "http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/"
         params = {
             "key": Config.STEAM_API_KEY,
@@ -288,7 +312,7 @@ class AuthService:
         }
         player_name = ""
         async with httpx.AsyncClient(timeout=60) as client:
-            response = client.get(base_url, params=params)
+            response = await client.get(base_url, params=params)
             response.raise_for_status()
             data = response.json()
 
@@ -305,26 +329,42 @@ class AuthService:
             name=player_name        )
         
         session.add(new_player)
-        await session.commit()
-        await session.refresh(new_player)
-        
-        return new_player
 
+        await session.flush()
+        await session.refresh(new_player)
+        user_role = await self.role_service.get_role_by_name("user", session)
+        await self.assign_role(new_player, user_role, ScopeType.GLOBAL, None, session)
+
+        await session.refresh(new_player)
+        return new_player
+    
+    import pprint
     async def update_player(
         self, player_uid: str, player_data: PlayerUpdate, session: AsyncSession
     ):
         player_to_update = await self.get_player_by_uid(player_uid, session)
-        if player_to_update is not None:
+        LOG.info(f"Player: {pprint.pformat(player_to_update)}")
+        if player_to_update:
             update_data = player_data.model_dump()
+            mapper = inspect(player_to_update.__class__)  # Get mapper to inspect fields
+
             for k, v in update_data.items():
                 if v is not None:
                     if k == "password":
-                        setattr(player_to_update, 'password_hash', self.get_password_hash(v))
+                        setattr(player_to_update, "password_hash", self.get_password_hash(v))
                     else:
-                        setattr(player_to_update, k, v)
-            await session.add(player_to_update)
+                        # Check if the field is a relationship
+                        if k in mapper.relationships:
+                            # It's a relationship field; handle updates to related objects separately
+                            raise ValueError(f"Cannot directly update relationship field '{k}'")
+                        else:
+                            # Update simple attributes
+                            setattr(player_to_update, k, v)
+            LOG.info(f"Player: {pprint.pformat(player_to_update)}")
+            session.add(player_to_update)
             await session.commit()
             await session.refresh(player_to_update)
+
         return player_to_update
 
     async def delete_player(self, player_uid: str, session: AsyncSession):

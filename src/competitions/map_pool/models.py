@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
@@ -25,7 +26,7 @@ class MapPoolMap(SQLModel, table=True):
     vote_count: Optional[int] = Field(default=0)  # For voting pools
     added_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
-class TournamentMapPool(SQLModel, table=True):
+class TournamentMapPool(SQLModel,AsyncAttrs, table=True):
     """Represents a tournament's map pool configuration"""
     __tablename__ = "tournament_map_pools"
     
@@ -51,7 +52,7 @@ class TournamentMapPool(SQLModel, table=True):
     team_votes: List["MapPoolVote"] = Relationship(back_populates="map_pool")
 
 
-class MapPoolVote(SQLModel, table=True):
+class MapPoolVote(SQLModel, AsyncAttrs, table=True):
     """Records votes cast by teams for maps"""
     __tablename__ = "map_pool_votes"
     

@@ -1,15 +1,29 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional
+from enum import StrEnum
+from competitions.models.seasons import Season
 
-class Team(SQLModel, table=True):
+class TeamStatus(StrEnum):
+    ACTIVE = "active"
+    DISBANDED = "disbanded"
+    SUSPENDED = "suspended"
+    ARCHIVED = "archived"
+
+
+class Team(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "teams"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     name: str = Field(unique=True)
+    status: TeamStatus = Field(default=TeamStatus.ACTIVE)
+    disbanded_at: Optional[datetime] = None
+    disbanded_reason: Optional[str] = None
+    disbanded_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
     logo: Optional[str]
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -30,7 +44,8 @@ class Team(SQLModel, table=True):
     tournament_registrations: List["TournamentRegistration"] = Relationship(back_populates="team")
     match_players: List["MatchPlayer"] = Relationship(back_populates="team")
 
-class Roster(SQLModel, table=True):
+    
+class Roster(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "rosters"
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id"), primary_key=True))
     player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))
@@ -41,9 +56,9 @@ class Roster(SQLModel, table=True):
     
     team: Team = Relationship(back_populates="rosters")
     player: "Player" = Relationship(back_populates="team_rosters")
-    season: "Season" = Relationship(back_populates="rosters")
+    season: Season = Relationship(back_populates="rosters")
 
-class TeamCaptain(SQLModel, table=True):
+class TeamCaptain(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "team_captains"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))

@@ -53,7 +53,7 @@ class TestDataBuilder:
         self.rounds: List[Round] = []
         self.fixtures: List[Fixture] = []
         self.results: List[Result] = []
-
+        self.rosters: List[Roster] = []
     async def generate_all(
         self,
         num_players: int = 50,
@@ -113,6 +113,8 @@ class TestDataBuilder:
             self.players.append(player)
         
         await self.session.commit()
+        for player in self.players:
+            self.session.refresh(player)
         logger.info(f"Generated {len(self.players)} players")
 
     async def generate_teams(self, count: int):
@@ -166,10 +168,17 @@ class TestDataBuilder:
                         pending=False
                     )
                     self.session.add(roster)
-            
+                    self.rosters.append(roster)
             self.teams.append(team)
-        
+
         await self.session.commit()
+        for team in self.teams:
+            await self.session.refresh(team)
+            
+        for rosters in self.rosters:
+            await self.session.refresh(roster)
+
+        
         logger.info(f"Generated {len(self.teams)} teams")
 
     async def generate_season(self):
@@ -199,13 +208,13 @@ class TestDataBuilder:
                 "group_size": len(self.teams),
                 "teams_per_group": len(self.teams) // 2,
                 "teams_advancing": 4,
-                "match_format": "bo3"
+                "match_format": "bo1"
             }
         else:  # KNOCKOUT
             format_config = {
                 "seeding_type": "random",
                 "third_place_playoff": False,
-                "match_format": "bo3"
+                "match_format": "bo1"
             }
         
         tournament = Tournament(
@@ -217,10 +226,10 @@ class TestDataBuilder:
             max_teams=len(self.teams),
             max_team_size=TestDataConfig.MAX_PLAYERS_PER_TEAM,
             min_team_size=TestDataConfig.MIN_PLAYERS_PER_TEAM,
-            registration_start=datetime.now() - timedelta(days=25),
-            registration_end=datetime.now() - timedelta(days=20),
-            scheduled_start_date=datetime.now() - timedelta(days=15),
-            scheduled_end_date=datetime.now() + timedelta(days=15),
+            registration_start=datetime.now() + timedelta(days=25),
+            registration_end=datetime.now() + timedelta(days=30),
+            scheduled_start_date=datetime.now() + timedelta(days=35),
+            scheduled_end_date=datetime.now() + timedelta(days=50),
             format_config=format_config,
             map_pool=[str(map_obj.id) for map_obj in self.maps]
         )
@@ -250,7 +259,7 @@ class TestDataBuilder:
             tournament_id=tournament.id,
             round_number=round_number,
             type=round_type,
-            best_of=3,  # Default to BO3
+            best_of=1,  # Default to BO1
             status=status,
             start_date=start_date,
             end_date=start_date + timedelta(days=TestDataConfig.ROUND_INTERVAL_DAYS),
@@ -270,7 +279,7 @@ class TestDataBuilder:
         round: Round,
         team_1: Team,
         team_2: Team,
-        match_format: MatchFormat = MatchFormat.BO3,
+        match_format: MatchFormat = MatchFormat.BO1,
         status: FixtureStatus = FixtureStatus.SCHEDULED,
         scheduled_at: Optional[datetime] = None
     ) -> Fixture:
@@ -421,9 +430,10 @@ async def regular_tournament_setup(
     """Setup a regular tournament with teams"""
     # Generate base data
     await test_data_builder.generate_maps()
+    await test_data_builder.generate_season() # We probably need to make a 'with season' v.s. without seson setup to test roster joining flows
     await test_data_builder.generate_players(40)  # Enough for 8 teams of 5
     await test_data_builder.generate_teams(8)
-    await test_data_builder.generate_season()
+
     await test_data_builder.generate_tournament(tournament_type=TournamentType.REGULAR)
     
     return {

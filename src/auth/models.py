@@ -1,17 +1,21 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from enum import StrEnum
 import uuid
 from typing import List, Optional
+from audit.models import AuditLog
+from moderation.models import Ban
 from substitutes.models import SubstituteAvailability
+from teams.join_request.models import TeamJoinRequest
 class AuthType(StrEnum):
     STEAM = "steam"
     EMAIL = "email"
 
-class RolePermission(SQLModel, table=True):
+class RolePermission(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "role_permissions"
     role_id: uuid.UUID = Field(
         sa_column=Column(ForeignKey("roles.id"), primary_key=True)
@@ -32,7 +36,7 @@ class PlayerRole(SQLModel, table=True):
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
 
-class Role(SQLModel, table=True):
+class Role(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "roles"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True),  primary_key=True, nullable=False, default=uuid.uuid4))
@@ -46,7 +50,7 @@ class Role(SQLModel, table=True):
         back_populates="roles",  # You should define a `roles` field in `Player`
         link_model=PlayerRole
     )
-class Permission(SQLModel, table=True):
+class Permission(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "permissions"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True),primary_key=True,nullable=False, default=uuid.uuid4) )
@@ -66,7 +70,7 @@ class VerificationStatus(StrEnum):
     REJECTED = "rejected"
 
 
-class Player(SQLModel, table=True):
+class Player(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "players"
 
     uid: uuid.UUID = Field(
@@ -95,19 +99,19 @@ class Player(SQLModel, table=True):
     pug_participations: List["PugPlayer"] = Relationship(back_populates="player")
     pug_captain_of: List["PugTeam"] = Relationship(back_populates="captain")
     created_pugs: List["Pug"] = Relationship(back_populates="creator")
-    bans: List["Ban"] = Relationship(back_populates="player",  sa_relationship_kwargs={"primaryjoin": "Ban.player_uid == Player.uid"})
-    issued_bans: List["Ban"] = Relationship(
+    bans: List[Ban] = Relationship(back_populates="player",  sa_relationship_kwargs={"primaryjoin": "Ban.player_uid == Player.uid"})
+    issued_bans: List[Ban] = Relationship(
         back_populates="admin",
-        sa_relationship=relationship("Ban", back_populates="admin", foreign_keys="Ban.issued_by")
+        sa_relationship=relationship(Ban, back_populates="admin", foreign_keys="Ban.issued_by")
     )
     substitute_availability: List["SubstituteAvailability"] = Relationship(
         back_populates="player"
     )
-    join_requests: List["TeamJoinRequest"] = Relationship(
+    join_requests: List[TeamJoinRequest] = Relationship(
         back_populates="player",
         sa_relationship_kwargs={"foreign_keys": "TeamJoinRequest.player_uid"}
     )
-    handled_join_requests: List["TeamJoinRequest"] = Relationship(
+    handled_join_requests: List[TeamJoinRequest] = Relationship(
         back_populates="responder",
         sa_relationship_kwargs={"foreign_keys": "TeamJoinRequest.responded_by"}
     )
@@ -117,14 +121,14 @@ class Player(SQLModel, table=True):
     submitted_results: List["Result"] = Relationship(back_populates="submitter", sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.uid"})
     confirmed_results: List["Result"] = Relationship(back_populates="confirmer", sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.uid"})
     admin_overridden_results: List["Result"] = Relationship(back_populates="admin_overrider",  sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.uid"})
-    audit_logs: List["AuditLog"] = Relationship(back_populates="actor")
-    revoked_bans: List["Ban"] = Relationship(back_populates="revoking_admin",
-                     sa_relationship=relationship("Ban", back_populates="revoking_admin", foreign_keys="Ban.revoked_by")                        
+    audit_logs: List[AuditLog] = Relationship(back_populates="actor")
+    revoked_bans: List[Ban] = Relationship(back_populates="revoking_admin",
+                     sa_relationship=relationship(Ban, back_populates="revoking_admin", foreign_keys="Ban.revoked_by")                        
                                              
                                              )
 
 
-class VerificationRequest(SQLModel, table=True):
+class VerificationRequest(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "verification_requests"
     
     id: uuid.UUID = Field(

@@ -11,17 +11,17 @@ class SeasonStateError(Exception):
 class SeasonService:
     async def create_season(
         self,
-        name: str,
+        season: SeasonCreate,
         session: AsyncSession
     ) -> Season:
         """Create a new season"""
         # Check if season with name exists
-        existing = await self.get_season_by_name(name, session)
+        existing = await self.get_season_by_name(season.name, session)
         if existing:
-            raise ValueError(f"Season with name '{name}' already exists")
+            raise ValueError(f"Season with name '{season.name}' already exists")
             
         new_season = Season(
-            name=name,
+            name=season.name,
             state=SeasonState.NOT_STARTED
         )
         session.add(new_season)
@@ -95,7 +95,7 @@ class SeasonService:
     ) -> Optional[Season]:
         """Get a season by ID"""
         stmt = select(Season).where(Season.id == season_id)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_season_by_name(
@@ -105,7 +105,7 @@ class SeasonService:
     ) -> Optional[Season]:
         """Get a season by name"""
         stmt = select(Season).where(Season.name == name)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_all_seasons(
@@ -118,7 +118,7 @@ class SeasonService:
         if not include_completed:
             stmt = stmt.where(Season.state != SeasonState.COMPLETED)
         stmt = stmt.order_by(desc(Season.created_at))
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_active_season(
@@ -127,5 +127,5 @@ class SeasonService:
     ) -> Optional[Season]:
         """Get the current active season"""
         stmt = select(Season).where(Season.state == SeasonState.IN_PROGRESS)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()

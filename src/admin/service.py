@@ -57,7 +57,7 @@ class AdminService:
     ) -> List[Player]:
         """Get all players with pagination"""
         stmt = select(Player).offset(skip).limit(limit).order_by(desc(Player.created_at))
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     @AuditService.audited_transaction(
@@ -157,7 +157,7 @@ class AdminService:
             stmt = stmt.where(Ban.status == BanStatus.ACTIVE)
         stmt = stmt.order_by(desc(Ban.created_at))
         
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     @AuditService.audited_transaction(

@@ -1,30 +1,22 @@
 from functools import wraps
 from typing import Any, Callable, Dict, Optional
+from sqlmodel import desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from audit.models import AuditLog
 from auth.models import Player
-from sqlmodel import select, desc
 import inspect
-import uuid
 from datetime import datetime
+import uuid
+from typing import List
+
 
 class AuditService:
-    """Service for handling audit logging"""
-    
     @staticmethod
     def audited_transaction(
         action_type: str,
         entity_type: str,
         details_extractor: Optional[Callable] = None
     ):
-        """
-        Decorator for auditing database transactions.
-        
-        Args:
-            action_type: Type of action being performed (e.g., "team_create")
-            entity_type: Type of entity being affected (e.g., "team")
-            details_extractor: Optional function to extract audit details from the result
-        """
         def decorator(func: Callable):
             @wraps(func)
             async def wrapper(*args, **kwargs):
@@ -33,11 +25,9 @@ class AuditService:
                 actor = next((arg for arg in args if isinstance(arg, Player)), kwargs.get('actor'))
                 
                 if not session or not actor:
-                    # Get parameter names from function signature
                     sig = inspect.signature(func)
                     param_names = list(sig.parameters.keys())
                     
-                    # Try to get session and actor from named parameters
                     if not session:
                         session_idx = param_names.index('session')
                         if session_idx < len(args):
@@ -54,19 +44,33 @@ class AuditService:
                     # Execute the wrapped function
                     result = await func(*args, **kwargs)
                     
-                    # Get entity_id and details
+                    # First phase: Commit the main resource
+                    await session.commit()
+                    
+                    # Refresh to get generated IDs
+                    if hasattr(result, '__table__'):
+                        await session.refresh(result)
+                    
+                    # Get entity_id and details after refresh
                     entity_id = getattr(result, 'id', None)
                     
-                    # Extract details using provided function or default to basic details
+                    # Extract details using provided function
+                    details: Dict[str, Any]
                     if details_extractor:
-                        details = details_extractor(result)
+                        instance = args[0] if args else None
+                        
+                        if instance and not isinstance(details_extractor, staticmethod):
+                            bound_extractor = details_extractor.__get__(instance, type(instance))
+                            details = bound_extractor(result)
+                        else:
+                            details = details_extractor(result)
                     else:
                         details = {
                             "result_type": type(result).__name__,
                             "result_str": str(result)
                         }
-                    
-                    # Create audit log
+                    await session.refresh(actor)
+                    # Second phase: Create and commit audit log
                     audit_log = AuditLog(
                         action_type=action_type,
                         entity_type=entity_type,
@@ -76,14 +80,8 @@ class AuditService:
                         created_at=datetime.now()
                     )
                     session.add(audit_log)
-                    
-                    # Commit the transaction
                     await session.commit()
-                    
-                    # Refresh the result if it's a model
-                    if hasattr(result, '__table__'):
-                        await session.refresh(result)
-                    
+                    await session.refresh(result)
                     return result
                     
                 except Exception as e:
@@ -92,14 +90,13 @@ class AuditService:
                     
             return wrapper
         return decorator
-    
+
     async def get_entity_audit_logs(
         self,
         entity_type: str,
         entity_id: uuid.UUID,
         session: AsyncSession
-    ) -> list[AuditLog]:
-        """Retrieves audit logs for a specific entity"""
+    ) -> List[AuditLog]:
         stmt = select(AuditLog).where(
             AuditLog.entity_type == entity_type,
             AuditLog.entity_id == entity_id

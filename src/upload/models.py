@@ -1,8 +1,15 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, Literal
+from enum import StrEnum
 
 
-UploadType = Literal["team_logo", "map_image", "player_avatar"]
+class UploadType(StrEnum):
+    TEAM_LOGO = "team_logo"
+    PLAYER_AVATAR = "player_avatar"
+    MAP_IMAGE = "map_image"
+    TOURNAMENT_BANNER = "tournament_banner"
+
 
 
 class UploadRequest(BaseModel):
@@ -13,10 +20,22 @@ class UploadRequest(BaseModel):
     upload_type: UploadType
     metadata: Optional[dict] = None
 
-class UploadToken(BaseModel):
+class UploadTokenData(BaseModel):
+    allowed_extensions: list[str]
+    max_size: int
+    expires_in: int  # seconds
+
+
+class UploadToken(UploadTokenData):
     """Response with upload token and metadata"""
     upload_url: str
     token: str
-    allowed_types: list[str]
-    max_size: int
-    expires_in: int  # seconds
+
+
+class UploadResult(BaseModel):
+    file_path: str
+    original_filename: str
+    upload_type: UploadType
+    is_temp: bool
+    file_size: int
+    uploaded_at: datetime

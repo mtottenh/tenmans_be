@@ -2,6 +2,7 @@ from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy.dialects.sqlite as sl
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from enum import StrEnum
@@ -20,7 +21,7 @@ class BanStatus(StrEnum):
     APPEALED = "appealed"
     REVOKED = "revoked"
 
-class Ban(SQLModel, table=True):
+class Ban(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "bans"
     id: uuid.UUID = Field(
         sa_column=Column(UUID, nullable=False, primary_key=True, default=uuid.uuid4)

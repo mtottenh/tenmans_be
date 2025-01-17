@@ -102,9 +102,44 @@
 * [ ] Integration of Map picker into the fixture routes/service
 * [ ] Server Data Model. 
 
-
+* [ ] Admin routes need some work.
+### Player API
+* [ ]  Add support for patching a player that registered through steam and has no email
 
 ### RCON API
 * Need a separate web service that allows TLS Mutual Auth
     * Requires a valid client cert
     * 
+
+
+* [x] Go through each model to make them use 'AsyncAttrs:
+```
+from sqlalchemy.ext.asyncio import AsyncAttrs
+
+class Team(SQLModel, AsyncAttrs, table=True): # <-- AsyncAttrs
+    ...
+    heroes: List["Hero"] = Relationship(back_populates="team")
+
+async def select_heroes():
+    async with AsyncSession(engine) as session:
+        ...
+        heroes = await team_preventers.awaitable_attrs.heroes # <-- awaitable_attrs
+        print(f"Preventers heroes: {heroes}")
+```\
+    * [ ] Check all model field accesses to ensure foo.field -> await foo.awaitable_attr.field
+
+* [ ] Add Tournament registration process maangement to the tournament sevice/routes
+
+* [ ] Team service - 'get_active_roster_size'
+
+
+
+# TODO
+* Role Creation
+    * Permission assignment to roles
+* Bootstrapping initial role script
+* Bootstrap initial admin user script
+* Some way of logging in as an authenticated user (skip steam login flow)
+* Assignment to USER role on player creation
+* Return list of roles in player endpoins
+    * Make front-end key of 'is-admin' in returned role list.

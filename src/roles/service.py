@@ -1,113 +1,182 @@
-# permissions/role_service.py
-
-import logging
-from typing import List
-import uuid
+from typing import List, Optional
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+import uuid
+from datetime import datetime
 
-from auth.models import Role, Permission, PlayerRole
+from auth.models import PlayerRole, Role, Permission, RolePermission
+from audit.service import AuditService
 
-logger = logging.getLogger(__name__)
+class RoleServiceError(Exception):
+    """Base exception for role service errors"""
+    pass
 
 class RoleService:
-    """Service for managing roles and their permissions"""
-    
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self):
+        self.audit_service = AuditService()
 
-    async def create_role(self, name: str, permissions: List[str]) -> Role:
-        """Create a new role with specified permissions"""
-        # Check if role exists
+    def _role_audit_details(self, role: Role) -> dict:
+        """Extract audit details from a role operation"""
+        return {
+            "role_id": str(role.id),
+            "role_name": role.name,
+            "created_at": role.created_at.isoformat() if role.created_at else None
+        }
+
+    async def get_role(self, role_id: uuid.UUID, session: AsyncSession) -> Optional[Role]:
+        """Get a role by ID"""
+        stmt = select(Role).where(Role.id == role_id)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_role_by_name(self, name: str, session: AsyncSession) -> Optional[Role]:
+        """Get a role by name"""
         stmt = select(Role).where(Role.name == name)
-        result = await self.session.executeute(stmt)
-        if result.scalar_one_or_none():
-            raise ValueError(f"Role {name} already exists")
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_all_roles(self, session: AsyncSession) -> List[Role]:
+        """Get all roles"""
+        stmt = select(Role)
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_permission(self, permission_id: uuid.UUID, session: AsyncSession) -> Optional[Permission]:
+        """Get a permission by ID"""
+        stmt = select(Permission).where(Permission.id == permission_id)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_permission_by_name(self, name: str, session: AsyncSession) -> Optional[Permission]:
+        """Get a permission by name"""
+        stmt = select(Permission).where(Permission.name == name)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_all_permissions(self, session: AsyncSession) -> List[Permission]:
+        """Get all permissions"""
+        stmt = select(Permission)
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+    @AuditService.audited_transaction(
+        action_type="role_create",
+        entity_type="role",
+        details_extractor=_role_audit_details
+    )
+    async def create_role(self, name: str, permission_ids: List[uuid.UUID], actor, session: AsyncSession) -> Role:
+        """Create a new role with permissions"""
+        # Check if role already exists
+        existing_role = await self.get_role_by_name(name, session)
+        if existing_role:
+            raise RoleServiceError(f"Role '{name}' already exists")
+
+        # Verify all permissions exist
+        permissions = []
+        for perm_id in permission_ids:
+            permission = await self.get_permission(perm_id, session)
+            if not permission:
+                raise RoleServiceError(f"Permission {perm_id} not found")
+            permissions.append(permission)
 
         # Create role
-        role = Role(name=name)
-        self.session.add(role)
-        await self.session.flush()
-
-        # Get and assign permissions
-        stmt = select(Permission).where(Permission.name.in_(permissions))
-        result = await self.session.executeute(stmt)
-        role.permissions = result.scalars().all()
-
-        if len(role.permissions) != len(permissions):
-            missing = set(permissions) - {p.name for p in role.permissions}
-            raise ValueError(f"Invalid permissions: {missing}")
-
-        await self.session.commit()
-        return role
-
-    async def edit_role(self, role_id: uuid.UUID, new_permissions: List[str]) -> Role:
-        """Edit an existing role's permissions"""
-        role = await self.session.get(Role, role_id)
-        if not role:
-            raise ValueError(f"Role {role_id} not found")
-
-        # Get new permissions
-        stmt = select(Permission).where(Permission.name.in_(new_permissions))
-        result = await self.session.executeute(stmt)
-        permissions = result.scalars().all()
-
-        if len(permissions) != len(new_permissions):
-            missing = set(new_permissions) - {p.name for p in permissions}
-            raise ValueError(f"Invalid permissions: {missing}")
-
+        role = Role(name=name, created_at=datetime.now())
         role.permissions = permissions
-        await self.session.commit()
+        session.add(role)
         return role
 
-    async def delete_role(self, role_id: uuid.UUID):
-        """Delete a role and remove it from all users"""
-        role = await self.session.get(Role, role_id)
+    @AuditService.audited_transaction(
+        action_type="role_update",
+        entity_type="role",
+        details_extractor=_role_audit_details
+    )
+    async def update_role(
+        self,
+        role_id: uuid.UUID,
+        permission_ids: List[uuid.UUID],
+        actor,
+        session: AsyncSession
+    ) -> Role:
+        """Update a role's permissions"""
+        role = await self.get_role(role_id, session)
         if not role:
-            raise ValueError(f"Role {role_id} not found")
+            raise RoleServiceError("Role not found")
 
-        # Remove role from all users
+        # Verify all permissions exist
+        permissions = []
+        for perm_id in permission_ids:
+            permission = await self.get_permission(perm_id, session)
+            if not permission:
+                raise RoleServiceError(f"Permission {perm_id} not found")
+            permissions.append(permission)
+
+        # Update role permissions
+        role.permissions = permissions
+        session.add(role)
+        return role
+
+    @AuditService.audited_transaction(
+        action_type="role_delete",
+        entity_type="role",
+        details_extractor=_role_audit_details
+    )
+    async def delete_role(self, role_id: uuid.UUID, actor, session: AsyncSession) -> Role:
+        """Delete a role"""
+        role = await self.get_role(role_id, session)
+        if not role:
+            raise RoleServiceError("Role not found")
+
+        # Remove role from all players
         stmt = select(PlayerRole).where(PlayerRole.role_id == role_id)
-        result = await self.session.executeute(stmt)
+        result = await session.execute(stmt)
         player_roles = result.scalars().all()
 
         for pr in player_roles:
-            await self.session.delete(pr)
+            await session.delete(pr)
 
-        await self.session.delete(role)
-        await self.session.commit()
-
-    async def get_or_create_role(self, name: str, permissions: List[str]) -> Role:
-        """Get existing role or create new one with specified permissions"""
-        stmt = select(Role).where(Role.name == name)
-        result = await self.session.executeute(stmt)
-        role = result.scalar_one_or_none()
-
-        if not role:
-            role = await self.create_role(name, permissions)
-
+        await session.delete(role)
         return role
 
-    async def get_or_create_admin_role(self) -> Role:
-        """Get or create the admin role with all permissions"""
-        # Check if admin role exists
-        stmt = select(Role).where(Role.name == "admin")
-        result = await self.session.executeute(stmt)
-        admin_role = result.scalar_one_or_none()
-        
-        if not admin_role:
-            # Create admin role
-            admin_role = Role(name="admin")
-            self.session.add(admin_role)
-            await self.session.flush()
+    async def create_permission(
+        self,
+        name: str,
+        description: str,
+        session: AsyncSession
+    ) -> Permission:
+        """Create a new permission"""
+        # Check if permission already exists
+        existing_permission = await self.get_permission_by_name(name, session)
+        if existing_permission:
+            raise RoleServiceError(f"Permission '{name}' already exists")
 
-            # Get all permissions
-            stmt = select(Permission)
-            result = await self.session.executeute(stmt)
-            permissions = result.scalars().all()
+        permission = Permission(
+            name=name,
+            description=description,
+            created_at=datetime.now()
+        )
+        session.add(permission)
+        await session.commit()
+        await session.refresh(permission)
+        return permission
 
-            # Assign all permissions to admin role
-            admin_role.permissions = permissions
-            await self.session.commit()
+    async def delete_permission(
+        self,
+        permission_id: uuid.UUID,
+        session: AsyncSession
+    ) -> Permission:
+        """Delete a permission"""
+        permission = await self.get_permission(permission_id, session)
+        if not permission:
+            raise RoleServiceError("Permission not found")
 
-        return admin_role
+        # Remove permission from all roles
+        stmt = select(RolePermission).where(RolePermission.permission_id == permission_id)
+        result = await session.execute(stmt)
+        role_permissions = result.scalars().all()
+
+        for rp in role_permissions:
+            await session.delete(rp)
+
+        await session.delete(permission)
+        await session.commit()
+        return permission

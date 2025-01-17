@@ -53,8 +53,38 @@ class FixtureService:
     ) -> Optional[Fixture]:
         """Get a fixture by ID"""
         stmt = select(Fixture).where(Fixture.id == fixture_id)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()
+
+    async def get_upcoming_fixtures(
+        self,
+        season_id: uuid.UUID,
+        days: int,
+        session: AsyncSession
+    ) -> List[Fixture]:
+        """
+        Get upcoming fixtures for a season within the specified number of days
+        
+        Args:
+            season_id: Season ID to filter fixtures
+            days: Number of days to look ahead
+            session: Database session
+            
+        Returns:
+            List of fixtures ordered by scheduled date
+        """
+        now = datetime.now()
+        end_date = now + timedelta(days=days)
+        
+        stmt = select(Fixture).where(
+            Fixture.season_id == season_id,
+            Fixture.status == FixtureStatus.SCHEDULED,
+            Fixture.scheduled_at >= now,
+            Fixture.scheduled_at <= end_date
+        ).order_by(Fixture.scheduled_at)
+        
+        result = await session.execute(stmt)
+        return result.scalars().all()
 
     async def get_tournament_fixtures(
         self,
@@ -67,7 +97,7 @@ class FixtureService:
         if status:
             stmt = stmt.where(Fixture.status == status)
         stmt = stmt.order_by(Fixture.scheduled_at)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     @AuditService.audited_transaction(
@@ -268,7 +298,7 @@ class FixtureService:
         if status:
             stmt = stmt.where(Fixture.status == status)
         stmt = stmt.order_by(Fixture.scheduled_at)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     @AuditService.audited_transaction(
@@ -310,7 +340,7 @@ class FixtureService:
             Fixture.status == FixtureStatus.SCHEDULED,
             Fixture.scheduled_at <= end_date
         ).order_by(Fixture.scheduled_at)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_fixture_with_details(
@@ -322,5 +352,5 @@ class FixtureService:
         stmt = select(Fixture).where(
             Fixture.id == fixture_id
         ).join(Tournament).join(Round).join(Team, Fixture.team_1 == Team.id)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()

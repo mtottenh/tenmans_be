@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, HTTPException, status
+from config import Config
 from sqlmodel.ext.asyncio.session import AsyncSession
 from pydantic import BaseModel
 from typing import Optional, Literal
@@ -18,11 +19,12 @@ from state.service import StateService, StateType, get_state_service
 
 
 upload_router = APIRouter(prefix="/uploads")
+state_service = StateService(Config.REDIS_URL)
+upload_service = UploadService(state_service)
 
 @upload_router.post("/request", response_model=UploadToken)
 async def request_upload(
     request: UploadRequest,
-    upload_service: UploadService = Depends(lambda: UploadService(get_state_service())),
     current_player: Player = Depends(get_current_player)
 ):
     """Request an upload token"""
@@ -35,8 +37,7 @@ async def request_upload(
 async def process_upload(
     token: str,
     file: UploadFile,
-    final_id: Optional[str] = None,
-    upload_service: UploadService = Depends(lambda: UploadService(get_state_service()))
+    final_id: Optional[str] = None
 ):
     """Handle file upload with token"""
     try:

@@ -2,12 +2,16 @@ from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
 import uuid
 
-from maps.models import TournamentMap
+from competitions.models.fixtures import Fixture
+from competitions.models.rounds import Round
+from competitions.models.seasons import Season
+from maps.models import Map, TournamentMap
 
 
 class TournamentType(StrEnum):
@@ -23,7 +27,7 @@ class TournamentState(StrEnum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
-class Tournament(SQLModel, table=True):
+class Tournament(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "tournaments"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
@@ -60,10 +64,10 @@ class Tournament(SQLModel, table=True):
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
     # Relationships
-    season: "Season" = Relationship(back_populates="tournaments")
-    rounds: List["Round"] = Relationship(back_populates="tournament")
-    fixtures: List["Fixture"] = Relationship(back_populates="tournament")
-    maps: List["Map"] = Relationship(
+    season: Season = Relationship(back_populates="tournaments")
+    rounds: List[Round] = Relationship(back_populates="tournament")
+    fixtures: List[Fixture] = Relationship(back_populates="tournament")
+    maps: List[Map] = Relationship(
         back_populates="tournaments",
         link_model=TournamentMap
     )
@@ -77,7 +81,7 @@ class RegistrationStatus(StrEnum):
     WITHDRAWN = "withdrawn"
     DISQUALIFIED = "disqualified"
 
-class TournamentRegistration(SQLModel, table=True):
+class TournamentRegistration(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "tournament_registrations"
     
     id: uuid.UUID = Field(

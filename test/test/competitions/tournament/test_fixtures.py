@@ -4,11 +4,14 @@ from datetime import datetime, timedelta
 import uuid
 import pytest_asyncio
 
+from competitions.base_schemas import RegistrationStatus
 from competitions.models.tournaments import Tournament, TournamentState, TournamentType
 from competitions.models.rounds import Round, RoundType
 from competitions.models.fixtures import Fixture, FixtureStatus
+from competitions.tournament.schemas import TournamentRegistrationRequest
 from matches.models import Result, ConfirmationStatus, MatchFormat
 from competitions.tournament.service import TournamentService, TournamentServiceError
+from test.test.competitions.tournament.conftest import TestDataBuilder
 
 @pytest.mark.asyncio
 class TestTournamentFixtures:
@@ -22,11 +25,27 @@ class TestTournamentFixtures:
     ):
         """Test generation of fixtures for regular tournament"""
         tournament = regular_tournament_setup['tournament']
+        service = TournamentService()
+        tournament.state = TournamentState.REGISTRATION_OPEN
+        session.add(tournament)
+        await session.commit()
+        for team in regular_tournament_setup['teams']:
+            rosters = await team.awaitable_attrs.rosters
+
+            player = await rosters[0].awaitable_attrs.player
+            await service.request_registration(TournamentRegistrationRequest(
+                status=RegistrationStatus.APPROVED,
+                team_id=team.id,
+                notes=None,
+                requested_by=player.uid,
+                requested_at=datetime.now(),
+                tournament_id=tournament.id
+            ), player, session)
         tournament.state = TournamentState.REGISTRATION_CLOSED
         session.add(tournament)
         await session.commit()
         
-        service = TournamentService()
+        
         generated = await service.generate_tournament_structure(
             tournament.id,
             admin_user,
@@ -58,7 +77,7 @@ class TestTournamentFixtures:
                 team_ids = {t.id for t in regular_tournament_setup['teams']}
                 assert fixture.team_1 in team_ids
                 assert fixture.team_2 in team_ids
-
+    @pytest.mark.asyncio
     async def test_round_completion_with_results(
         self,
         regular_tournament_setup,
@@ -77,7 +96,7 @@ class TestTournamentFixtures:
             round_number=1,
             round_type=RoundType.GROUP_STAGE,
             status="active",
-            session=session
+            
         )
         
         # Create and complete fixtures
@@ -90,7 +109,7 @@ class TestTournamentFixtures:
                 team_1=teams[i],
                 team_2=teams[i+1],
                 status=FixtureStatus.COMPLETED,
-                session=session
+                
             )
             
             # Create winning results for team 1
@@ -98,8 +117,8 @@ class TestTournamentFixtures:
                 fixture=fixture,
                 team_1_score=16,
                 team_2_score=14,
-                user=admin_user,
-                session=session,
+                submitting_player=admin_user,
+                map_number=1,
                 status=ConfirmationStatus.CONFIRMED
             )
             fixtures.append(fixture)
@@ -119,7 +138,7 @@ class TestTournamentFixtures:
             session
         )
         assert completed_round.status == "completed"
-
+    @pytest.mark.asyncio
     async def test_fixture_forfeits(
         self,
         regular_tournament_setup,
@@ -138,7 +157,7 @@ class TestTournamentFixtures:
             round_number=1,
             round_type=RoundType.GROUP_STAGE,
             status="active",
-            session=session
+            
         )
         
         # Create fixtures - mix of forfeits and completed
@@ -151,14 +170,14 @@ class TestTournamentFixtures:
             team_1=teams[0],
             team_2=teams[1],
             status=FixtureStatus.COMPLETED,
-            session=session
+            
         )
         await builder.create_match_result(
             fixture=fixture1,
             team_1_score=16,
             team_2_score=14,
-            user=admin_user,
-            session=session,
+            submitting_player=admin_user,
+            map_number=1,
             status=ConfirmationStatus.CONFIRMED
         )
         
@@ -169,7 +188,7 @@ class TestTournamentFixtures:
             team_1=teams[2],
             team_2=teams[3],
             status=FixtureStatus.FORFEITED,
-            session=session
+            
         )
         fixture2.forfeit_winner = teams[2].id
         fixture2.forfeit_reason = "Team did not show up"
@@ -196,7 +215,7 @@ class TestTournamentFixtures:
         # Team 1 and Team 3 should have losses
         assert team_standings[teams[1].id].matches_lost == 1
         assert team_standings[teams[3].id].matches_lost == 1  # Forfeit loss
-        
+    @pytest.mark.asyncio
     async def test_knockout_round_progression(
         self,
         knockout_tournament_setup,
@@ -215,7 +234,6 @@ class TestTournamentFixtures:
             round_number=1,
             round_type=RoundType.KNOCKOUT,
             status="active",
-            session=session
         )
         
         # Create first round fixtures
@@ -230,15 +248,14 @@ class TestTournamentFixtures:
                 team_1=teams[i],
                 team_2=teams[i+1],
                 status=FixtureStatus.COMPLETED,
-                session=session
             )
             # First team wins
             await builder.create_match_result(
                 fixture=fixture,
                 team_1_score=16,
                 team_2_score=14,
-                user=admin_user,
-                session=session,
+                submitting_player=admin_user,
+                map_number=1,
                 status=ConfirmationStatus.CONFIRMED
             )
             winners.append(teams[i])
@@ -269,45 +286,3 @@ class TestTournamentFixtures:
         fixture_teams = {f.team_1 for f in second_round_fixtures} | {f.team_2 for f in second_round_fixtures}
         winner_ids = {t.id for t in winners}
         assert fixture_teams == winner_ids
-
-
-@pytest_asyncio.fixture
-async def test_data_builder():
-    """Fixture providing test data builder"""
-    return TestDataBuilder()
-
-@pytest_asyncio.fixture
-async def regular_tournament_setup(
-    test_data_builder: TestDataBuilder,
-    session: AsyncSession
-):
-    """Setup a regular tournament with teams"""
-    teams = await test_data_builder.create_teams(8, session)
-    tournament = await test_data_builder.create_regular_tournament(
-        len(teams),
-        session
-    )
-    
-    return {
-        'tournament': tournament,
-        'teams': teams,
-        'builder': test_data_builder
-    }
-
-@pytest_asyncio.fixture
-async def knockout_tournament_setup(
-    test_data_builder: TestDataBuilder,
-    session: AsyncSession
-):
-    """Setup a knockout tournament with teams"""
-    teams = await test_data_builder.create_teams(8, session)
-    tournament = await test_data_builder.create_knockout_tournament(
-        len(teams),
-        session
-    )
-    
-    return {
-        'tournament': tournament,
-        'teams': teams,
-        'builder': test_data_builder
-    }

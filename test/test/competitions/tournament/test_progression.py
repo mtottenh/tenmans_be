@@ -12,7 +12,7 @@ from competitions.tournament.standings import RegularStandingsCalculator, Knocko
 @pytest.mark.asyncio
 class TestTournamentProgression:
     """Test tournament progression through rounds"""
-
+    @pytest.mark.asyncio
     async def test_start_tournament(
         self,
         regular_tournament_setup,
@@ -22,7 +22,7 @@ class TestTournamentProgression:
         """Test starting a tournament activates first round"""
         # Setup
         tournament = regular_tournament_setup['tournament']
-        tournament.state = TournamentState.NOT_STARTED
+        tournament.state = TournamentState.REGISTRATION_CLOSED
         service = TournamentService()
         
         # Generate tournament structure
@@ -51,7 +51,7 @@ class TestTournamentProgression:
         # Verify other rounds are pending
         other_rounds = [r for r in rounds if r != first_round]
         assert all(r.status == "pending" for r in other_rounds)
-
+    @pytest.mark.asyncio
     async def test_complete_regular_round(
         self,
         regular_tournament_setup,
@@ -98,7 +98,7 @@ class TestTournamentProgression:
         next_round = await service._get_round_by_number(tournament.id, 2, session)
         if next_round:
             assert next_round.status == "active"
-
+    @pytest.mark.asyncio
     async def test_complete_knockout_round(
         self,
         knockout_tournament_setup,
@@ -165,7 +165,7 @@ class TestTournamentProgression:
         next_round_teams = {f.team_1 for f in next_fixtures} | {f.team_2 for f in next_fixtures}
         winner_ids = {t.id for t in winners}
         assert next_round_teams == winner_ids
-
+    @pytest.mark.asyncio
     async def test_forfeit_handling(
         self,
         regular_tournament_setup,
@@ -229,7 +229,7 @@ class TestTournamentProgression:
         # Teams 1 and 3 should have losses 
         assert team_standings[teams[1].id].matches_lost == 1  # Normal loss
         assert team_standings[teams[3].id].matches_lost == 1  # Forfeit loss
-
+    @pytest.mark.asyncio
     async def test_incomplete_round_completion(
         self,
         regular_tournament_setup,
@@ -274,9 +274,10 @@ class TestTournamentProgression:
         )
 
         # Attempt to complete round
-        with pytest.raises(TournamentServiceError, match="All fixtures must be completed"):
-            await service.complete_round(tournament.id,  1, admin_user,  session)
 
+        with pytest.raises(TournamentServiceError, match="\d+ fixtures still pending completion"):
+            await service.complete_round(tournament.id,  1, admin_user,  session)
+    @pytest.mark.asyncio
     async def test_final_round_completion(
         self,
         knockout_tournament_setup,

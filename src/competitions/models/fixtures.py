@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Field, Column, Relationship
+from sqlmodel import SQLModel, Field, Column, Relationship, select
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
@@ -6,8 +6,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
 import uuid
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncAttrs
 
-from matches.models import MatchFormat
+from matches.models import MatchFormat, Result
 from matches.schemas import ConfirmationStatus
 class FixtureStatus(StrEnum):
     SCHEDULED = "scheduled"
@@ -16,7 +18,7 @@ class FixtureStatus(StrEnum):
     CANCELLED = "cancelled"
     FORFEITED = "forfeited"
 
-class Fixture(SQLModel, table=True):
+class Fixture(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "fixtures"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
@@ -66,8 +68,7 @@ class Fixture(SQLModel, table=True):
         }
         return format_maps[self.match_format]
     
-    @property
-    def winner_id(self) -> Optional[uuid.UUID]:
+    async def get_winner_id(self, session: AsyncSession) -> Optional[uuid.UUID]:
         """Get winner ID if match is complete"""
         if self.status == FixtureStatus.FORFEITED:
             return self.forfeit_winner
@@ -75,26 +76,26 @@ class Fixture(SQLModel, table=True):
         if self.status != FixtureStatus.COMPLETED:
             return None
             
-        team_1_wins = 0
-        team_2_wins = 0
+        stmt = select(Result).where(Result.fixture_id == self.id)
+        results = (await session.execute(stmt)).scalars().all()
         
-        for result in self.results:
-            if result.confirmation_status != ConfirmationStatus.CONFIRMED:
-                continue
-            if result.winner_id == self.team_1:
-                team_1_wins += 1
-            elif result.winner_id == self.team_2:
-                team_2_wins += 1
-                
+        team_1_wins = sum(1 for r in results 
+                        if r.confirmation_status == ConfirmationStatus.CONFIRMED 
+                        and r.team_1_score > r.team_2_score)
+                        
+        team_2_wins = sum(1 for r in results
+                        if r.confirmation_status == ConfirmationStatus.CONFIRMED 
+                        and r.team_2_score > r.team_1_score)
+                        
         if team_1_wins >= self.maps_needed:
             return self.team_1
-        elif team_2_wins >= self.maps_needed:
+        elif team_2_wins >= self.maps_needed: 
             return self.team_2
             
         return None
 
     @property 
-    def can_complete(self) -> bool:
+    async def can_complete(self) -> bool:
         """Check if fixture has enough confirmed results to complete"""
         if self.status != FixtureStatus.IN_PROGRESS:
             return False

@@ -93,6 +93,22 @@ class FixtureSummary(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class UpcomingFixturesResponse(BaseModel):
+    """Response model for upcoming fixtures"""
+    items: List[FixtureBase]
+    total: int
+    next_24h: int  # Fixtures in next 24 hours
+    next_week: int  # Fixtures in next 7 days
+
+class FixturePage(BaseModel):
+    """Paginated fixture response"""
+    items: List[FixtureBase]
+    total: int
+    page: int 
+    size: int
+    has_next: bool
+    has_previous: bool
+
 class FixtureList(BaseModel):
     """List of fixtures with pagination metadata"""
     total: int

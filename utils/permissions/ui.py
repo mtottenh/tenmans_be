@@ -4,10 +4,9 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from auth.models import Player, Role, Permission
-from auth.service import ScopeType
+from auth.service import AuthService, ScopeType
 from teams.models import Team
 from competitions.models.tournaments import Tournament
-from .manager import PermissionManager
 from roles.service import RoleService
 from roles.models import PermissionTemplate
 import uuid
@@ -19,16 +18,16 @@ class PermissionUI:
     
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.manager = PermissionManager(session)
-        self.role_service = RoleService(session)
+        self.auth_service = AuthService()
+        self.role_service = RoleService()
 
     async def edit_permissions(self, player_uid: str):
         """Interactive permission editor for a player"""
-        player = await self._get_player(player_uid)
+        player = await self.auth_service.get_player_by_uid(player_uid, self.session)
         if not player:
             print(f"Error: Player {player_uid} not found")
             return
-
+        await self.session.refresh(player)
         while True:
             await self._show_current_permissions(player)
             
@@ -90,8 +89,8 @@ class PermissionUI:
         print(f"\nCurrent Permissions for {player.name}")
         print("=" * 50)
 
-        # Get roles and permissions
-        roles_and_scopes = await self.manager.auth_service.get_player_roles(
+        # Get roles and permissions using auth service
+        roles_and_scopes = await self.auth_service.get_player_roles(
             player,
             self.session
         )
@@ -107,13 +106,13 @@ class PermissionUI:
             print(f"\nRole: {role.name}")
             print(f"Scope: {scope_type.value}{scope_info}")
             print("Permissions:")
-            for perm in role.permissions:
-                print(f"  - {perm.name}")
+            for perm in await role.awaitable_attrs.permissions:
+                print(f"  - {perm.name}: {perm.description}")
 
     async def _add_role_flow(self, player: Player):
         """Flow for adding a role to a player"""
         # Get available roles
-        roles = await self._get_all_roles()
+        roles = await self.role_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
             return
@@ -131,7 +130,7 @@ class PermissionUI:
                 scope_type, scope_id = await self._get_scope_selection()
                 
                 # Assign role
-                await self.manager.auth_service.assign_role(
+                await self.auth_service.assign_role(
                     player=player,
                     role=role,
                     scope_type=scope_type,
@@ -144,7 +143,7 @@ class PermissionUI:
 
     async def _remove_role_flow(self, player: Player):
         """Flow for removing a role from a player"""
-        roles_and_scopes = await self.manager.auth_service.get_player_roles(
+        roles_and_scopes = await self.auth_service.get_player_roles(
             player,
             self.session
         )
@@ -164,7 +163,7 @@ class PermissionUI:
                 role, scope_type, scope_id = roles_and_scopes[choice]
                 
                 # Remove the role
-                await self.manager.auth_service.remove_role(
+                await self.auth_service.remove_role(
                     player=player,
                     role=role,
                     scope_type=scope_type,
@@ -192,12 +191,16 @@ class PermissionUI:
                 if template["scope_type"] != ScopeType.GLOBAL:
                     scope_id = await self._get_scope_id(template["scope_type"])
 
-                roles = await self.manager.apply_template(
+                # Create and assign roles from template
+                await self._create_template_roles(template_name, template)
+
+                # Apply template to player
+                roles = await self._apply_template_to_player(
                     player,
                     template_name,
                     scope_id
                 )
-                print(f"\nApplied template '{template_name}'")
+                print(f"\nApplied template '{template_name}' with {len(roles)} roles")
                 
         except ValueError:
             print("Invalid selection")
@@ -210,21 +213,21 @@ class PermissionUI:
             return
 
         print("\nAvailable Permissions:")
-        permissions = await self._get_all_permissions()
+        permissions = await self.role_service.get_all_permissions(self.session)
         for i, perm in enumerate(permissions, 1):
-            print(f"{i}. {perm.name}")
+            print(f"{i}. {perm.name}: {perm.description}")
 
         perm_input = input("\nEnter permission numbers (comma-separated): ")
         try:
             selected_indices = [int(i.strip()) - 1 for i in perm_input.split(",")]
-            selected_perms = [
-                permissions[i].name for i in selected_indices
-                if 0 <= i < len(permissions)
-            ]
+            perm_ids = []
+            for idx in selected_indices:
+                if 0 <= idx < len(permissions):
+                    perm_ids.append(permissions[idx].id)
             
-            if selected_perms:
-                await self.role_service.create_role(name, selected_perms)
-                print(f"\nCreated role: {name}")
+            if perm_ids:
+                role = await self.role_service.create_role(name, perm_ids, self.session)
+                print(f"\nCreated role: {role.name}")
             else:
                 print("No valid permissions selected")
         except ValueError:
@@ -232,7 +235,7 @@ class PermissionUI:
 
     async def _edit_role_flow(self):
         """Flow for editing an existing role"""
-        roles = await self._get_all_roles()
+        roles = await self.role_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
             return
@@ -246,22 +249,22 @@ class PermissionUI:
             if 0 <= role_idx < len(roles):
                 role = roles[role_idx]
                 
-                print("\nCurrent Permissions:")
-                permissions = await self._get_all_permissions()
+                print("\nAvailable Permissions:")
+                permissions = await self.role_service.get_all_permissions(self.session)
                 for i, perm in enumerate(permissions, 1):
-                    has_perm = perm in role.permissions
+                    has_perm = perm in await role.awaitable_attrs.permissions
                     mark = "✓" if has_perm else " "
-                    print(f"{i}. [{mark}] {perm.name}")
+                    print(f"{i}. [{mark}] {perm.name}: {perm.description}")
 
                 perm_input = input("\nEnter new permission numbers (comma-separated): ")
                 selected_indices = [int(i.strip()) - 1 for i in perm_input.split(",")]
-                selected_perms = [
-                    permissions[i].name for i in selected_indices
-                    if 0 <= i < len(permissions)
-                ]
+                perm_ids = []
+                for idx in selected_indices:
+                    if 0 <= idx < len(permissions):
+                        perm_ids.append(permissions[idx].id)
                 
-                if selected_perms:
-                    await self.role_service.edit_role(role.id, selected_perms)
+                if perm_ids:
+                    role = await self.role_service.update_role(role.id, perm_ids, self.session)
                     print(f"\nUpdated role: {role.name}")
                 else:
                     print("No valid permissions selected")
@@ -270,7 +273,7 @@ class PermissionUI:
 
     async def _delete_role_flow(self):
         """Flow for deleting a role"""
-        roles = await self._get_all_roles()
+        roles = await self.role_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
             return
@@ -285,30 +288,56 @@ class PermissionUI:
                 role = roles[role_idx]
                 confirm = input(f"Are you sure you want to delete {role.name}? (y/N): ")
                 if confirm.lower() == 'y':
-                    await self.role_service.delete_role(role.id)
+                    await self.role_service.delete_role(role.id, self.session)
                     print(f"\nDeleted role: {role.name}")
         except ValueError:
             print("Invalid input")
 
-    # Helper methods
-    async def _get_player(self, player_uid: str) -> Optional[Player]:
-        """Get player by UID"""
-        return await self.manager.auth_service.get_player_by_uid(
-            player_uid,
-            self.session
-        )
+    async def _create_template_roles(self, template_name: str, template: dict):
+        """Create roles defined in a template if they don't exist"""
+        for role_name in template["roles"]:
+            if not await self.role_service.get_role_by_name(role_name, self.session):
+                # Get permission IDs
+                perm_ids = []
+                for perm_name in template["permissions"]:
+                    perm = await self.role_service.get_permission_by_name(perm_name, self.session)
+                    if not perm:
+                        # Create permission if it doesn't exist
+                        perm = await self.role_service.create_permission(
+                            name=perm_name,
+                            description=f"Permission to {perm_name.replace('_', ' ')}",
+                            session=self.session
+                        )
+                    perm_ids.append(perm.id)
+                
+                # Create role
+                await self.role_service.create_role(role_name, perm_ids, self.session)
 
-    async def _get_all_roles(self) -> List[Role]:
-        """Get all available roles"""
-        stmt = select(Role)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
-
-    async def _get_all_permissions(self) -> List[Permission]:
-        """Get all available permissions"""
-        stmt = select(Permission)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+    async def _apply_template_to_player(
+        self,
+        player: Player,
+        template_name: str,
+        scope_id: Optional[uuid.UUID]
+    ) -> List[Role]:
+        """Apply template roles to a player"""
+        template = PermissionTemplate.get_template(template_name)
+        roles = []
+        
+        for role_name in template["roles"]:
+            role = await self.role_service.get_role_by_name(role_name, self.session)
+            if not role:
+                continue
+                
+            roles.append(role)
+            await self.auth_service.assign_role(
+                player=player,
+                role=role,
+                scope_type=template["scope_type"],
+                scope_id=scope_id,
+                session=self.session
+            )
+            
+        return roles
 
     async def _get_scope_selection(self) -> Tuple[ScopeType, Optional[uuid.UUID]]:
         """Get scope type and ID from user input"""

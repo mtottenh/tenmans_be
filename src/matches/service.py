@@ -56,7 +56,7 @@ class MatchService:
             TeamCaptain.team_id == team.id,
             TeamCaptain.player_uid == player.uid
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first() is not None
 
     @AuditService.audited_transaction(
@@ -232,7 +232,7 @@ class MatchService:
         stmt = select(Result).where(
             Result.fixture_id == fixture_id
         )
-        results = (await session.execute(stmt)).all()
+        results = ((await session.execute(stmt)).scalars()).all()
 
         return all(r.confirmation_status == ConfirmationStatus.CONFIRMED for r in results)
 
@@ -281,7 +281,7 @@ class MatchService:
         stmt = select(MatchPlayer).where(
             MatchPlayer.fixture_id == fixture_id
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_team_match_players(
@@ -295,7 +295,7 @@ class MatchService:
             MatchPlayer.fixture_id == fixture_id,
             MatchPlayer.team_id == team_id
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_match_results(
@@ -307,7 +307,7 @@ class MatchService:
         stmt = select(Result).where(
             Result.fixture_id == fixture_id
         ).order_by(Result.map_number)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_match_summary(

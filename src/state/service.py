@@ -7,20 +7,23 @@ import uuid
 from datetime import timedelta
 from fastapi import Depends
 from config import Config
-
+import logging
 T = TypeVar('T', bound=BaseModel)
+LOG = logging.getLogger('uvicorn.error')
 
+import pprint
 class StateType(StrEnum):
     AUTH = "auth"
     PASSWORD_RESET = "password_reset"
     EMAIL_VERIFICATION = "email_verification"
     FILE_UPLOAD = "file_upload"
+    FILE_UPLOAD_RESULT = "file_upload_result"
     GENERAL = "general"
 
 class State(BaseModel):
     """Base model for state data"""
     type: StateType
-    data: dict[str, Any]
+    data: str
     metadata: Optional[dict[str, Any]] = None
 
 class StateService:
@@ -33,6 +36,7 @@ class StateService:
             StateType.PASSWORD_RESET: timedelta(hours=24),
             StateType.EMAIL_VERIFICATION: timedelta(hours=48),
             StateType.FILE_UPLOAD: timedelta(minutes=30),
+            StateType.FILE_UPLOAD_RESULT: timedelta(minutes=50),
             StateType.GENERAL: timedelta(minutes=15),
         }
     
@@ -40,25 +44,37 @@ class StateService:
         """Generate Redis key for state"""
         return f"state:{state_type}:{state_id}"
     
+    def get_expr_time(self, state_type: StateType) -> Optional[timedelta]:
+        return self.expiry_times.get(state_type,  timedelta(seconds=0))
+
+
     async def store_state(
         self,
         state_type: StateType,
         data: BaseModel,
         metadata: Optional[dict] = None,
-        custom_expiry: Optional[timedelta] = None
+        custom_expiry: Optional[timedelta] = None,
+        state_id: Optional[str] = None
     ) -> str:
         """Store state data and return state ID"""
-        state_id = str(uuid.uuid4())
+        if state_id is None:
+            state_id = str(uuid.uuid4())
         key = self._get_key(state_type, state_id)
         
+        # if self.redis.get(key) is not None:
+        #     raise ValueError(f"store_state(): State under key {key} already exists")
+        LOG.info(f"Data: {data}"
+                 )
+        LOG.info(f"Data model_dump(): {data.model_dump_json()}")
         state = State(
             type=state_type,
-            data=data.model_dump(),
+            data=data.model_dump_json(),
             metadata=metadata
         )
         
         expiry = custom_expiry or self.expiry_times[state_type]
-        
+        LOG.info(f"STATE_SERVICE: Storing data under key {key}")
+        LOG.info(f"State: {pprint.pformat(state.model_dump())}")
         await self.redis.setex(
             key,
             expiry,
@@ -79,6 +95,7 @@ class StateService:
         Returns tuple of (data, metadata) if found, None if not found
         """
         key = self._get_key(state_type, state_id)
+        LOG.info(f"STATE_SERVICE: Getting data under key {key}")
         data = await self.redis.get(key)
         
         if not data:
@@ -88,7 +105,8 @@ class StateService:
             await self.redis.delete(key)
             
         state = State.model_validate(json.loads(data))
-        return model_class.model_validate(state.data), state.metadata
+        model = json.loads(state.data)
+        return model_class.model_validate(model), state.metadata
     
     async def extend_expiry(
         self,
@@ -103,6 +121,7 @@ class StateService:
     async def delete_state(self, state_type: StateType, state_id: str) -> bool:
         """Delete state data"""
         key = self._get_key(state_type, state_id)
+        LOG.info(f"STATE_SERVICE: DELETE {key}")
         deleted = await self.redis.delete(key)
         return deleted > 0
 

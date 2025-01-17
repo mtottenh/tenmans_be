@@ -1,13 +1,19 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field
+from pydantic import BaseModel, UUID4, ConfigDict, Field, computed_field, model_validator, root_validator, validator
 from typing import List, Optional
 from datetime import datetime
 from .models import Team, Roster, TeamCaptain
 from auth.schemas import PlayerPublic
 
+
+
 # Request Schemas
 class TeamCreate(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
     logo: Optional[str] = None
+
+class TeamCreateRequest(BaseModel):
+    name: str = Field(..., min_length=3, max_length=50)
+    logo_token_id: str
 
 class TeamUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=3, max_length=50)
@@ -29,7 +35,7 @@ class RosterMember(BaseModel):
     pending: bool
     created_at: datetime
     updated_at: datetime
-
+    season_id: UUID4
     model_config = ConfigDict(from_attributes=True)
 
 class TeamCaptainInfo(BaseModel):
@@ -58,10 +64,15 @@ class TeamBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class TeamDetailed(TeamBase):
-    roster: List[RosterMember]
+    rosters: List[RosterMember]
     captains: List[TeamCaptainInfo]
-    current_elo_history: Optional[TeamELOHistory]
-
+    max_roster_size: int = Field(default=99) 
+    #current_elo_history: Optional[TeamELOHistory]
+    @computed_field
+    @property
+    def active_roster_count(self) ->int:
+        return len([x for x in self.rosters if not x.pending])
+    
 class TeamBasic(TeamBase):
     active_roster_count: int
     captain_count: int
@@ -90,3 +101,14 @@ class TeamSeasonStats(TeamStats):
     season_id: UUID4
     season_name: str
     tournament_participations: int
+
+
+class TeamHistory(BaseModel):
+    team_id: UUID4
+    name: str
+    season_id: UUID4
+    since: datetime
+
+class PlayerRosterHistory(BaseModel):
+    current: Optional[TeamHistory]
+    previous: Optional[List[TeamHistory]]

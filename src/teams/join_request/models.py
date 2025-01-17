@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from enum import StrEnum
 from typing import Optional
@@ -8,7 +9,7 @@ import uuid
 from .schemas import JoinRequestStatus
 
 
-class TeamJoinRequest(SQLModel, table=True):
+class TeamJoinRequest(SQLModel, AsyncAttrs, table=True):
     """Model for tracking player requests to join teams"""
     __tablename__ = "team_join_requests"
     

@@ -2,6 +2,7 @@ from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
@@ -15,7 +16,7 @@ class PugStatus(StrEnum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
-class Pug(SQLModel, table=True):
+class Pug(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "pugs"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
@@ -37,7 +38,7 @@ class Pug(SQLModel, table=True):
     players: List["PugPlayer"] = Relationship(back_populates="pug")
     map_results: List["PugMapResult"] = Relationship(back_populates="pug")
 
-class PugTeam(SQLModel, table=True):
+class PugTeam(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "pug_teams"
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
     team_number: int = Field(primary_key=True)  # 1 or 2
@@ -51,7 +52,7 @@ class PugTeam(SQLModel, table=True):
                                                sa_relationship_kwargs={"primaryjoin": "and_(PugPlayer.pug_id == PugTeam.pug_id, foreign(PugPlayer.team_number) == PugTeam.team_number)"}
                                               )
 
-class PugPlayer(SQLModel, table=True):
+class PugPlayer(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "pug_players"
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
     player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))
@@ -64,7 +65,7 @@ class PugPlayer(SQLModel, table=True):
                                             sa_relationship_kwargs={"primaryjoin": "and_(PugPlayer.pug_id == PugTeam.pug_id, foreign(PugPlayer.team_number) == PugTeam.team_number)"}
                                            )
 
-class PugMapResult(SQLModel, table=True):
+class PugMapResult(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "pug_map_results"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)

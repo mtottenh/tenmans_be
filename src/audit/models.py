@@ -1,11 +1,12 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from typing import List, Dict, Any
 import uuid
 
-class AuditLog(SQLModel, table=True):
+class AuditLog(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "audit_logs"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)

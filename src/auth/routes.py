@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
+from auth.models import Player, PlayerRole, Role
 from auth.schemas import (
     PlayerEmailCreate, 
     TokenResponse,
@@ -28,6 +29,12 @@ import re
 from config import Config
 from openid.consumer.consumer import Consumer, SUCCESS, FAILURE
 from openid.store.memstore import MemoryStore
+import logging
+
+from teams.schemas import PlayerRosterHistory
+from teams.service import TeamService
+
+LOG =logging.getLogger('uvicorn.error')
 
 auth_router = APIRouter(prefix="/auth")
 auth_service = AuthService()
@@ -74,17 +81,17 @@ async def login_with_steam(request: Request):
     oidconsumer = get_openid_consumer()
     
     try:
-        auth_request = await oidconsumer.begin(STEAM_OPENID_URL)
+        auth_request = oidconsumer.begin(STEAM_OPENID_URL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return_url = str(request.base_url) + "auth/steam/callback"
-    
+    return_url = str(request.base_url) + "api/v1/auth/steam/callback"
+    LOG.info(f"client_host: {str(request.client.host)} base_url: {str(request.base_url)}")
     return RedirectResponse(auth_request.redirectURL(
         return_to=return_url,
-        trust_root=str(request.base_url)
+        realm=str(request.base_url)
     ))
-
+import traceback
 @auth_router.get("/steam/callback")
 async def steam_callback(
     request: Request,
@@ -92,23 +99,26 @@ async def steam_callback(
     session: AsyncSession = Depends(get_session)
 ):
     """Handle Steam OpenID callback"""
+    LOG.info("Got to callback handler")
     oidconsumer = get_openid_consumer()
     params = dict(request.query_params)
     current_url = str(request.url)
     
     try:
-        info = await oidconsumer.complete(params, current_url)
+        info = oidconsumer.complete(params, current_url)
         if info.status != SUCCESS:
             raise HTTPException(status_code=400, detail="Steam authentication failed")
 
         match = STEAM_ID_RE.search(info.identity_url)
         if not match:
             raise HTTPException(status_code=400, detail="Could not extract Steam ID")
-        
+        LOG.info(f"Got Auth callback!: {info.identity_url}")
         steam_id = match.group(1)
+        LOG.info("Steam ID: {setam_id}")
         player = await auth_service.get_player_by_steam_id(steam_id, session)
-        
+        LOG.info("player: {player}")
         if not player:
+            LOG.info("Creating new player")
             player = await auth_service.create_steam_player(steam_id, session)
         
         tokens = auth_service.create_tokens(str(player.uid), AuthType.STEAM)
@@ -119,14 +129,18 @@ async def steam_callback(
             tokens,
             metadata={"player_id": str(player.uid)}
         )
-        
         return RedirectResponse(
-            f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
+            f"http://localhost:5173/auth/callback?state={state_id}",
             status_code=status.HTTP_303_SEE_OTHER
         )
+        # TODO = uncomment for deployment         
+        # return RedirectResponse(
+        #     f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
+        #     status_code=status.HTTP_303_SEE_OTHER
+        # )
         
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(traceback.format_exc()))
 
 @auth_router.get("/exchange-state")
 async def exchange_state(
@@ -192,19 +206,7 @@ async def exchange_state(
 #     return {"message": "Password updated successfully"}
 
 # File Upload Token
-@auth_router.post("/upload-token")
-async def create_upload_token(
-    current_player = Depends(get_current_player),
-    state_service: StateService = Depends(get_state_service)
-):
-    """Create temporary file upload token"""
-    upload_data = {"player_id": str(current_player.uid)}
-    state_id = await state_service.store_state(
-        StateType.FILE_UPLOAD,
-        BaseModel(**upload_data)
-    )
-    
-    return {"upload_token": state_id}
+
 
 @auth_router.post("/register/email")
 async def register_with_email(
@@ -246,22 +248,25 @@ async def register_with_email(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
+
+
 # TODO:
 # Get a new access token using a refresh token.
 # Generic get routes.
 access_token_bearer = AccessTokenBearer()
+
 @auth_router.get("/", response_model=List[PlayerPublic])
 async def get_players(
     player_details = Depends(access_token_bearer),
     session: AsyncSession = Depends(get_session),
 ):
     players = await auth_service.get_all_players(session)
+    players = [p for p in players if p.name != "SYSTEM" ] # Don't return the system user to external queries
     return players
 
 
-@auth_router.get("/me")
-async def get_current_player_route(player: PlayerPublic = CurrentPlayer):
+@auth_router.get("/me", response_model=PlayerPublic)
+async def get_current_player_route(player = Depends(get_current_player)):
     return player
 
 
@@ -284,13 +289,22 @@ async def get_player(
     session: AsyncSession = Depends(get_session),
     player_details=Depends(access_token_bearer),
 ) -> dict:
-    player = await auth_service.get_player(player_uid, session)
+    player = await auth_service.get_player_by_uid(player_uid, session)
     if player is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Player not found"
         )
     return player
 
+team_service = TeamService()
+@auth_router.get('/id/{player_uid}/teams',response_model=PlayerRosterHistory)
+async def get_player_team(
+    player_uid: str,
+    session: AsyncSession = Depends(get_session),
+    _ = Depends(access_token_bearer)
+):
+    teams = await team_service.get_teams_for_player_by_player_id(player_uid, session)
+    return teams
 
 # TODO - Add AuthZ to this endpoint.
 @auth_router.patch("/id/{player_uid}", response_model=PlayerPublic)
@@ -298,9 +312,14 @@ async def update_player(
     player_uid: str,
     player_data: PlayerUpdate,
     session: AsyncSession = Depends(get_session),
-    player_details=Depends(get_current_player),
+    player_details: Player =Depends(get_current_player),
 ) -> dict:
 
+    if player_uid != str(player_details.uid):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Players can only edit their own profiles {player_uid} != {str(player_details.uid)} "
+        )
     updated_player = await auth_service.update_player(
         player_uid, player_data, session
     )

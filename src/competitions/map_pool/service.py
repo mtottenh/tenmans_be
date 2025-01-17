@@ -105,7 +105,7 @@ class MapPoolService:
             MapPoolVote.pool_id == pool_id,
             MapPoolVote.team_id == team_id
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         existing_votes = result.all()
         
         if len(existing_votes) >= map_pool.votes_per_team:
@@ -124,7 +124,7 @@ class MapPoolService:
             MapPoolMap.pool_id == pool_id,
             MapPoolMap.map_id == map_id
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         pool_map = result.first()
         
         if pool_map:
@@ -156,7 +156,7 @@ class MapPoolService:
         stmt = select(MapPoolMap).where(
             MapPoolMap.pool_id == pool_id
         ).order_by(MapPoolMap.vote_count.desc())
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         maps = result.all()
         
         # Select top N maps
@@ -191,7 +191,7 @@ class MapPoolService:
             stmt = select(MapPoolMap, Map).join(Map).where(
                 MapPoolMap.pool_id == pool_id
             ).order_by(MapPoolMap.vote_count.desc())
-            result = await session.execute(stmt)
+            result = (await session.execute(stmt)).scalars()
             maps_data = [
                 {
                     "map_id": str(map.id),

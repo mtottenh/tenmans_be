@@ -58,7 +58,7 @@ class PlayerVerificationUpdate(BaseModel):
 
 class PlayerUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=3, max_length=50)
-    email: Optional[EmailStr]
+    email: Optional[EmailStr] = Field(None)
     password: Optional[str] = Field(None, min_length=8)
     steam_id: Optional[str]
 
@@ -116,8 +116,8 @@ class PlayerBase(BaseModel):
     highest_elo: Optional[int]
     created_at: datetime
     updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
+    roles: List[Role]
+    model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
 
 
 class VerificationRequestCreate(BaseModel):

@@ -1,8 +1,10 @@
+from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, UUID4
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..base_schemas import TournamentType, RegistrationStatus, TournamentBase, TournamentRegistrationBase
-
+from teams.schemas import TeamBasic
+from auth.schemas import PlayerPublic
 
 # Request Schemas
 class TournamentCreate(BaseModel):
@@ -22,22 +24,71 @@ class TournamentUpdate(BaseModel):
     format_config: Optional[Dict[str, Any]]
 
 
+# Request Schemas
 class TournamentRegistrationRequest(BaseModel):
-    """Schema for tournament registration requests"""
+    """Schema for requesting tournament registration"""
     team_id: UUID4
     notes: Optional[str] = None
+    requested_by: UUID4  
+    requested_at: datetime
+    tournament_id: UUID4 
 
 class RegistrationReviewRequest(BaseModel):
-    """Schema for reviewing registration requests"""
+    """Schema for reviewing a registration request"""
     status: RegistrationStatus
-    notes: Optional[str] = None
+    review_notes: Optional[str] = None
+    reviewed_by: UUID4  
+    reviewed_at: datetime  
 
 class RegistrationWithdrawRequest(BaseModel):
     """Schema for withdrawing from a tournament"""
     reason: str
+    withdrawn_by: UUID4  
+    withdrawn_at: datetime 
 
 # Response Schemas
+class TournamentRegistrationBase(BaseModel):
+    """Base schema for tournament registrations"""
+    id: UUID4
+    tournament_id: UUID4
+    team_id: UUID4 
+    status: RegistrationStatus
+    
+    # Request details
+    requested_by: UUID4
+    requested_at: datetime
+    notes: Optional[str] = None
+    
+    # Review details
+    reviewed_by: Optional[UUID4] = None
+    reviewed_at: Optional[datetime] = None
+    review_notes: Optional[str] = None
+    
+    # Withdrawal details
+    withdrawn_by: Optional[UUID4] = None
+    withdrawn_at: Optional[datetime] = None
+    withdrawal_reason: Optional[str] = None
+    
+    # Tournament specific fields
+    seed: Optional[int] = None
+    group: Optional[str] = None
+    final_position: Optional[int] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
+class TournamentRegistrationDetail(TournamentRegistrationBase):
+    """Detailed registration response including relationships"""
+    team: TeamBasic  
+    requester: PlayerPublic
+    reviewer: Optional[PlayerPublic] = None
+
+class TournamentRegistrationList(BaseModel):
+    """List of tournament registrations with summary stats"""
+    total: int
+    pending_count: int
+    registrations: List[TournamentRegistrationBase]
+
+# Response Schemas
 class TournamentWithStats(TournamentBase):
     """Tournament response with additional statistics"""
     total_teams: int
@@ -51,7 +102,6 @@ class TournamentWithStats(TournamentBase):
 class TournamentTeam(BaseModel):
     """Schema for teams in a tournament"""
     team_id: UUID4
-    team_name: str
     matches_played: int
     matches_won: int
     matches_lost: int
@@ -77,17 +127,6 @@ class TournamentStandings(BaseModel):
 #     matches_remaining: int
 
 
-
-class TournamentRegistrationDetail(TournamentRegistrationBase):
-    """Detailed tournament registration response"""
-    requested_by: UUID4
-    reviewed_by: Optional[UUID4]
-    reviewed_at: Optional[datetime]
-    review_notes: Optional[str]
-    withdrawn_by: Optional[UUID4]
-    withdrawn_at: Optional[datetime]
-    withdrawal_reason: Optional[str]
-
 class TournamentRegistrationList(BaseModel):
     """List of tournament registrations with summary stats"""
     total_registered: int
@@ -95,3 +134,19 @@ class TournamentRegistrationList(BaseModel):
     registrations: List[TournamentRegistrationBase]
 
     model_config = ConfigDict(from_attributes=True)
+
+class TournamentPageStats(BaseModel):
+    active_tournaments: int
+    enrolled_teams: int
+
+class TournamentPage(BaseModel):
+    """Paginated tournament response"""
+    items: List[TournamentBase]
+    total: int
+    page: int
+    size: int
+    stats: TournamentPageStats
+    total_pages: int
+    has_next: bool
+    has_previous: bool
+

@@ -7,7 +7,10 @@ from auth.models import Player
 from auth.service import AuthService, PermissionScope, ScopeType
 from pydantic import BaseModel
 import uuid
+import logging
+import pprint
 
+LOG = logging.getLogger("uvicorn.error")
 class TokenData(BaseModel):
     """Internal model for decoded token data"""
     player_uid: str
@@ -68,7 +71,7 @@ async def get_current_player(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Player not found"
         )
-    
+    LOG.info(f"PLAYER: {pprint.pformat(player)}")
     return player
 
 class ScopedPermissionChecker:

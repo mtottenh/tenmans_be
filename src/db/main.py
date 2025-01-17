@@ -1,10 +1,14 @@
 from sqlmodel import SQLModel
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
 from config import Config
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import event
-from typing import Dict
+from typing import AsyncGenerator, Dict, List
+
+from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy import text
 
 def get_postgres_config() -> Dict:
     """Get PostgreSQL-specific connection configurations."""
@@ -50,22 +54,23 @@ async def init_db():
         # Create all tables
         await conn.run_sync(SQLModel.metadata.create_all)
 
-async def get_session() -> AsyncSession:
+async_session = sessionmaker(
+    engine,
+    class_=AsyncSession,
+)
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Get a database session with optimized session settings."""
-    async_session = sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        kwargs={
-            # Session-level settings
-            "isolation_level": "READ COMMITTED",  # Default isolation level
-            "autoflush": False,  # Don't auto-flush for better performance
-        }
-    )
-    
     async with async_session() as session:
-        # Set session-specific timeouts
-        await session.executeute("SET LOCAL statement_timeout = '60s'")
-        await session.executeute("SET LOCAL lock_timeout = '30s'")
-        
-        yield session
+        try:
+            # Set session-specific timeouts
+            await session.execute(text("SET LOCAL statement_timeout = '60s'"))
+            await session.execute(text("SET LOCAL lock_timeout = '30s'"))
+            
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

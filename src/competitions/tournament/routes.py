@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
 import uuid
 
+from competitions.base_schemas import TournamentState
 from db.main import get_session
 from auth.models import Player
 from auth.dependencies import (
@@ -16,6 +17,8 @@ from .schemas import (
     RegistrationStatus,
     RegistrationWithdrawRequest,
     TournamentCreate,
+    TournamentPage,
+    TournamentPageStats,
     TournamentRegistrationBase,
     TournamentRegistrationDetail,
     TournamentRegistrationList,
@@ -34,22 +37,64 @@ require_tournament_admin = GlobalPermissionChecker(["manage_tournaments"])
 require_tournament_manage = TournamentPermissionChecker(["manage_tournament"])
 require_tournament_view = TournamentPermissionChecker(["view_tournament"])
 
-@tournament_router.get(
-    "/",
-    response_model=List[TournamentBase],
-    dependencies=[Depends(require_tournament_view)]
-)
-async def get_all_tournaments(
-    season_id: uuid.UUID,
-    include_completed: bool = True,
+# @tournament_router.get(
+#     "/",
+#     response_model=List[TournamentBase],
+#     dependencies=[Depends(require_tournament_view)]
+# )
+# async def get_all_tournaments(
+#     season_id: uuid.UUID,
+#     include_completed: bool = True,
+#     session: AsyncSession = Depends(get_session),
+#     current_player: Player = Depends(get_current_player)
+# ):
+#     """Get all tournaments for a season"""
+#     return await tournament_service.get_tournaments_by_season(
+#         season_id,
+#         session,
+#         include_completed
+#     )
+
+import pprint
+import logging
+LOG = logging.getLogger('uvicron:error')
+
+@tournament_router.get("/", response_model=TournamentPage)
+async def get_tournaments(
+    status: Optional[List[TournamentState]] = Query(None),
+    page: int = Query(1, gt=0),
+    size: int = Query(20, gt=0, le=100),
+    season_id: Optional[uuid.UUID] = None,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
 ):
-    """Get all tournaments for a season"""
-    return await tournament_service.get_tournaments_by_season(
-        season_id,
-        session,
-        include_completed
+    """
+    Get all tournaments with optional status filter and pagination
+    
+    Args:
+        status: Optional list of tournament states to filter by
+        page: Page number (1-based)
+        size: Number of items per page
+        season_id: Optional season ID to filter by
+    """
+    tournaments, total = await tournament_service.get_tournaments(
+        session=session,
+        status=status,
+        season_id=season_id,
+        offset=(page - 1) * size,
+        limit=size
+    )
+    active_tournaments_and_teams = await tournament_service._get_active_tournaments(session)
+    LOG.info(pprint.pformat(active_tournaments_and_teams))
+    return TournamentPage(
+        items=tournaments,
+        total=total,
+        page=page,
+        size=size,
+        total_pages = total / size,
+        stats=TournamentPageStats(active_tournaments=1, enrolled_teams=1),
+        has_next=total > page * size,
+        has_previous=page > 1
     )
 
 @tournament_router.post(
@@ -252,7 +297,6 @@ async def request_tournament_registration(
     """Request registration for a tournament"""
     try:
         return await tournament_service.request_registration(
-            tournament_id,
             registration,
             current_player,
             session

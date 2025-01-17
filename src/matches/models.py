@@ -2,6 +2,7 @@ from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Optional
@@ -19,7 +20,7 @@ class ConfirmationStatus(StrEnum):
     CONFIRMED = "confirmed"
     DISPUTED = "disputed"
 
-class Result(SQLModel, table=True):
+class Result(SQLModel,AsyncAttrs, table=True):
     __tablename__ = "results"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
@@ -76,7 +77,7 @@ class Result(SQLModel, table=True):
         """Check if the map was a draw"""
         return self.team_1_score == self.team_2_score
 
-class MatchPlayer(SQLModel, table=True):
+class MatchPlayer(SQLModel,  AsyncAttrs, table=True):
     __tablename__ = "match_players"
     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id"), primary_key=True))
     player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))

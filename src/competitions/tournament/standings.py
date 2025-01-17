@@ -4,7 +4,8 @@ from typing import List, Dict, Any
 from sqlmodel import select
 from datetime import datetime
 import uuid
-
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.orm import selectinload
 from competitions.models.tournaments import Tournament
 from competitions.models.fixtures import Fixture, FixtureStatus
 from competitions.models.rounds import Round, RoundType
@@ -32,7 +33,7 @@ class StandingsCalculator(ABC):
     ) -> List[Fixture]:
         """Get fixtures for a round"""
         stmt = select(Fixture).where(Fixture.round_id == round_id)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
 class RegularStandingsCalculator(StandingsCalculator):
@@ -41,111 +42,71 @@ class RegularStandingsCalculator(StandingsCalculator):
     async def calculate_standings(
         self,
         tournament: Tournament,
-        match_service: MatchService,
-        session
+        session: AsyncSession
     ) -> TournamentStandings:
-        # Get all group stage rounds
-        stmt = select(Round).where(
-            Round.tournament_id == tournament.id,
-            Round.type == RoundType.GROUP_STAGE
-        ).order_by(Round.round_number)
+        # Get all fixtures
+        stmt = select(Fixture).where(
+            Fixture.tournament_id == tournament.id
+        ).options(
+            selectinload(Fixture.results)
+        )
         result = await session.execute(stmt)
-        rounds = result.all()
+        fixtures = result.scalars().all()
         
-        # Initialize team statistics
-        team_stats: Dict[uuid.UUID, Dict[str, Any]] = {}
+        # Track team stats
+        team_stats: Dict[uuid.UUID, Dict[str, int]] = {}
         
-        # Process each round
-        for round in rounds:
-            fixtures = await self._get_round_fixtures(round.id, session)
-            for fixture in fixtures:
-                if fixture.status not in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED]:
-                    continue
+        # Process each fixture
+        for fixture in fixtures:
+            team_1 = fixture.team_1
+            team_2 = fixture.team_2
+            
+            # Initialize team stats if needed
+            for team_id in [team_1, team_2]:
+                if team_id not in team_stats:
+                    team_stats[team_id] = {
+                        'matches_played': 0,
+                        'matches_won': 0,
+                        'matches_lost': 0,
+                        'points': 0,
+                    }
+            
+            # Process completed or forfeited fixtures only
+            if fixture.status in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED]:
+                team_stats[team_1]['matches_played'] += 1
+                team_stats[team_2]['matches_played'] += 1
+                
+                winner_id = await fixture.get_winner_id(session)
+                if winner_id:
+                    # Update winner stats
+                    team_stats[winner_id]['matches_won'] += 1
+                    team_stats[winner_id]['points'] += 3
                     
-                await self._process_fixture_result(
-                    fixture,
-                    match_service,
-                    team_stats,
-                    session
-                )
-        
-        # Convert stats to team standings
+                    # Update loser stats
+                    loser_id = team_2 if winner_id == team_1 else team_1
+                    team_stats[loser_id]['matches_lost'] += 1
+                
+        # Convert to TeamStanding objects
         teams = []
         for team_id, stats in team_stats.items():
-            team = await session.get(Team, team_id)
             teams.append(TournamentTeam(
                 team_id=team_id,
-                team_name=team.name,
                 matches_played=stats['matches_played'],
-                matches_won=stats['matches_won'],
+                matches_won=stats['matches_won'], 
                 matches_lost=stats['matches_lost'],
                 points=stats['points'],
                 status="active"
             ))
         
-        # Sort teams by points and other criteria
-        teams.sort(key=lambda x: (
-            x.points,
-            x.matches_won,
-            -x.matches_lost
-        ), reverse=True)
+        # Sort by points, then wins
+        teams.sort(key=lambda x: (-x.points, -x.matches_won))
         
         return TournamentStandings(
             tournament_id=tournament.id,
-            round=None,
+            round=None,  # Not relevant for regular standings
             teams=teams,
             last_updated=datetime.now()
         )
-    
-    async def _process_fixture_result(
-        self,
-        fixture: Fixture,
-        match_service: MatchService,
-        team_stats: Dict[uuid.UUID, Dict[str, Any]],
-        session
-    ):
-        """Process a single fixture result"""
-        # Initialize team stats if needed
-        for team_id in [fixture.team_1, fixture.team_2]:
-            if team_id not in team_stats:
-                team_stats[team_id] = {
-                    'matches_played': 0,
-                    'matches_won': 0,
-                    'matches_lost': 0,
-                    'points': 0
-                }
-        
-        if fixture.status == FixtureStatus.FORFEITED:
-            if not fixture.forfeit_winner:
-                # Handle mutual forfeit
-                for team_id in [fixture.team_1, fixture.team_2]:
-                    team_stats[team_id]['matches_played'] += 1
-                    team_stats[team_id]['matches_lost'] += 1
-            else:
-                winner_id = fixture.forfeit_winner
-                loser_id = fixture.team_2 if winner_id == fixture.team_1 else fixture.team_1
-                
-                team_stats[winner_id]['matches_played'] += 1
-                team_stats[winner_id]['matches_won'] += 1
-                team_stats[winner_id]['points'] += 3
-                
-                team_stats[loser_id]['matches_played'] += 1
-                team_stats[loser_id]['matches_lost'] += 1
-        else:
-            # Get match result from match service
-            match_result = await match_service.get_match_result(fixture.id, session)
-            if not match_result:
-                return  # Skip if no result available
-            
-            # Update winner stats
-            team_stats[match_result.winner_id]['matches_played'] += 1
-            team_stats[match_result.winner_id]['matches_won'] += 1
-            team_stats[match_result.winner_id]['points'] += 3
-            
-            # Update loser stats
-            loser_id = fixture.team_2 if match_result.winner_id == fixture.team_1 else fixture.team_1
-            team_stats[loser_id]['matches_played'] += 1
-            team_stats[loser_id]['matches_lost'] += 1
 
 class KnockoutStandingsCalculator(StandingsCalculator):
     """Calculator for knockout tournament standings"""
@@ -153,116 +114,110 @@ class KnockoutStandingsCalculator(StandingsCalculator):
     async def calculate_standings(
         self,
         tournament: Tournament,
-        match_service: MatchService,
-        session
+        session: AsyncSession
     ) -> TournamentStandings:
-        # Get all knockout rounds in reverse order
+        # Get all rounds in order
         stmt = select(Round).where(
-            Round.tournament_id == tournament.id,
-            Round.type == RoundType.KNOCKOUT
-        ).order_by(Round.round_number.desc())
+            Round.tournament_id == tournament.id
+        ).order_by(Round.round_number)
         result = await session.execute(stmt)
-        rounds = result.all()
+        rounds = result.scalars().all()
         
-        # Track team progress and elimination
-        placements: Dict[uuid.UUID, Dict[str, Any]] = {}
-        current_round = None
+        # Track teams and their progress
+        team_stats: Dict[uuid.UUID, Dict[str, int]] = {}
+        eliminated_in_round: Dict[int, List[uuid.UUID]] = {}
         
         # Process each round
         for round in rounds:
-            current_round = round
             fixtures = await self._get_round_fixtures(round.id, session)
             
             for fixture in fixtures:
-                if fixture.status not in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED]:
-                    continue
+                # Initialize team stats
+                for team_id in [fixture.team_1, fixture.team_2]:
+                    if team_id not in team_stats:
+                        team_stats[team_id] = {
+                            'matches_played': 0,
+                            'matches_won': 0,
+                            'matches_lost': 0,
+                            'final_position': None,
+                            'eliminated_round': None
+                        }
+                
+                # Only process completed fixtures
+                if fixture.status in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED]:
+                    team_stats[fixture.team_1]['matches_played'] += 1
+                    team_stats[fixture.team_2]['matches_played'] += 1
                     
-                await self._process_knockout_fixture(
-                    fixture,
-                    match_service,
-                    round.round_number,
-                    placements,
-                    session
-                )
+                    winner_id = await fixture.get_winner_id(session)
+                    if winner_id:
+                        # Update winner
+                        team_stats[winner_id]['matches_won'] += 1
+                        
+                        # Update loser
+                        loser_id = fixture.team_2 if winner_id == fixture.team_1 else fixture.team_1
+                        team_stats[loser_id]['matches_lost'] += 1
+                        
+                        # Track elimination
+                        if round.round_number not in eliminated_in_round:
+                            eliminated_in_round[round.round_number] = []
+                        eliminated_in_round[round.round_number].append(loser_id)
         
-        # Convert placements to team standings
+        # Calculate final positions
+        current_position = 1
+        total_teams = len(team_stats)
+        
+        # Winner (reached final and won)
+        final_round = rounds[-1]
+        final_fixtures = await self._get_round_fixtures(final_round.id, session)
+        if final_fixtures:
+            winner_id = await final_fixtures[0].get_winner_id(session)
+            if winner_id:
+                team_stats[winner_id]['final_position'] = current_position
+                current_position += 1
+                
+                # Runner up
+                runner_up = final_fixtures[0].team_2 if winner_id == final_fixtures[0].team_1 else final_fixtures[0].team_1
+                team_stats[runner_up]['final_position'] = current_position
+                current_position += 1
+        
+        # Eliminated teams by round (latest rounds first)
+        for round_num in sorted(eliminated_in_round.keys(), reverse=True):
+            eliminated_teams = eliminated_in_round[round_num]
+            for team_id in eliminated_teams:
+                if team_stats[team_id]['final_position'] is None:
+                    team_stats[team_id]['final_position'] = current_position
+                    current_position += 1
+        
+        # Convert to TeamStanding objects
         teams = []
-        for team_id, data in placements.items():
-            team = await session.get(Team, team_id)
+        for team_id, stats in team_stats.items():
+            status = "eliminated"
+            if stats['final_position'] == 1:
+                status = "winner"
+            elif stats['final_position'] == 2:
+                status = "runner_up"
+            elif stats['matches_played'] < stats['matches_won'] + stats['matches_lost']:
+                status = "active"
+                
             teams.append(TournamentTeam(
                 team_id=team_id,
-                team_name=team.name,
-                matches_played=data['matches_played'],
-                matches_won=data['matches_won'],
-                matches_lost=data['matches_lost'],
-                points=0,
-                status=data['status']
+                matches_played=stats['matches_played'],
+                matches_won=stats['matches_won'],
+                matches_lost=stats['matches_lost'],
+                points=0,  # Not used in knockout
+                status=status,
+                final_position=stats['final_position']
             ))
-        
-        # Sort by round reached and match stats
-        teams.sort(key=lambda x: (
-            x.matches_won,
-            -x.matches_lost,
-            x.matches_played
-        ), reverse=True)
+            
+        # Sort by final position
+        teams.sort(key=lambda x: (x.final_position or total_teams + 1))
         
         return TournamentStandings(
             tournament_id=tournament.id,
-            round=current_round.round_number if current_round else None,
+            round=len(rounds),
             teams=teams,
             last_updated=datetime.now()
         )
-    
-    async def _process_knockout_fixture(
-        self,
-        fixture: Fixture,
-        match_service: MatchService,
-        round_number: int,
-        placements: Dict[uuid.UUID, Dict[str, Any]],
-        session
-    ):
-        """Process a knockout fixture result"""
-        # Initialize team placements
-        for team_id in [fixture.team_1, fixture.team_2]:
-            if team_id not in placements:
-                placements[team_id] = {
-                    'matches_played': 0,
-                    'matches_won': 0,
-                    'matches_lost': 0,
-                    'last_round': round_number,
-                    'status': 'eliminated'
-                }
-        
-        # Determine winner
-        if fixture.status == FixtureStatus.FORFEITED:
-            if not fixture.forfeit_winner:
-                # Handle mutual forfeit - both teams eliminated
-                for team_id in [fixture.team_1, fixture.team_2]:
-                    placements[team_id]['matches_played'] += 1
-                    placements[team_id]['matches_lost'] += 1
-                    placements[team_id]['status'] = 'eliminated'
-                return
-                
-            winner_id = fixture.forfeit_winner
-            loser_id = fixture.team_2 if winner_id == fixture.team_1 else fixture.team_1
-        else:
-            match_result = await match_service.get_match_result(fixture.id, session)
-            if not match_result:
-                return
-                
-            winner_id = match_result.winner_id
-            loser_id = fixture.team_2 if winner_id == fixture.team_1 else fixture.team_1
-        
-        # Update winner status
-        placements[winner_id]['matches_played'] += 1
-        placements[winner_id]['matches_won'] += 1
-        placements[winner_id]['last_round'] = round_number
-        placements[winner_id]['status'] = 'qualified' if round_number > 1 else 'winner'
-        
-        # Update loser status
-        placements[loser_id]['matches_played'] += 1
-        placements[loser_id]['matches_lost'] += 1
-        placements[loser_id]['status'] = 'eliminated'
 
 def get_standings_calculator(tournament_type: str) -> StandingsCalculator:
     """Factory function to get appropriate standings calculator"""

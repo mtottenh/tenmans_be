@@ -52,13 +52,12 @@ class TestDataGenerator:
     ):
         """Generate a complete test dataset"""
         logger.info("Starting test data generation...")
-        
-        await self.generate_maps()
-        await self.generate_players(num_players)
-        await self.generate_teams(num_teams)
-        
         if include_season:
             await self.generate_season()
+        # await self.generate_maps()
+        await self.generate_players(num_players)
+        await self.generate_teams(num_teams)
+        if include_season:    
             await self.generate_tournament()
         
         logger.info("Test data generation completed")
@@ -112,42 +111,58 @@ class TestDataGenerator:
         
         available_players = self.players.copy()
         random.shuffle(available_players)
-        
-        for i in range(count):
-            # Create team
-            team = Team(
-                name=f"Team {fake.unique.word().title()}",
-                created_at=fake.date_time_between(
-                    start_date='-6m',
-                    end_date='now'
+        async with self.session.begin():
+            for i in range(count):
+                # Create team
+                team = Team(
+                    name=f"Team {fake.unique.word().title()}",
+                    created_at=fake.date_time_between(
+                        start_date='-6m',
+                        end_date='now'
+                    )
                 )
-            )
-            self.session.add(team)
-            await self.session.flush()  # Get team ID
-            
-            # Assign random number of players
-            team_size = random.randint(
-                TestDataConfig.MIN_PLAYERS_PER_TEAM,
-                min(TestDataConfig.MAX_PLAYERS_PER_TEAM, len(available_players))
-            )
-            
-            # First player becomes captain
-            captain = available_players.pop()
-            team_captain = TeamCaptain(
-                team_id=team.id,
-                player_uid=captain.uid
-            )
-            self.session.add(team_captain)
-            
-            # Add remaining players
-            for _ in range(team_size - 1):
-                if not available_players:
-                    break
-                player = available_players.pop()
                 
-            self.teams.append(team)
-        
-        await self.session.commit()
+                self.session.add(team)  # Add team to the session
+                logger.info("Before session.flush()")
+                await self.session.flush()  # Flush to get the team's ID
+                logger.info("After session.flush()")
+                await self.session.refresh(team)
+                team_id = team.id  # Get the assigned team ID
+
+                # Assign a captain
+                
+                captain = available_players.pop()
+                await self.session.refresh(captain)
+                team_captain = TeamCaptain(
+                    team_id=team_id,
+                    player_uid=captain.uid
+                )
+                self.session.add(team_captain)
+
+                # Add remaining players to the roster
+                team_size = random.randint(
+                    TestDataConfig.MIN_PLAYERS_PER_TEAM,
+                    min(TestDataConfig.MAX_PLAYERS_PER_TEAM, len(available_players))
+                )
+                logger.info("Adding players to the team roster")
+                for _ in range(team_size - 1):
+                    if not available_players:
+                        break
+                    player = available_players.pop()
+                    await self.session.refresh(player)
+                    season  = self.season
+                    await self.session.refresh(season)
+                    roster_entry = Roster(
+                        season_id=season.id,
+                        team_id=team_id,  # Link the player to the team
+                        player_uid=player.uid  # Ensure correct player association
+                    )
+                    logger.info(f"Creating roster entry for {player.name}")
+                    self.session.add(roster_entry)
+                
+                self.teams.append(team)  # Track team in the list
+            
+            await self.session.commit()  # Commit the team and its relationships
         logger.info(f"Generated {len(self.teams)} teams")
 
     async def generate_season(self):
@@ -161,7 +176,7 @@ class TestDataGenerator:
         )
         self.session.add(self.season)
         await self.session.commit()
-        
+        await self.session.refresh(self.season)
         logger.info(f"Generated season: {self.season.name}")
 
     async def generate_tournament(self):

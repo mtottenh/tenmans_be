@@ -3,6 +3,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
 import uuid
 
+from competitions.schemas import SeasonCreate
 from db.main import get_session
 from auth.dependencies import get_current_player, GlobalPermissionChecker
 from auth.models import Player
@@ -17,7 +18,7 @@ require_season_admin = GlobalPermissionChecker(["manage_seasons"])
 
 @season_router.post("/", response_model=Season, status_code=status.HTTP_201_CREATED)
 async def create_season(
-    name: str = Form(...),
+    name: SeasonCreate,
     session: AsyncSession = Depends(get_session),
     current_user: Player = Depends(get_current_player),
     _: bool = Depends(require_season_admin)

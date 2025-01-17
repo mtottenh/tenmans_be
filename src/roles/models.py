@@ -1,7 +1,5 @@
-# permissions/models.py
-
+from typing import Dict, List, Set
 from enum import StrEnum
-from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 from auth.service import ScopeType
 
@@ -9,13 +7,26 @@ class PermissionTemplate:
     """Predefined permission templates for common scenarios"""
     
     TEMPLATES = {
+        "user": {
+            "roles": ["user"],
+            "permissions": [
+                "view_tournaments",
+                "join_tournaments",
+                "view_teams",
+                "join_teams",
+                "submit_results",
+                "view_matches"
+            ],
+            "scope_type": ScopeType.GLOBAL
+        },
         "team_captain": {
             "roles": ["team_captain"],
             "permissions": [
                 "manage_team",
                 "manage_roster",
                 "submit_results",
-                "schedule_matches"
+                "schedule_matches",
+                "confirm_results"
             ],
             "scope_type": ScopeType.TEAM
         },
@@ -25,7 +36,8 @@ class PermissionTemplate:
                 "manage_tournament",
                 "manage_fixtures",
                 "manage_results",
-                "manage_participants"
+                "manage_participants",
+                "verify_results"
             ],
             "scope_type": ScopeType.TOURNAMENT
         },
@@ -34,7 +46,8 @@ class PermissionTemplate:
             "permissions": [
                 "moderate_chat",
                 "manage_bans",
-                "verify_users"
+                "verify_users",
+                "manage_reports"
             ],
             "scope_type": ScopeType.GLOBAL
         },
@@ -45,11 +58,22 @@ class PermissionTemplate:
                 "manage_tournaments",
                 "manage_teams",
                 "manage_users",
-                "manage_roles"
+                "manage_roles",
+                "manage_permissions"
             ],
             "scope_type": ScopeType.GLOBAL
         }
     }
+
+    # Default permissions that every authenticated user should have
+    DEFAULT_USER_PERMISSIONS = [
+        "view_tournaments",
+        "join_tournaments",
+        "view_teams",
+        "join_teams",
+        "submit_results",
+        "view_matches"
+    ]
 
     @classmethod
     def get_template(cls, template_name: str) -> dict:
@@ -62,6 +86,12 @@ class PermissionTemplate:
     def list_templates(cls) -> List[str]:
         """Get list of available templates"""
         return list(cls.TEMPLATES.keys())
+
+    @classmethod
+    def get_default_permissions(cls) -> List[str]:
+        """Get list of default user permissions"""
+        return cls.DEFAULT_USER_PERMISSIONS.copy()
+
 
 @dataclass
 class PermissionAuditResult:

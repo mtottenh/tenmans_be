@@ -1,4 +1,5 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
+from sqlalchemy import func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
 from datetime import datetime
@@ -10,13 +11,16 @@ from competitions.models.rounds import Round
 from competitions.models.fixtures import Fixture
 from competitions.tournament.standings import get_standings_calculator
 from matches.service import MatchService
-from teams.service import TeamService
+from teams.service import RosterService, TeamService
 from teams.models import Team
 from .schemas import RegistrationReviewRequest, RegistrationStatus, RegistrationWithdrawRequest, TournamentCreate, TournamentRegistrationList, TournamentRegistrationRequest, TournamentUpdate, TournamentTeam, TournamentStandings
 from audit.service import AuditService
 from auth.models import Player
 from .generation.strategies import get_generation_strategy, GenerationError
 from .generation.validators import TournamentValidator, ValidationError
+import logging
+
+LOG = logging.getLogger(__name__)
 
 class TournamentServiceError(Exception):
     """Base exception for tournament service errors"""
@@ -30,6 +34,7 @@ class TournamentService:
     def __init__(self):
         self.audit_service = AuditService()
         self.team_service = TeamService()
+        self.roster_service = RosterService()
         self.match_service = MatchService()
         self.validator = TournamentValidator()
 
@@ -53,8 +58,8 @@ class TournamentService:
     ) -> Optional[Tournament]:
         """Retrieve a tournament by ID"""
         stmt = select(Tournament).where(Tournament.id == tournament_id)
-        result = await session.execute(stmt)
-        return result.scalars().first()
+        result = (await session.execute(stmt)).scalars()
+        return result.first()
 
     async def get_tournaments_by_season(
         self,
@@ -67,8 +72,46 @@ class TournamentService:
         if not include_completed:
             stmt = stmt.where(Tournament.state != TournamentState.COMPLETED)
         stmt = stmt.order_by(desc(Tournament.created_at))
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
+
+    async def _get_active_tournaments(self, session: AsyncSession) -> List[Tournament]:
+        query = select(Tournament, Team).where(Tournament.state == TournamentState.IN_PROGRESS).where(TournamentRegistration.tournament_id == Tournament.id).where(TournamentRegistration.team_id == Team.id)
+        return (await session.execute(query)).scalars().all
+
+    async def get_tournaments(
+        self,
+        session: AsyncSession,
+        status: Optional[List[TournamentState]] = None,
+        season_id: Optional[uuid.UUID] = None,
+        offset: int = 0,
+        limit: int = 20
+    ) -> Tuple[List[Tournament], int]:
+        """
+        Get tournaments with optional filters and pagination
+        Returns tuple of (tournaments, total_count)
+        """
+        # Base query
+        query = select(Tournament)
+        
+        # Apply filters
+        if status:
+            query = query.where(Tournament.state.in_(status))
+        if season_id:
+            query = query.where(Tournament.season_id == season_id)
+            
+        # Get total count before pagination
+        count_query = select(func.count()).select_from(query)
+        total = (await session.execute(count_query)).scalar()
+        
+        # Apply pagination
+        query = query.offset(offset).limit(limit)
+        
+        # Execute query
+        result = await session.execute(query)
+        tournaments = result.scalars().all()
+        
+        return tournaments, total
 
     @AuditService.audited_transaction(
         action_type="tournament_create",
@@ -292,7 +335,7 @@ class TournamentService:
         # 3. Calculate current positions
         pass
 
-    def _registration_audit_details(self, registration) -> dict:
+    def _registration_audit_details(self, registration: TournamentRegistration, *args) -> dict:
         """Extract audit details for registration operations"""
         return {
             "registration_id": str(registration.id),
@@ -315,7 +358,7 @@ class TournamentService:
             TournamentRegistration.tournament_id == tournament_id,
             TournamentRegistration.id == registration_id
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_registrations(
@@ -331,7 +374,7 @@ class TournamentService:
         if status:
             stmt = stmt.where(TournamentRegistration.status == status)
         
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         registrations = result.all()
         
         # Calculate summary stats
@@ -348,24 +391,24 @@ class TournamentService:
 
     @AuditService.audited_transaction(
         action_type="tournament_registration_request",
-        entity_type="tournament_registration",
+        entity_type="registration",
         details_extractor=_registration_audit_details
     )
     async def request_registration(
         self,
-        tournament_id: uuid.UUID,
-        registration_request: TournamentRegistrationRequest,
+        registration: TournamentRegistrationRequest,
         actor: Player,
         session: AsyncSession
     ) -> TournamentRegistration:
         """Request registration in a tournament"""
         # Get tournament and team
+        tournament_id = registration.tournament_id
         tournament = await self.get_tournament(tournament_id, session)
         if not tournament:
             raise RegistrationError("Tournament not found")
             
         team = await self.team_service.get_team_by_id(
-            registration_request.team_id,
+            registration.team_id,
             session
         )
         if not team:
@@ -386,9 +429,9 @@ class TournamentService:
             status=RegistrationStatus.PENDING,
             requested_by=actor.uid,
             requested_at=datetime.now(),
-            notes=registration_request.notes
+            notes=registration.notes
         )
-        
+        LOG.info("Returning new tournament registration")
         session.add(registration)
         return registration
 
@@ -508,7 +551,7 @@ class TournamentService:
                 ])
             )
         )
-        if existing.first():
+        if existing.scalar_one_or_none():
             raise RegistrationError("Team is already registered")
             
         # Verify actor is team captain
@@ -521,7 +564,8 @@ class TournamentService:
             raise RegistrationError("Only team captains can register for tournaments")
             
         # Check team size requirements
-        roster_size = await self.team_service.get_active_roster_size(team, session)
+        season = await tournament.awaitable_attrs.season
+        roster_size = await self.roster_service.get_active_roster_count(team,season, session)
         if roster_size < tournament.min_team_size:
             raise RegistrationError(
                 f"Team must have at least {tournament.min_team_size} players"
@@ -536,19 +580,22 @@ class TournamentService:
         )
         if len(current_registrations.all()) >= tournament.max_teams:
             raise RegistrationError("Tournament has reached maximum team capacity")
+
     async def _get_registered_teams(
         self,
         tournament: Tournament,
         session: AsyncSession
     ) -> List[Team]:
         """Get all teams registered for the tournament"""
-        stmt = select(Team).join(
-            tournament.registrations
+        stmt = select(TournamentRegistration).join(
+            Tournament
+        ).where (
+           TournamentRegistration.tournament_id == tournament.id
         ).where(
-            tournament.registrations.status == 'approved'
+            TournamentRegistration.status == 'approved'
         )
-        result = await session.execute(stmt)
-        return result.all()
+        result = (await session.execute(stmt)).scalars()
+        return [ x.team for x in result.all()]
 
     @AuditService.audited_transaction(
         action_type="tournament_generate",
@@ -589,6 +636,36 @@ class TournamentService:
         session.add(first_round)
         return tournament
 
+    async def get_round_winners(
+        self,
+        round: Round,
+        session: AsyncSession
+    ) -> List[Team]:
+        """Get winning teams from completed fixtures in a round"""
+        # Get all fixtures for the round
+        stmt = select(Fixture).where(Fixture.round_id == round.id)
+        result = await session.execute(stmt)
+        fixtures = result.scalars().all()
+        
+        # For completed/forfeited fixtures, get winners
+        winners = []
+        for fixture in fixtures:
+            if fixture.status not in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED]:
+                raise TournamentServiceError(
+                    f"Not all fixtures are completed in round {round.round_number}"
+                )
+                
+            winner_id = await fixture.get_winner_id(session)
+            if not winner_id:
+                raise TournamentServiceError(
+                    f"No winner determined for completed fixture {fixture.id}"
+                )
+                
+            winner = await session.get(Team, winner_id)
+            winners.append(winner)
+            
+        return winners
+
     async def complete_round(
         self,
         tournament_id: uuid.UUID,
@@ -609,11 +686,23 @@ class TournamentService:
         if not current_round:
             raise TournamentServiceError("Round not found")
 
-        # Verify all fixtures are completed
+        # Get all fixtures for the round
         fixtures = await self._get_round_fixtures(current_round.id, session)
-        if not all(f.status in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED] 
-                  for f in fixtures):
-            raise TournamentServiceError("All fixtures must be completed")
+
+        # Verify all fixtures are completed or forfeited
+        pending_fixtures = [f for f in fixtures 
+                        if f.status not in [FixtureStatus.COMPLETED, FixtureStatus.FORFEITED]]
+        if pending_fixtures:
+            raise TournamentServiceError(
+                f"{len(pending_fixtures)} fixtures still pending completion"
+            )
+        import pprint
+        LOG.info(pprint.pformat(fixtures))
+        incomplete_fixtures = [f for f in fixtures if not await f.get_winner_id(session)]
+        if incomplete_fixtures:
+            raise TournamentServiceError(
+                f"{len(incomplete_fixtures)} fixtures missing winners"
+            )
 
         # Complete current round
         current_round.status = "completed"
@@ -633,9 +722,9 @@ class TournamentService:
 
             if tournament.type == TournamentType.KNOCKOUT:
                 # Generate fixtures for next knockout round
-                strategy = get_generation_strategy(tournament.type)
-                winning_teams = await self._get_round_winners(current_round.id, session)
+                winning_teams = await self.get_round_winners(current_round, session)
                 
+                strategy = get_generation_strategy(tournament.type)
                 fixtures = await strategy.generate_fixtures(
                     tournament,
                     next_round,
@@ -663,7 +752,7 @@ class TournamentService:
             Round.tournament_id == tournament_id,
             Round.round_number == round_number
         )
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def _get_round_fixtures(
@@ -673,7 +762,7 @@ class TournamentService:
     ) -> List[Fixture]:
         """Get all fixtures for a round"""
         stmt = select(Fixture).where(Fixture.round_id == round_id)
-        result = await session.execute(stmt)
+        result = (await session.execute(stmt)).scalars()
         return result.all()
 
 
@@ -691,43 +780,8 @@ class TournamentService:
             calculator = get_standings_calculator(tournament.type)
             return await calculator.calculate_standings(
                 tournament=tournament,
-                match_service=self.match_service,
                 session=session
             )
         except ValueError as e:
             raise TournamentServiceError(str(e))
 
-    async def get_round_winners(
-        self,
-        round_id: uuid.UUID,
-        session: AsyncSession
-    ) -> List[Team]:
-        """Get winning teams from a round's completed fixtures"""
-        # Get all fixtures for the round
-        fixtures = await self._get_round_fixtures(round_id, session)
-        winners = []
-
-        for fixture in fixtures:
-            if fixture.status == FixtureStatus.FORFEITED:
-                if not fixture.forfeit_winner:
-                    raise TournamentServiceError(
-                        f"Fixture {fixture.id} is forfeited but has no winner set"
-                    )
-                winner_id = fixture.forfeit_winner
-            else:
-                # TODO - This returns a list of Result objects which are *per-map*
-                # Get match result from match service
-                match_result = await self.match_service.get_match_results(
-                    fixture.id,
-                    session
-                )
-                if not match_result:
-                    raise TournamentServiceError(
-                        f"No result found for completed fixture {fixture.id}"
-                    )
-                winner_id = match_result.winner_id
-
-            winner = await self.team_service.get_team_by_id(winner_id, session)
-            winners.append(winner)
-
-        return winners

@@ -6,6 +6,7 @@ import csv
 from pathlib import Path
 import json
 from dataclasses import dataclass
+
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
@@ -13,7 +14,10 @@ from auth.models import Player, Permission, Role, PlayerRole
 from auth.service import AuthService, ScopeType
 from teams.models import Team
 from competitions.models.tournaments import Tournament
+from roles.service import RoleService
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @dataclass
 class PermissionAuditResult:
@@ -33,12 +37,11 @@ class PermissionAuditor:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.auth_service = AuthService()
+        self.role_service = RoleService()
         
         # Cache for entity lookups
         self._team_cache: Dict[str, Team] = {}
         self._tournament_cache: Dict[str, Tournament] = {}
-        self._permission_cache: Dict[str, Permission] = {}
-        self._role_cache: Dict[str, Role] = {}
 
     async def audit_all_players(self) -> List[PermissionAuditResult]:
         """Perform permission audit for all players"""
@@ -77,14 +80,14 @@ class PermissionAuditor:
             issues=[]
         )
         
-        # Get all roles and permissions
+        # Get all roles and permissions using RoleService
         roles_and_scopes = await self.auth_service.get_player_roles(player, self.session)
         
         for role, scope_type, scope_id in roles_and_scopes:
             result.roles.append(role.name)
             
             # Get permissions for this role
-            permissions = await self._get_role_permissions(role)
+            permissions = [p.name for p in await role.awaitable_attrs.permissions]  # Use role.permissions directly
             
             # Check scope type
             if scope_type == ScopeType.GLOBAL:
@@ -110,10 +113,6 @@ class PermissionAuditor:
         stmt = select(Player)
         result = await self.session.execute(stmt)
         return result.scalars().all()
-
-    async def _get_role_permissions(self, role: Role) -> Set[str]:
-        """Get all permission names for a role"""
-        return {perm.name for perm in role.permissions}
 
     async def _validate_permissions(self, result: PermissionAuditResult):
         """Validate permissions for consistency and common issues"""
