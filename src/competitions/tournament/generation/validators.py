@@ -27,13 +27,16 @@ class TournamentValidator:
     @staticmethod
     def _validate_regular_config(config: Dict[str, Any]):
         """Validate regular (group stage) tournament configuration"""
-        required_fields = {'group_size', 'teams_per_group', 'match_format'}
+        # 'group_size', - this was one of the required fields
+        # I don't remember what it's actually for..
+        required_fields = { 'teams_per_group', 'match_format'}
         missing = required_fields - set(config.keys())
         if missing:
             raise ValidationError(f"Missing required configuration fields: {missing}")
-            
-        if not isinstance(config['group_size'], int) or config['group_size'] < 1:
-            raise ValidationError("Invalid group size")
+        
+        # Yea.. not sure what that's about..
+        # if not isinstance(config['group_size'], int) or config['group_size'] < 1:
+        #     raise ValidationError("Invalid group size")
             
         if not isinstance(config['teams_per_group'], int) or config['teams_per_group'] < 2:
             raise ValidationError("Teams per group must be at least 2")

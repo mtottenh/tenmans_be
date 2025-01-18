@@ -27,6 +27,7 @@ class PermissionUI:
         if not player:
             print(f"Error: Player {player_uid} not found")
             return
+        await self.session.flush()
         await self.session.refresh(player)
         while True:
             await self._show_current_permissions(player)
@@ -138,6 +139,8 @@ class PermissionUI:
                     session=self.session
                 )
                 print(f"\nAdded role {role.name}")
+                await self.session.refresh(player)
+                
         except ValueError:
             print("Invalid selection")
 

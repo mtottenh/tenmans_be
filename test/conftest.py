@@ -52,9 +52,6 @@ async def prepare_test_database():
     # Drop all tables first to ensure clean state
     async with test_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
-    
-    # Create tables
-    async with test_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     
     yield

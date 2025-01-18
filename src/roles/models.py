@@ -59,7 +59,8 @@ class PermissionTemplate:
                 "manage_teams",
                 "manage_users",
                 "manage_roles",
-                "manage_permissions"
+                "manage_permissions",
+                "manage_maps"
             ],
             "scope_type": ScopeType.GLOBAL
         }

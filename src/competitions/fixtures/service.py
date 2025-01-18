@@ -77,7 +77,8 @@ class FixtureService:
         end_date = now + timedelta(days=days)
         
         stmt = select(Fixture).where(
-            Fixture.season_id == season_id,
+            Fixture.tournament_id == Tournament.id,
+            Tournament.season_id == season_id,
             Fixture.status == FixtureStatus.SCHEDULED,
             Fixture.scheduled_at >= now,
             Fixture.scheduled_at <= end_date
@@ -328,20 +329,6 @@ class FixtureService:
         )
         session.add(match_player)
         return match_player
-
-    async def get_upcoming_fixtures(
-        self,
-        days: int,
-        session: AsyncSession
-    ) -> List[Fixture]:
-        """Get fixtures scheduled in the next X days"""
-        end_date = datetime.now() + timedelta(days=days)
-        stmt = select(Fixture).where(
-            Fixture.status == FixtureStatus.SCHEDULED,
-            Fixture.scheduled_at <= end_date
-        ).order_by(Fixture.scheduled_at)
-        result = (await session.execute(stmt)).scalars()
-        return result.all()
 
     async def get_fixture_with_details(
         self,

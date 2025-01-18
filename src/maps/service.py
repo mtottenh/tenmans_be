@@ -1,3 +1,4 @@
+from datetime import datetime
 from .schemas import MapCreate
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
@@ -8,7 +9,7 @@ from .models import Map
 class MapNotFoundException(Exception):
     pass
 
-
+# TODO - Add Aduit module integration
 class MapService:
     async def get_all_maps(self, session: AsyncSession) -> Sequence[Map]:
         stmnt = select(Map).order_by(desc(Map.name))
@@ -29,8 +30,12 @@ class MapService:
         return map
 
     async def create_map(self, map: MapCreate, session: AsyncSession) -> Map:
-        map_data_dict = map.model_dump()
-        new_map = Map(**map_data_dict)
+
+        new_map = Map(name=map.name,
+                      img=map.img,
+                      created_at=datetime.utcnow(),
+                      updated_at=datetime.utcnow()
+                      )
         session.add(new_map)
         await session.commit()
         await session.refresh(new_map)

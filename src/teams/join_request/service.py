@@ -3,15 +3,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import uuid
-
+from sqlalchemy.orm import joinedload, selectinload
 from .schemas import JoinRequestStatus
 
 from .models import TeamJoinRequest
 from teams.models import Team
-from auth.models import Player
+from auth.models import Player, Role
 from competitions.models.seasons import Season
 from audit.service import AuditService
-from teams.service import RosterService
+from teams.service import RosterService, TeamService
 
 class JoinRequestError(Exception):
     """Base exception for join request operations"""
@@ -21,11 +21,11 @@ class TeamJoinRequestService:
     def __init__(self):
         self.audit_service = AuditService()
         self.roster_service = RosterService()
+        self.team_service = TeamService()
 
-    def _join_request_audit_details(self, request: TeamJoinRequest, action: str) -> Dict:
+    def _join_request_audit_details(self, request: TeamJoinRequest) -> Dict:
         """Extract audit details from a join request operation"""
         return {
-            "action": action,
             "request_id": str(request.id),
             "team_id": str(request.team_id),
             "player_id": str(request.player_uid),
@@ -45,6 +45,7 @@ class TeamJoinRequestService:
         team: Team,
         season: Season,
         message: Optional[str],
+        actor: Player,
         session: AsyncSession
     ) -> TeamJoinRequest:
         """Create a new join request"""
@@ -79,12 +80,14 @@ class TeamJoinRequestService:
         request: TeamJoinRequest,
         captain: Player,
         response_message: Optional[str],
+        actor: Player,
         session: AsyncSession
     ) -> TeamJoinRequest:
         """Approve a join request"""
         if request.status != JoinRequestStatus.PENDING:
             raise JoinRequestError("Can only approve pending requests")
-
+        if not await self.team_service.player_is_team_captain(captain, request.team, session):
+            raise JoinRequestError("Only team captains can review requests")
         # Update request status
         request.status = JoinRequestStatus.APPROVED
         request.responded_by = captain.uid
@@ -114,6 +117,7 @@ class TeamJoinRequestService:
         request: TeamJoinRequest,
         captain: Player,
         response_message: Optional[str],
+        actor: Player,
         session: AsyncSession
     ) -> TeamJoinRequest:
         """Reject a join request"""
@@ -138,6 +142,7 @@ class TeamJoinRequestService:
         self,
         request: TeamJoinRequest,
         player: Player,
+        actor: Player,
         session: AsyncSession
     ) -> TeamJoinRequest:
         """Cancel a join request (by the requesting player)"""
@@ -152,7 +157,29 @@ class TeamJoinRequestService:
 
         session.add(request)
         return request
-
+    async def get_request_by_id(self, req_id: str, session: AsyncSession) -> TeamJoinRequest:
+        stmt = select(TeamJoinRequest).where(TeamJoinRequest.id == req_id).options(
+            selectinload(TeamJoinRequest.player)
+            .selectinload(Player.roles)
+            .selectinload(Role.permissions),
+            selectinload(TeamJoinRequest.team),
+            selectinload(TeamJoinRequest.responder)
+            .selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
+        result = (await session.execute(stmt)).scalars()
+        return result.first()
+    
+    async def get_pending_team_request_by_id(self, team_id: str, req_id: str, session: AsyncSession) -> TeamJoinRequest:
+        stmt = select(TeamJoinRequest).where(TeamJoinRequest.id == req_id, TeamJoinRequest.team_id == team_id, TeamJoinRequest.status == JoinRequestStatus.PENDING).options(
+            selectinload(TeamJoinRequest.player)
+            .selectinload(Player.roles)
+            .selectinload(Role.permissions),
+            selectinload(TeamJoinRequest.team)
+        )
+        result = (await session.execute(stmt)).scalars()
+        return result.first()
+    
     async def get_team_requests(
         self,
         team: Team,
@@ -162,7 +189,12 @@ class TeamJoinRequestService:
         """Get all join requests for a team"""
         stmt = select(TeamJoinRequest).where(TeamJoinRequest.team_id == team.id)
         if not include_resolved:
-            stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING)
+            stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING).options(
+                selectinload(TeamJoinRequest.team),
+                selectinload(TeamJoinRequest.player)
+                .selectinload(Player.roles)
+                .selectinload(Role.permissions)
+            )
         result = (await session.execute(stmt)).scalars()
         return result.all()
 

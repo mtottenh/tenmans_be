@@ -12,7 +12,7 @@ from auth.dependencies import (
 from auth.models import Player
 from teams.models import Team
 from teams.service import TeamService
-from teams.dependencies import CaptainCheckerByTeamName
+from teams.dependencies import CaptainCheckerByTeamName, CaptainCheckerByTeamId
 from competitions.season.dependencies import get_active_season
 from competitions.models.seasons import Season
 from .models import TeamJoinRequest, JoinRequestStatus
@@ -26,32 +26,31 @@ from .schemas import (
 )
 from .service import TeamJoinRequestService, JoinRequestError
 
-join_request_router = APIRouter(prefix="/teams/join-requests")
+team_join_request_router = APIRouter(prefix="/id/{team_id}/join-requests")
 join_request_service = TeamJoinRequestService()
 team_service = TeamService()
 
 # Additional permissions
-require_team_captain = CaptainCheckerByTeamName()
+require_team_captain = CaptainCheckerByTeamId()
 require_moderator = GlobalPermissionChecker(["moderator"])
 
-@join_request_router.post(
-    "/{team_name}",
-    response_model=JoinRequestDetailed,
+@team_join_request_router.post(
+    "/",
     status_code=status.HTTP_201_CREATED
 )
-async def create_join_request(
-    team_name: str,
+async def create_join_request_id(
+    team_id: uuid.UUID,
     request_data: JoinRequestCreate,
     current_player: Player = Depends(get_current_player),
     active_season: Season = Depends(get_active_season),
     session: AsyncSession = Depends(get_session)
 ):
     """Create a request to join a team"""
-    team = await team_service.get_team_by_name(team_name, session)
+    team = await team_service.get_team_by_id(team_id, session)
     if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team '{team_name}' not found"
+            detail=f"Team id='{team_id}' not found"
         )
 
     try:
@@ -60,32 +59,34 @@ async def create_join_request(
             team=team,
             season=active_season,
             message=request_data.message,
+            actor=current_player,
             session=session
         )
-        return join_request
+        return
     except JoinRequestError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
-@join_request_router.get(
-    "/team/{team_name}",
+@team_join_request_router.get(
+    "/",
     response_model=JoinRequestList,
     dependencies=[Depends(require_team_captain)]
 )
-async def get_team_join_requests(
-    team_name: str,
+async def get_team_join_requests_id(
+    team_id: str,
     include_resolved: bool = False,
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
     """Get all join requests for a team (requires team captain)"""
-    team = await team_service.get_team_by_name(team_name, session)
-    if not team:
+    team = await team_service.get_team_by_id(team_id, session)
+    
+    if team is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team '{team_name}' not found"
+            detail=f"Team id='{team_id}' not found"
         )
 
     requests = await join_request_service.get_team_requests(
@@ -102,40 +103,20 @@ async def get_team_join_requests(
         requests=requests
     )
 
-@join_request_router.get(
-    "/my-requests",
-    response_model=JoinRequestList
-)
-async def get_my_join_requests(
-    include_resolved: bool = False,
-    current_player: Player = Depends(get_current_player),
-    session: AsyncSession = Depends(get_session)
-):
-    """Get all join requests made by current player"""
-    requests = await join_request_service.get_player_requests(
-        player=current_player,
-        session=session,
-        include_resolved=include_resolved
-    )
-    
-    pending_count = sum(1 for r in requests if r.status == JoinRequestStatus.PENDING)
-    return JoinRequestList(
-        total=len(requests),
-        pending_count=pending_count,
-        requests=requests
-    )
 
-@join_request_router.get(
-    "/{request_id}",
+# TODO - implement get_team_req_with_req_id
+@team_join_request_router.get(
+    "/id/{request_id}",
     response_model=JoinRequestDetailed
 )
 async def get_join_request(
+    team_id: uuid.UUID,
     request_id: uuid.UUID,
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
     """Get details of a specific join request"""
-    request = await join_request_service.get_request(request_id, session)
+    request = await join_request_service.get_team_req_with_req_id(team_id, request_id, session)
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -162,12 +143,13 @@ async def get_join_request(
     
     return request
 
-@join_request_router.patch(
-    "/{request_id}/approve",
+@team_join_request_router.patch(
+    "/id/{request_id}/approve",
     response_model=JoinRequestDetailed,
     dependencies=[Depends(require_team_captain)]
 )
 async def approve_join_request(
+    team_id: uuid.UUID,
     request_id: uuid.UUID,
     response: JoinRequestResponse,
     current_player: Player = Depends(get_current_player),
@@ -175,12 +157,19 @@ async def approve_join_request(
 ):
     """Approve a join request (requires team captain)"""
     try:
+        request = await join_request_service.get_pending_team_request_by_id(team_id, request_id, session)
+        if request is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail=f"RequestID{request_id} for TeamId{team_id} Not found or not currently pending"
+                                )
         request = await join_request_service.approve_request(
-            request_id=request_id,
+            request=request,
             captain=current_player,
             response_message=response.response_message,
+            actor=current_player,
             session=session
         )
+        request = await join_request_service.get_request_by_id(request_id, session)
         return request
     except JoinRequestError as e:
         raise HTTPException(
@@ -188,12 +177,13 @@ async def approve_join_request(
             detail=str(e)
         )
 
-@join_request_router.patch(
-    "/{request_id}/reject",
+@team_join_request_router.patch(
+    "/id/{request_id}/reject",
     response_model=JoinRequestDetailed,
     dependencies=[Depends(require_team_captain)]
 )
 async def reject_join_request(
+    team_id: uuid.UUID,
     request_id: uuid.UUID,
     response: JoinRequestResponse,
     current_player: Player = Depends(get_current_player),
@@ -201,12 +191,19 @@ async def reject_join_request(
 ):
     """Reject a join request (requires team captain)"""
     try:
+        request = await join_request_service.get_pending_team_request_by_id(team_id, request_id, session)
+        if request is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail=f"RequestID{request_id} for TeamId{team_id} Not found or not currently pending"
+                                )
         request = await join_request_service.reject_request(
-            request_id=request_id,
+            request=request,
             captain=current_player,
             response_message=response.response_message,
+            actor=current_player,
             session=session
         )
+        request = await join_request_service.get_request_by_id(request_id, session)
         return request
     except JoinRequestError as e:
         raise HTTPException(
@@ -214,22 +211,31 @@ async def reject_join_request(
             detail=str(e)
         )
 
-@join_request_router.patch(
-    "/{request_id}/cancel",
+@team_join_request_router.patch(
+    "/id/{request_id}/cancel",
     response_model=JoinRequestDetailed
 )
 async def cancel_join_request(
+    team_id: uuid.UUID,
     request_id: uuid.UUID,
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
     """Cancel a join request (only allowed by requesting player)"""
     try:
+        request = await join_request_service.get_pending_team_request_by_id(team_id, request_id, session)
+        if request is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail=f"RequestID{request_id} for TeamId{team_id} Not found or not currently pending"
+                                )
         request = await join_request_service.cancel_request(
-            request_id=request_id,
+            request=request,
             player=current_player,
+            actor=current_player,
             session=session
         )
+        # Refresh from the DB
+        request = await join_request_service.get_request_by_id(request_id, session)
         return request
     except JoinRequestError as e:
         raise HTTPException(
@@ -237,22 +243,22 @@ async def cancel_join_request(
             detail=str(e)
         )
 
-@join_request_router.get(
-    "/team/{team_name}/stats",
+@team_join_request_router.get(
+    "/stats",
     response_model=JoinRequestStats,
     dependencies=[Depends(require_team_captain)]
 )
 async def get_team_request_stats(
-    team_name: str,
+    team_id: uuid.UUID,
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
     """Get statistics for team join requests (requires team captain)"""
-    team = await team_service.get_team_by_name(team_name, session)
+    team = await team_service.get_team_by_id(team_id, session)
     if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Team '{team_name}' not found"
+            detail=f"Team '{team_id}' not found"
         )
     
     requests = await join_request_service.get_team_requests(
@@ -287,7 +293,33 @@ async def get_team_request_stats(
         average_response_time=avg_response_time
     )
 
-@join_request_router.post(
+
+
+global_join_request_router = APIRouter(prefix=f"/join-requests")
+@global_join_request_router.get(
+    "/me",
+    response_model=JoinRequestList
+)
+async def get_my_join_requests(
+    include_resolved: bool = False,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Get all join requests made by current player"""
+    requests = await join_request_service.get_player_requests(
+        player=current_player,
+        session=session,
+        include_resolved=include_resolved
+    )
+    
+    pending_count = sum(1 for r in requests if r.status == JoinRequestStatus.PENDING)
+    return JoinRequestList(
+        total=len(requests),
+        pending_count=pending_count,
+        requests=requests
+    )
+
+@global_join_request_router.post(
     "/cleanup",
     response_model=dict,
     dependencies=[Depends(require_admin)]

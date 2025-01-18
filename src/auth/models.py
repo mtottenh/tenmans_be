@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 import uuid
 from typing import List, Optional
-from audit.models import AuditLog
+from audit.models import AuditEvent
 from moderation.models import Ban
 from substitutes.models import SubstituteAvailability
 from teams.join_request.models import TeamJoinRequest
@@ -77,6 +77,7 @@ class Player(SQLModel, AsyncAttrs, table=True):
         sa_column=Column(UUID(as_uuid=True),  primary_key=True,  nullable=False, default=uuid.uuid4))
     name: str
     steam_id: str = Field(unique=True)  # Required for all users
+    # discord_info: 
     email: Optional[str] = Field(unique=True, nullable=True)  # Optional for Steam users
     auth_type: AuthType
     password_hash: Optional[str] = Field(nullable=True)  # Optional for Steam users
@@ -121,7 +122,7 @@ class Player(SQLModel, AsyncAttrs, table=True):
     submitted_results: List["Result"] = Relationship(back_populates="submitter", sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.uid"})
     confirmed_results: List["Result"] = Relationship(back_populates="confirmer", sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.uid"})
     admin_overridden_results: List["Result"] = Relationship(back_populates="admin_overrider",  sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.uid"})
-    audit_logs: List[AuditLog] = Relationship(back_populates="actor")
+    audit_events: List[AuditEvent] = Relationship(back_populates="actor")
     revoked_bans: List[Ban] = Relationship(back_populates="revoking_admin",
                      sa_relationship=relationship(Ban, back_populates="revoking_admin", foreign_keys="Ban.revoked_by")                        
                                              

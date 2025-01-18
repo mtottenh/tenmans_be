@@ -4,7 +4,7 @@ from datetime import datetime
 from auth.schemas import PlayerPublic
 from competitions.schemas import RoundBase
 from matches.schemas import ResultBase
-from teams.schemas import TeamBasic
+from teams.base_schemas import TeamBasic
 from ..base_schemas import FixtureBase, MatchPlayerBase, FixtureStatus
 
 # Match Player Schemas

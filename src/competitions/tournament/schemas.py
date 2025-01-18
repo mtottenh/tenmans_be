@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict, Field, UUID4
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from ..base_schemas import TournamentType, RegistrationStatus, TournamentBase, TournamentRegistrationBase
-from teams.schemas import TeamBasic
+from teams.base_schemas import TeamBasic
 from auth.schemas import PlayerPublic
 
 # Request Schemas
@@ -12,7 +12,8 @@ class TournamentCreate(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
     season_id: UUID4
     type: TournamentType
-    max_team_size: int = Field(..., ge=5, le=10)
+    # TODO - Revisit this...
+    max_team_size: int = Field(..., ge=1, le=100)
     map_pool: List[UUID4]
     format_config: Dict[str, Any]  # Flexible tournament format configuration
 

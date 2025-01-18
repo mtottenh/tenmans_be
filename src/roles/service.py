@@ -34,7 +34,12 @@ class RoleService:
         stmt = select(Role).where(Role.name == name)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
-
+    
+    async def get_roles_by_names(self, names: List[str], session: AsyncSession) -> List[Role]:
+        stmt = select(Role).where(Role.name.in_(names))
+        result = await session.execute(stmt)
+        return result.scalars().all()
+    
     async def get_all_roles(self, session: AsyncSession) -> List[Role]:
         """Get all roles"""
         stmt = select(Role)
@@ -141,6 +146,7 @@ class RoleService:
         self,
         name: str,
         description: str,
+        
         session: AsyncSession
     ) -> Permission:
         """Create a new permission"""

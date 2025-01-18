@@ -1,14 +1,15 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.functions import count
 import uuid
 from datetime import datetime
 
 from competitions.season.service import SeasonService
 from teams.models import Team, TeamCaptain, Roster, TeamStatus
-from teams.schemas import PlayerRosterHistory, TeamCreate, TeamHistory, TeamUpdate, TeamBasic, TeamDetailed
+from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
+from teams.base_schemas import TeamUpdate
 from auth.models import Player, Role
 from competitions.models.seasons import Season
 from audit.service import AuditService
@@ -32,6 +33,7 @@ class TeamService:
             "created_at": team.created_at.isoformat() if team.created_at else None,
             "updated_at": team.updated_at.isoformat() if team.updated_at else None
         }
+
 
     def _captain_audit_details(self, captain: TeamCaptain) -> dict:
         """Extracts audit details from a captain operation"""
@@ -76,9 +78,9 @@ class TeamService:
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
-    async def get_team_by_id(self, id: uuid.UUID, session: AsyncSession) -> Optional[Team]:
+    async def get_team_by_id(self, team_id: uuid.UUID, session: AsyncSession) -> Optional[Team]:
         """Retrieves a team by ID"""
-        stmt = select(Team).where(Team.id == id).options(
+        stmt = select(Team).where(Team.id == str(team_id)).options(
             selectinload(Team.rosters)
             .selectinload(Roster.player)
             .selectinload(Player.roles)
@@ -186,22 +188,6 @@ class TeamService:
         await session.refresh(team_captain)
         await session.refresh(actor)
         await session.refresh(new_team)
-        # TODO - do we need to 'selectinload()' on new team?
-        # This is an audited transaction - so the audit module will be calling
-        # commit() - does that matter? 
-        # stmt = select(Team).where(Team.id == new_team.id).options(
-        #     selectinload(Team.rosters)
-        #     .selectinload(Roster.player)
-        #     .selectinload(Player.roles)
-        #     .selectinload(Role.permissions),
-        #     selectinload(Team.captains)
-        #     .selectinload(TeamCaptain.player)
-        #     .selectinload(Player.roles)
-        #     .selectinload(Role.permissions)
-        # )
-        # result = await session.execute(stmt)
-        # new_team = result.scalars().first()
-
         return new_team
 
 
@@ -240,19 +226,7 @@ class TeamService:
         new_captain = await self._create_captain_internal(team, player, session)
         return new_captain
 
-    @AuditService.audited_transaction(
-        action_type="team_captain_remove",
-        entity_type="team",
-        details_extractor=_captain_audit_details
-    )
-    async def remove_captain(
-        self,
-        team: Team,
-        player: Player,
-        actor: Player,
-        session: AsyncSession
-    ) -> TeamCaptain:
-        """Removes a player as team captain"""
+    async def get_captain(self, team: Team, player: Player, session: AsyncSession):
         stmt = select(TeamCaptain).where(
             TeamCaptain.team_id == team.id,
             TeamCaptain.player_uid == player.uid
@@ -262,7 +236,20 @@ class TeamService:
         
         if not captain:
             raise TeamServiceError("Player is not a captain of this team")
-            
+        return captain
+    
+    @AuditService.audited_deletion(
+        action_type="team_captain_remove",
+        entity_type="team",
+        details_extractor=_captain_audit_details
+    )
+    async def remove_captain(
+        self,
+        captain: TeamCaptain,
+        actor: Player,
+        session: AsyncSession
+    ) -> TeamCaptain:
+        """Removes a player as team captain"""
         await session.delete(captain)
         return captain
 
@@ -272,6 +259,9 @@ class TeamService:
             Team.name == team_name,
             Team.id == TeamCaptain.team_id,
             Player.uid == TeamCaptain.player_uid
+        ).options(
+            selectinload(Player.roles)
+            .selectinload(Role.permissions)
         )
         result = (await session.execute(stmt)).scalars()
         return result.all()
@@ -282,6 +272,10 @@ class TeamService:
             Team.id == team_id,
             Team.id == TeamCaptain.team_id,
             Player.uid == TeamCaptain.player_uid
+        ).options(
+
+            selectinload(Player.roles)
+            .selectinload(Role.permissions)
         )
         result = (await session.execute(stmt)).scalars()
         return result.all()
@@ -373,8 +367,8 @@ class TeamService:
             return PlayerRosterHistory(current=None, previous=None)
         current_season = await season_service.get_active_season(session)
         
-        current_team = [ x for x in result if x.season_id == current_season.id]
-        previous_team = [ x for x in result if x.season_id != current_season.id]
+        current_team = [ x for x in result if x.season_id == current_season.id and x.team.status == TeamStatus.ACTIVE]
+        previous_team = [ x for x in result if x.season_id != current_season.id or x.team.status != TeamStatus.ACTIVE]
         current_team = current_team[0] if len(current_team) == 1 else None
         
         
@@ -384,7 +378,8 @@ class TeamService:
             return TeamHistory(team_id=r.team_id,
                                name=r.team.name,
                                season_id=r.season_id,
-                               since=r.created_at)
+                               since=r.created_at,
+                               status=r.team.status)
         previous_rosters = [ roster_to_team_history(p) for p in previous_team ]
 
         return PlayerRosterHistory(
@@ -400,10 +395,9 @@ class RosterService:
     def __init__(self):
         self.audit_service = AuditService()
 
-    def _roster_audit_details(self, roster: Roster, action: str, details: Optional[Dict] = None) -> Dict:
+    def _roster_audit_details(self, roster: Roster, details: Optional[Dict] = None) -> Dict:
         """Extract audit details from a roster operation"""
         audit_data = {
-            "action": action,
             "team_id": str(roster.team_id),
             "player_id": str(roster.player_uid),
             "season_id": str(roster.season_id),
@@ -414,10 +408,14 @@ class RosterService:
             audit_data.update(details)
         return audit_data
 
+    def _roster_id_gen(self, roster: Roster) -> uuid.UUID:
+        return uuid.uuid4()
+    
     @AuditService.audited_transaction(
         action_type="roster_add",
         entity_type="roster",
-        details_extractor=_roster_audit_details
+        details_extractor=_roster_audit_details,
+        id_extractor=_roster_id_gen
     )
     async def add_player_to_roster(
         self,
@@ -430,7 +428,7 @@ class RosterService:
     ) -> Roster:
         """Add a player to team roster"""
         # Check if player is already on a team this season
-        current_roster = await self._get_player_roster(player, season, session)
+        current_roster = await self._get_player_roster(player.uid, season.id, session)
         if current_roster:
             raise RosterServiceError("Player is already on a team this season")
 
@@ -446,44 +444,45 @@ class RosterService:
         session.add(roster_entry)
         return roster_entry
 
-    @AuditService.audited_transaction(
+    @AuditService.audited_deletion(
         action_type="roster_remove",
         entity_type="roster",
-        details_extractor=_roster_audit_details
+        details_extractor=_roster_audit_details,
+        id_extractor=_roster_id_gen
     )
-    async def remove_player_from_roster(
+    async def _remove_player_from_roster(
         self,
-        team: Team,
-        player: Player,
-        season: Season,
+        rostered_member: Roster,
         actor: Player,
-        reason: str,
         session: AsyncSession
     ) -> None:
         """Remove a player from team roster"""
-        roster_entry = await self._get_player_roster(player, season, session)
-        if not roster_entry or roster_entry.team_id != team.id:
+        await session.delete(rostered_member)
+        return
+
+    async def remove_player_from_team_roster(self, team_id: str, player_uid: str, season_id: str,actor: Player, session: AsyncSession):
+        roster_entry = await self._get_player_roster(player_uid, season_id, session, team_id=team_id)
+
+        if not roster_entry:
             raise RosterServiceError("Player not found on team roster")
 
         # Check if removing team captain
-        is_captain = await (session.execute(
-            select(TeamCaptain).where(
-                TeamCaptain.team_id == team.id,
-                TeamCaptain.player_uid == player.uid
-            )
-        )).scalar_one_or_none()
-        
-        if is_captain:
-            raise RosterServiceError("Cannot remove team captain from roster")
-
+        # This is handled for us by the route service.
+        # is_captain = await (session.execute(
+        #     select(TeamCaptain).where(
+        #         TeamCaptain.team_id == team.id,
+        #         TeamCaptain.player_uid == player.uid
+        #     )
+        # )).scalar_one_or_none()
+        # if is_captain:
+        #     raise RosterServiceError("Cannot remove team captain from roster")
+        return await self._remove_player_from_roster(roster_entry, actor=actor, session=session)
         # Add removal details for audit
-        details = {
-            "removal_reason": reason,
-            "removed_by": str(actor.uid)
-        }
+        # details = {
+        #     "removal_reason": reason,
+        #     "removed_by": str(actor.uid)
+        # }
         
-        await session.delete(roster_entry)
-        return roster_entry, details
 
     async def get_team_roster(
         self,
@@ -546,15 +545,18 @@ class RosterService:
 
     async def _get_player_roster(
         self,
-        player: Player,
-        season: Season,
-        session: AsyncSession
+        player_uid: str,
+        season_id: str,
+        session: AsyncSession,
+        team_id: Optional[str] = None
     ) -> Optional[Roster]:
         """Get player's current roster entry for season"""
         stmt = select(Roster).where(
-            Roster.player_uid == player.uid,
-            Roster.season_id == season.id
+            Roster.player_uid == player_uid,
+            Roster.season_id == season_id
         )
+        if team_id:
+            stmt = stmt.where(Roster.team_id == team_id)
         result = (await session.execute(stmt)).scalars()
         return result.first()
 

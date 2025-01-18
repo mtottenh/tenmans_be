@@ -11,7 +11,7 @@ from competitions.models.fixtures import Fixture, FixtureStatus
 from competitions.tournament.schemas import TournamentRegistrationRequest
 from matches.models import Result, ConfirmationStatus, MatchFormat
 from competitions.tournament.service import TournamentService, TournamentServiceError
-from test.test.competitions.tournament.conftest import TestDataBuilder
+from test.competitions.tournament.conftest import TestDataBuilder
 
 @pytest.mark.asyncio
 class TestTournamentFixtures:

@@ -5,18 +5,22 @@ from datetime import datetime
 # Map Schemas
 class MapCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
-    img_url: Optional[HttpUrl]
+    img: str
 
-class MapUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=50)
-    img_url: Optional[HttpUrl]
+class MapCreateRequest(BaseModel):
+    name: str = Field(..., min_length=3, max_length=50)
+    map_img_token_id: str
+
+# class MapUpdate(BaseModel):
+#     name: Optional[str] = Field(None, min_length=2, max_length=50)
+#     img_url: Optional[HttpUrl]
 
 class MapBase(BaseModel):
     id: UUID4
     name: str
-    img_url: Optional[HttpUrl]
-    created_at: datetime
-    updated_at: datetime
+    img: str
+    # created_at: datetime
+    # updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -7,7 +7,7 @@ from sqlalchemy.sql.operators import is_
 from sqlalchemy.orm import selectinload
 from sqlmodel import select, desc, or_
 from auth.models import Player, Permission, Role, PlayerRole
-from auth.schemas import TokenResponse, AuthType, PlayerEmailCreate, PlayerLogin, PlayerUpdate
+from auth.schemas import PlayerWithTeamBasic, TokenResponse, AuthType, PlayerEmailCreate, PlayerLogin, PlayerUpdate
 from passlib.context import CryptContext
 import httpx
 import jwt
@@ -17,11 +17,16 @@ from config import Config
 import logging
 
 from roles.service import RoleService
+from teams.models import Roster
+from teams.schemas import TeamBase
 
 LOG = logging.getLogger('uvicorn.error')
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class InvalidSteamResponseException(Exception):
+    pass
+
+class UninitializedDBException(Exception):
     pass
 
 class ScopeType(StrEnum):
@@ -54,13 +59,51 @@ class AuthService:
 
     async def get_all_players(self, session: AsyncSession) -> List[Player]:
         stmnt = select(Player).order_by(desc(Player.created_at)).options(
-            selectinload(Player.roles)
-            .selectinload(Role.permissions)
-        )
+                selectinload(Player.roles)
+                .selectinload(Role.permissions)
+            )
+        players: List[Player] = (await session.execute(stmnt)).scalars().all()
+        return players
 
-        result = (await session.execute(stmnt)).scalars()
+    async def get_all_players_with_basic_team_info(self,  current_season_id: str, session: AsyncSession,) -> List[PlayerWithTeamBasic]:
+        stmnt = select(Player).order_by(desc(Player.created_at)).options(
+                selectinload(Player.roles)
+                .selectinload(Role.permissions),
+                selectinload(Player.team_rosters)
+                .selectinload(Roster.team)
+            )
 
-        return result.all()
+        players: List[Player] = (await session.execute(stmnt)).scalars().all()
+        players_with_status = []
+        for player in players:
+            # Check if the player is on a team in the current season
+            roster = next(
+                (r for r in player.team_rosters if r.season_id == current_season_id), 
+                None
+            )
+            
+            # Populate team info if the player is on a team
+            team = TeamBase.model_validate(roster.team) if roster and roster.team else None
+            
+            # Add team info and other player attributes to the response
+            player_with_status = PlayerWithTeamBasic(
+            uid=player.uid,
+            name=player.name,
+            email=player.email,
+            steam_id=player.steam_id,
+            auth_type=player.auth_type,
+            verification_status=player.verification_status,
+            current_elo=player.current_elo,
+            highest_elo=player.highest_elo,
+            created_at=player.created_at,
+            updated_at=player.updated_at,
+            roles=player.roles,  # Ensure roles are populated
+            team=team  # Add the computed team field
+            )
+            players_with_status.append(player_with_status)
+    
+    
+        return players_with_status
     
     async def get_player_by_name(self, name: str, session: AsyncSession) -> Player | None:
         stmnt = select(Player).where(Player.name == name)
@@ -161,6 +204,19 @@ class AuthService:
         
         result = await session.execute(stmt)
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
+    
+    async def verify_role(self, player: Player, allowed_roles: List[str], session: AsyncSession) -> bool:
+        role_list = await self.role_service.get_roles_by_names(allowed_roles, session)
+        player_roles = await self.get_player_roles(player,session)
+        player_role_ids = [ x[0].id for x in player_roles]
+
+        has_role=False
+        for r in role_list:
+            if r.id in player_role_ids:
+                has_role=True
+                break
+        return has_role
+
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
@@ -296,7 +352,10 @@ class AuthService:
         # TODO - Create 'role creation' services.
 
         user_role = await self.role_service.get_role_by_name("user", session)
+        if user_role is None:
+            raise UninitializedDBException("No 'user' role in Database")
         await self.assign_role(new_player, user_role, ScopeType.GLOBAL, None, session)
+        await session.refresh(new_player)
         # Create tokens
         tokens = self.create_tokens(str(new_player.uid), new_player.auth_type)
         return new_player, tokens
@@ -333,6 +392,8 @@ class AuthService:
         await session.flush()
         await session.refresh(new_player)
         user_role = await self.role_service.get_role_by_name("user", session)
+        if user_role is None:
+            raise UninitializedDBException("No 'user' role in Database")
         await self.assign_role(new_player, user_role, ScopeType.GLOBAL, None, session)
 
         await session.refresh(new_player)

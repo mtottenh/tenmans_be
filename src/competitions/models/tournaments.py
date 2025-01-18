@@ -52,7 +52,6 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     # Tournament configuration
     format_config: dict = Field(default={}, sa_column=Column(sa.JSON))
     seeding_config: dict = Field(default={}, sa_column=Column(sa.JSON))
-    map_pool: List[uuid.UUID] = Field(sa_column=Column(sa.JSON))
     
     # Dates
     scheduled_start_date: datetime

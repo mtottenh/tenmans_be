@@ -4,6 +4,8 @@ from typing import List, Optional
 import uuid
 
 from competitions.base_schemas import TournamentState
+from competitions.fixtures.service import FixtureService
+from competitions.models.fixtures import Fixture
 from db.main import get_session
 from auth.models import Player
 from auth.dependencies import (
@@ -501,4 +503,48 @@ async def get_tournament_standings(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+fixture_service = FixtureService()
+@tournament_router.get(
+    '/{tournament_id}/fixtures',
+    response_model=List[Fixture],
+    dependencies=[Depends(require_tournament_view)]
+)
+async def get_all_fixtures(
+    tournament_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+        tournament = await tournament_service.get_tournament(tournament_id, session)
+        if tournament is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No tournament with id {tournament_id}"
+            )
+        
+        return await fixture_service.get_tournament_fixtures(tournament.id, session)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{str(e)}"
+        )
+    
+
+@tournament_router.get(
+    '/{tournament_id}/rounds/{round_number}/fixtures',
+    response_model=List[Fixture],
+    dependencies=[Depends(require_tournament_view)]
+)
+async def get_fixtures_for_round(
+    tournament_id: uuid.UUID,
+    round_number: int,
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+        return await tournament_service.get_fixtures_for_round(tournament_id, round_number, session)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{str(e)}"
         )

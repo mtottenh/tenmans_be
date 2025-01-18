@@ -7,12 +7,8 @@ import uuid
 from typing import Dict, List, Optional
 from enum import StrEnum
 from competitions.models.seasons import Season
+from teams.base_schemas import TeamStatus, RecruitmentStatus
 
-class TeamStatus(StrEnum):
-    ACTIVE = "active"
-    DISBANDED = "disbanded"
-    SUSPENDED = "suspended"
-    ARCHIVED = "archived"
 
 
 class Team(SQLModel, AsyncAttrs, table=True):
@@ -27,7 +23,7 @@ class Team(SQLModel, AsyncAttrs, table=True):
     logo: Optional[str]
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    
+    recruitment_status: RecruitmentStatus = Field(default=RecruitmentStatus.ACTIVE)
     rosters: List["Roster"] = Relationship(back_populates="team")
     captains: List["TeamCaptain"] = Relationship(back_populates="team")
     #elo_history: List["TeamELOHistory"] = Relationship(back_populates="team")

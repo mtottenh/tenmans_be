@@ -3,6 +3,8 @@ from typing import Optional, List
 from datetime import datetime
 from enum import StrEnum
 
+from teams.base_schemas import TeamBasic
+
 
 class AuthType(StrEnum):
     STEAM = "steam"
@@ -141,6 +143,9 @@ class PlayerPrivate(PlayerBase):
 
 class PlayerPublic(PlayerBase):
     pass
+
+class PlayerWithTeamBasic(PlayerPublic):
+    team: Optional[TeamBasic]
 
 class TokenResponse(BaseModel):
     access_token: str

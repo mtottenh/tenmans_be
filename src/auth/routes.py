@@ -1,12 +1,12 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
-from auth.models import Player, PlayerRole, Role
+from auth.models import Player
 from auth.schemas import (
-    PlayerEmailCreate, 
+    PlayerWithTeamBasic,
+    RefreshTokenRequest, 
     TokenResponse,
     PlayerUpdate,
-    PlayerLogin, 
-    RefreshTokenRequest,
     PlayerPublic,
     AuthType,
     # PasswordResetRequest,
@@ -19,16 +19,16 @@ from auth.dependencies import (
     RefreshTokenBearer,
     AccessTokenBearer,
     get_current_player,
-    CurrentPlayer
 )
-from pydantic import BaseModel
+from config import Config
+
+from competitions.models.seasons import Season
+from competitions.season.dependencies import get_active_season
 from state.service import StateService, StateType, get_state_service
 from starlette.responses import RedirectResponse
-from typing import Optional, List
+from typing import List
 import re
-from config import Config
-from openid.consumer.consumer import Consumer, SUCCESS, FAILURE
-from openid.store.memstore import MemoryStore
+from openid.consumer.consumer import Consumer, SUCCESS
 import logging
 
 from teams.schemas import PlayerRosterHistory
@@ -41,35 +41,6 @@ auth_service = AuthService()
 
 STEAM_OPENID_URL = 'https://steamcommunity.com/openid'
 STEAM_ID_RE = re.compile('steamcommunity.com/openid/id/(.*?)$')
-
-@auth_router.post("/login/email")
-async def login_with_email(
-    login_data: PlayerLogin,
-    state_service: StateService = Depends(get_state_service),
-    session: AsyncSession = Depends(get_session)
-):
-    """Login with email/password"""
-    result = await auth_service.authenticate_player(login_data, session)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
-        )
-    
-    player, tokens = result
-    
-    # Store tokens in state service
-    state_id = await state_service.store_state(
-        StateType.AUTH,
-        tokens,
-        metadata={"player_id": str(player.uid)}
-    )
-    
-    # Return redirect to frontend callback
-    return RedirectResponse(
-        f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
-        status_code=status.HTTP_303_SEE_OTHER
-    )
 
 def get_openid_consumer():
     return Consumer({}, None)
@@ -140,7 +111,7 @@ async def steam_callback(
         # )
         
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(traceback.format_exc()))
+        raise HTTPException(status_code=400, detail=str(e))
 
 @auth_router.get("/exchange-state")
 async def exchange_state(
@@ -208,59 +179,27 @@ async def exchange_state(
 # File Upload Token
 
 
-@auth_router.post("/register/email")
-async def register_with_email(
-    player_data: PlayerEmailCreate,
-    state_service: StateService = Depends(get_state_service),
-    session: AsyncSession = Depends(get_session)
-):
-    """Register a new player with email/password"""
-    try:
-        player, tokens = await auth_service.create_player(player_data, session)
-        
-        # Store tokens in state service
-        state_id = await state_service.store_state(
-            StateType.AUTH,
-            tokens,
-            metadata={
-                "player_id": str(player.uid),
-                "registration": True
-            }
-        )
-        
-        # Generate email verification token
-        verification_state_id = await state_service.store_state(
-            StateType.EMAIL_VERIFICATION,
-            BaseModel(email=player_data.email),
-            metadata={"player_id": str(player.uid)}
-        )
-        
-        # TODO: Send verification email with verification_state_id
-        
-        # Redirect to frontend with auth state
-        return RedirectResponse(
-            f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
-            status_code=status.HTTP_303_SEE_OTHER
-        )
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-
 # TODO:
 # Get a new access token using a refresh token.
 # Generic get routes.
 access_token_bearer = AccessTokenBearer()
-
 @auth_router.get("/", response_model=List[PlayerPublic])
 async def get_players(
     player_details = Depends(access_token_bearer),
     session: AsyncSession = Depends(get_session),
 ):
     players = await auth_service.get_all_players(session)
+    players = [p for p in players if p.name != "SYSTEM" ] # Don't return the system user to external queries
+    return players
+
+@auth_router.get("/current-season", response_model=List[PlayerWithTeamBasic])
+async def get_players(
+    player_details = Depends(access_token_bearer),
+    session: AsyncSession = Depends(get_session),
+    season: Season = Depends(get_active_season)
+
+):
+    players = await auth_service.get_all_players_with_basic_team_info(season.id, session)
     players = [p for p in players if p.name != "SYSTEM" ] # Don't return the system user to external queries
     return players
 
@@ -350,17 +289,47 @@ REFRESH_TOKEN_EXPIRY = 2
 
 refresh_token_bearer = RefreshTokenBearer()
 
-# @auth_router.post("/refresh")
-# async def get_new_access_token(token_details: dict = Depends(refresh_token_bearer), session: AsyncSession  = Depends(get_session)):
-#     expiry_date = token_details["exp"]
-#     if datetime.fromtimestamp(expiry_date) > datetime.now():
-#         player = await auth_service.player_exists_by_id(token_details['player']['player_uid'], session)
-#         if not player:
-#             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid Refresh Token")
-#         new_access_token = auth_service.create_token(player_data=token_details["player"])
-#         return JSONResponse(content={"access_token": new_access_token})
-#     raise HTTPException(
-#         status_code=status.HTTP_400_BAD_REQUEST,
-#         detail="Invalid or expired refresh token",
-#     )
+@auth_router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(
+    token_data: RefreshTokenRequest,
+    state_service: StateService = Depends(get_state_service),
+    session: AsyncSession = Depends(get_session)
+):
+    """Get new access token using refresh token"""
+    # Verify refresh token
+    token_payload = auth_service.verify_token(token_data.refresh_token)
+    if not token_payload or not token_payload.get('is_refresh'):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
 
+    # Get player
+    player = await auth_service.get_player_by_uid(token_payload['player_uid'], session)
+    if not player:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Player not found"
+        )
+    
+    # Create new tokens
+    tokens = auth_service.create_tokens(
+        str(player.uid), 
+        AuthType(token_payload['auth_type'])
+    )
+    
+    # Store tokens in state service
+    state_id = await state_service.store_state(
+        StateType.AUTH,
+        tokens,
+        metadata={"player_id": str(player.uid)}
+    )
+    return RedirectResponse(
+        f"http://localhost:5173/auth/callback?state={state_id}",
+        status_code=status.HTTP_303_SEE_OTHER
+    )
+    # # Return redirect to frontend callback
+    # return RedirectResponse(
+    #     f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
+    #     status_code=status.HTTP_303_SEE_OTHER
+    # )

@@ -130,13 +130,26 @@ class TournamentPermissionChecker(ScopedPermissionChecker):
         super().__init__(required_permissions, ScopeType.TOURNAMENT)
 
 
+class RoleChecker:
+    """Checks for a player being one of a list of roles"""
+    def __init__(self, required_roles: List[str]):
+        self.required_roles=required_roles
+        self.auth_service = AuthService()
+
+    async def __call__(self, player: Player = Depends(get_current_player),
+        session: AsyncSession = Depends(get_session)) -> bool:
+            has_role = await self.auth_service.verify_role(player, self.required_roles, session)
+
+
 # Type alias for dependency injection
 CurrentPlayer = Annotated[Player, Depends(get_current_player)]
 
 # Example global permission checkers
-require_admin = GlobalPermissionChecker(["admin"])
+
+#GlobalPermissionChecker(["league_admin"])
 require_moderator = GlobalPermissionChecker(["moderator"])
 require_user = GlobalPermissionChecker(["user"])
+
 
 # Example team permission checkers
 require_team_management = TeamPermissionChecker(["manage_teams"])
@@ -147,3 +160,5 @@ require_team_captain = TeamPermissionChecker(["team_captain"])
 require_tournament_management = TournamentPermissionChecker(["manage_tournaments"])
 require_tournament_admin = TournamentPermissionChecker(["tournament_admin"])
 
+# Example Role based checkers (not advised..)
+require_admin = RoleChecker(['league_admin'])

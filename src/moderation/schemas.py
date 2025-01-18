@@ -3,7 +3,7 @@ from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
 from auth.schemas import PlayerPublic
-from teams.schemas import TeamBasic
+from teams.base_schemas import TeamBasic
 class BanScope(StrEnum):
     MATCH = "match"
     TOURNAMENT = "tournament"

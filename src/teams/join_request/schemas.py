@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 import uuid
 
 from auth.schemas import PlayerPublic
-from teams.schemas import TeamBasic
+from teams.base_schemas import TeamBasic
 
 class JoinRequestStatus(StrEnum):
     PENDING = "pending"
