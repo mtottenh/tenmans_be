@@ -29,7 +29,7 @@ class Fixture(SQLModel, AsyncAttrs, table=True):
     match_format: str  # bo1, bo3, bo5
     scheduled_at: datetime
     rescheduled_from: Optional[datetime]
-    rescheduled_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
+    rescheduled_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
     reschedule_reason: Optional[str]
     status: FixtureStatus = Field(sa_column=sa.Column(sa.Enum(FixtureStatus)))
     forfeit_winner: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("teams.id")))

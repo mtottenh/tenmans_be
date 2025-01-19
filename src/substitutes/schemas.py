@@ -21,7 +21,7 @@ class SubstituteAvailabilityUpdate(BaseModel):
 
 class SubstituteBase(BaseModel):
     id: UUID4
-    player_uid: UUID4
+    player_id: UUID4
     tournament_id: Optional[UUID4]
     season_id: Optional[UUID4]
     is_available: bool

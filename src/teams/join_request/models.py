@@ -16,7 +16,7 @@ class TeamJoinRequest(SQLModel, AsyncAttrs, table=True):
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
         )
-    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id")))
     
@@ -33,13 +33,13 @@ class TeamJoinRequest(SQLModel, AsyncAttrs, table=True):
     response_message: Optional[str] = None  # Team's response message
     responded_by: Optional[uuid.UUID] = Field(
         default=None, 
-        sa_column=Column(ForeignKey("players.uid"))
+        sa_column=Column(ForeignKey("players.id"))
     )
     
     # Relationships
     player: "Player" = Relationship(
         back_populates="join_requests",
-        sa_relationship_kwargs={"foreign_keys": "TeamJoinRequest.player_uid"}
+        sa_relationship_kwargs={"foreign_keys": "TeamJoinRequest.player_id"}
     )
     team: "Team" = Relationship(back_populates="join_requests")
     season: "Season" = Relationship(back_populates="join_requests")

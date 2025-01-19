@@ -1,128 +1,97 @@
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, desc
-from typing import List, Optional
 from datetime import datetime
+from sqlmodel.ext.asyncio.session import AsyncSession
+from typing import List
 import uuid
-
-from auth.models import Player, Role, VerificationStatus
-from auth.schemas import PlayerVerificationUpdate, PlayerRoleAssign
-from auth.service import AuthService, ScopeType
+from sqlmodel import select, desc
+from auth.models import Player, Role
+from auth.schemas import PlayerStatus, PlayerVerificationUpdate, PlayerRoleAssign
+from auth.service.auth import AuthService, create_auth_service
 from moderation.models import Ban, BanStatus
 from moderation.schemas import BanCreate
-from audit.service import AuditService
 
 class AdminServiceError(Exception):
     """Base exception for admin service errors"""
     pass
 
 class AdminService:
-    def __init__(self):
-        self.auth_service = AuthService()
-        self.audit_service = AuditService()
-
-    def _player_audit_details(self, player: Player) -> dict:
-        """Extract audit details for player operations"""
-        return {
-            "player_uid": str(player.uid),
-            "player_name": player.name,
-            "steam_id": player.steam_id,
-            "verification_status": player.verification_status,
-            "created_at": player.created_at.isoformat() if player.created_at else None,
-            "updated_at": player.updated_at.isoformat() if player.updated_at else None
-        }
-
-    def _ban_audit_details(self, ban: Ban) -> dict:
-        """Extract audit details for ban operations"""
-        return {
-            "ban_id": str(ban.id),
-            "player_uid": str(ban.player_uid) if ban.player_uid else None,
-            "team_id": str(ban.team_id) if ban.team_id else None,
-            "scope": ban.scope,
-            "reason": ban.reason,
-            "status": ban.status,
-            "start_date": ban.start_date.isoformat(),
-            "end_date": ban.end_date.isoformat() if ban.end_date else None
-        }
-
-    @AuditService.audited_transaction(
-        action_type="admin_get_players",
-        entity_type="player"
-    )
-    async def get_all_players(
+    def __init__(
         self,
-        skip: int,
-        limit: int,
-        actor: Player,
-        session: AsyncSession
-    ) -> List[Player]:
-        """Get all players with pagination"""
-        stmt = select(Player).offset(skip).limit(limit).order_by(desc(Player.created_at))
-        result = (await session.execute(stmt)).scalars()
-        return result.all()
+        auth_service: AuthService,
+    ):
+        self.auth_service = auth_service
 
-    @AuditService.audited_transaction(
-        action_type="admin_verify_player",
-        entity_type="player",
-        details_extractor=_player_audit_details
-    )
     async def verify_player(
         self,
-        player_uid: uuid.UUID,
+        player_id: uuid.UUID,
         verification: PlayerVerificationUpdate,
         actor: Player,
         session: AsyncSession
     ) -> Player:
         """Process a player verification request"""
-        player = await self.auth_service.get_player_by_uid(player_uid, session)
+        player = await self.auth_service.get_player_by_id(player_id, session)
         if not player:
             raise AdminServiceError("Player not found")
+        entity_metadata = {
+                "verification_date": verification.verification_date.isoformat(),
+                "verified_by": str(actor.id),
+                "verification_notes": verification.admin_notes,
 
-        player.verification_status = verification.status
-        player.verification_notes = verification.admin_notes
-        player.verified_by = actor.uid
-        player.verification_date =datetime.now(datetime.timezone.utc)
-        player.updated_at = datetime.now(datetime.timezone.utc)
-
-        session.add(player)
+            }
+        # Log the evidence used if submitted.
+        if  player.verification_evidence is not None:
+             entity_metadata["verification_evidence"] = player.verification_evidence
+        await self.auth_service.change_player_status(
+            player_id=player_id,
+            new_status=verification.status,
+            reason=verification.admin_notes,
+            actor=actor,
+            entity_metadata=entity_metadata,
+            session=session
+        )
         return player
 
-    @AuditService.audited_transaction(
-        action_type="admin_ban_player",
-        entity_type="player",
-        details_extractor=_ban_audit_details
-    )
     async def ban_player(
         self,
-        player_uid: uuid.UUID,
+        player_id: uuid.UUID,
         ban_data: BanCreate,
         actor: Player,
         session: AsyncSession
     ) -> Ban:
         """Create a new ban for a player"""
-        player = await self.auth_service.get_player_by_uid(player_uid, session)
+        player = await self.auth_service.get_player_by_id(player_id, session)
         if not player:
             raise AdminServiceError("Player not found")
 
+        # Create ban record first
         ban = Ban(
-            player_uid=player.uid,
+            player_id=player.id,
             scope=ban_data.scope,
             scope_id=ban_data.scope_id,
             reason=ban_data.reason,
             evidence=ban_data.evidence,
             status=BanStatus.ACTIVE,
-            start_date=datetime.now(datetime.timezone.utc),
+            start_date=datetime.utcnow(),
             end_date=ban_data.end_date,
-            issued_by=actor.uid
+            issued_by=actor.id
+        )
+        session.add(ban)
+        await session.flush()  # Get the ban ID
+
+        # Use status transition service to update player status
+        await self.auth_service.change_player_status(
+            entity=player,
+            new_status=PlayerStatus.BANNED,
+            reason=ban_data.reason,
+            actor=actor,
+            entity_metadata={
+                "ban_id": str(ban.id),
+                "ban_scope": ban_data.scope,
+                "ban_end_date": ban_data.end_date.isoformat() if ban_data.end_date else None
+            },
+            session=session
         )
 
-        session.add(ban)
         return ban
-
-    @AuditService.audited_transaction(
-        action_type="admin_revoke_ban",
-        entity_type="ban",
-        details_extractor=_ban_audit_details
-    )
     async def revoke_ban(
         self,
         ban_id: uuid.UUID,
@@ -138,21 +107,40 @@ class AdminService:
         if ban.status != BanStatus.ACTIVE:
             raise AdminServiceError("Ban is not active")
 
+        # Update ban status
         ban.status = BanStatus.REVOKED
-        ban.revoked_by = actor.uid
+        ban.revoked_by = actor.id
         ban.revoke_reason = reason
-
         session.add(ban)
+        await session.flush()
+
+        # Check for other active bans
+        active_bans = await self.get_player_bans(ban.player_id, False, session)
+        if not active_bans:
+            # Use status transition service to reactivate player
+            player = await self.auth_service.get_player_by_id(ban.player_id, session)
+            await self.auth_service.change_player_status(
+                entity=player,
+                new_status=PlayerStatus.ACTIVE,
+                reason=f"Ban {ban_id} revoked: {reason}",
+                actor=actor,
+                entity_metadata={
+                    "revoked_ban_id": str(ban.id)
+                },
+                session=session
+            )
+
         return ban
+
 
     async def get_player_bans(
         self,
-        player_uid: uuid.UUID,
+        player_id: uuid.UUID,
         include_inactive: bool,
         session: AsyncSession
     ) -> List[Ban]:
         """Get a player's ban history"""
-        stmt = select(Ban).where(Ban.player_uid == player_uid)
+        stmt = select(Ban).where(Ban.player_id == player_id)
         if not include_inactive:
             stmt = stmt.where(Ban.status == BanStatus.ACTIVE)
         stmt = stmt.order_by(desc(Ban.created_at))
@@ -160,20 +148,16 @@ class AdminService:
         result = (await session.execute(stmt)).scalars()
         return result.all()
 
-    @AuditService.audited_transaction(
-        action_type="admin_assign_role",
-        entity_type="player",
-        details_extractor=_player_audit_details
-    )
+
     async def assign_role(
         self,
-        player_uid: uuid.UUID,
+        player_id: uuid.UUID,
         role_data: PlayerRoleAssign,
         actor: Player,
         session: AsyncSession
     ) -> Player:
         """Assign a role to a player"""
-        player = await self.auth_service.get_player_by_uid(player_uid, session)
+        player = await self.auth_service.get_player_by_id(player_id, session)
         if not player:
             raise AdminServiceError("Player not found")
 
@@ -181,12 +165,23 @@ class AdminService:
         if not role:
             raise AdminServiceError("Role not found")
 
+        # Use auth service to handle role assignment with proper scoping
         await self.auth_service.assign_role(
-            player,
-            role,
-            ScopeType(role_data.scope_type),
-            role_data.scope_id,
-            session
+            player=player,
+            role=role,
+            scope_type=role_data.scope_type,
+            scope_id=role_data.scope_id,
+            actor=actor,
+            session=session
         )
 
         return player
+
+
+def create_admin_service() -> AdminService:
+    """Create and configure AdminService with its dependencies"""
+    auth_service = create_auth_service()
+    
+    return AdminService(
+        auth_service=auth_service,
+    )

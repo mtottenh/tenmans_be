@@ -3,16 +3,15 @@ import logging
 from pathlib import Path
 from typing import Optional
 import click
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from auth.models import Player
 from db.main import get_session
-from roles.service import RoleService
+from auth.service.role import create_role_service
 from manager import PermissionManager
 from auditor import PermissionAuditor
 from reporter import PermissionReporter
 from ui import PermissionUI
-from roles.models import PermissionTemplate
+from auth.schemas import PermissionTemplate
+from sys_user import ensure_system_user
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ def create_admin(steam_id: str, email: Optional[str]):
                 manager = PermissionManager(session, system_user)
             
                 player = await manager.create_initial_admin(steam_id, email)
-                click.echo(f"Created admin user with UID: {player.uid}")
+                click.echo(f"Created admin user with UID: {player.id}")
                 await session.commit()
             except Exception as e:
                 await session.rollback()
@@ -46,13 +45,13 @@ def create_admin(steam_id: str, email: Optional[str]):
     asyncio.run(run())
 
 @cli.command()
-@click.argument('player_uid')
-def edit(player_uid: str):
+@click.argument('player_id')
+def edit(player_id: str):
     """Edit user permissions interactively"""
     async def run():
         async for session in get_session():
             ui = PermissionUI(session)
-            await ui.edit_permissions(player_uid)
+            await ui.edit_permissions(player_id)
             await session.commit()
 
 
@@ -110,7 +109,7 @@ def list_roles():
     async def run():
         async for session in get_session():
             try:
-                role_service = RoleService()
+                role_service = create_role_service()
                 roles = await role_service.get_all_roles(session)
                 
                 if not roles:
@@ -136,8 +135,8 @@ def create_role(name: str, permissions: Optional[str], template: Optional[str]):
     async def run():
         async for session in get_session():
             try:
-                system_user = await ensure_system_user(session);
-                role_service = RoleService()
+                system_user = await ensure_system_user(session)
+                role_service = create_role_service()
                 
                 # Get permissions list
                 permission_ids = []
@@ -180,7 +179,7 @@ def delete_role(name: str, force: bool):
     async def run():
         async for session in get_session():
             try:
-                role_service = RoleService()
+                role_service = create_role_service()
                 system_user = await ensure_system_user(session)
                 role = await role_service.get_role_by_name(name, session)
                 if not role:
@@ -202,26 +201,6 @@ def delete_role(name: str, force: bool):
     asyncio.run(run())
 
 
-async def ensure_system_user(session: AsyncSession) -> Player:
-    """Get or create the system user for CLI operations"""
-    from auth.models import Player, AuthType, VerificationStatus
-    from auth.service import AuthService
-    
-    auth_service = AuthService()
-    system_user = await auth_service.get_player_by_name("SYSTEM", session)
-    
-    if not system_user:
-        system_user = Player(
-            name="SYSTEM",
-            steam_id="0",  # Special value for system user
-            auth_type=AuthType.STEAM,
-            verification_status=VerificationStatus.VERIFIED
-        )
-        session.add(system_user)
-        await session.commit()
-    
-    return system_user
-
 
 @cli.command('init')
 def initialize_permissions():
@@ -231,7 +210,7 @@ def initialize_permissions():
         async for session in session_gen:
             # try:
                 system_user = await ensure_system_user(session)
-                role_service = RoleService()
+                role_service = create_role_service()
                 
                 # Create permissions from all templates
                 permissions_created = 0
@@ -245,7 +224,7 @@ def initialize_permissions():
                             await role_service.create_permission(
                                 name=perm_name,
                                 description=f"Permission to {perm_name.replace('_', ' ')}",
-                                
+                                actor=system_user,
                                 session=session
                             )
                             permissions_created += 1
@@ -271,7 +250,7 @@ def initialize_permissions():
                         
                         # Create role
                         if permission_ids:
-                            await role_service.create_role(template_name, permission_ids, system_user, session)
+                            await role_service.create_role(template_name, permission_ids, actor=system_user, session=session)
                             roles_created += 1
                             
                     # except Exception as e:

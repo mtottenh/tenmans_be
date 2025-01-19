@@ -1,15 +1,15 @@
 import logging
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Tuple
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-
-from auth.models import Player, Role, Permission
-from auth.service import AuthService, ScopeType
+from auth.models import Player, Role
+from auth.service.auth import create_auth_service, ScopeType
 from teams.models import Team
 from competitions.models.tournaments import Tournament
-from roles.service import RoleService
-from roles.models import PermissionTemplate
+from auth.service.role import create_role_service
+from auth.schemas import PermissionTemplate
 import uuid
+from sys_user import ensure_system_user
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +18,14 @@ class PermissionUI:
     
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.auth_service = AuthService()
-        self.role_service = RoleService()
+        self.auth_service = create_auth_service()
+        self.role_service = create_role_service()
 
-    async def edit_permissions(self, player_uid: str):
+    async def edit_permissions(self, player_id: str):
         """Interactive permission editor for a player"""
-        player = await self.auth_service.get_player_by_uid(player_uid, self.session)
+        player = await self.auth_service.get_player_by_id(player_id, self.session)
         if not player:
-            print(f"Error: Player {player_uid} not found")
+            print(f"Error: Player {player_id} not found")
             return
         await self.session.flush()
         await self.session.refresh(player)
@@ -113,7 +113,8 @@ class PermissionUI:
     async def _add_role_flow(self, player: Player):
         """Flow for adding a role to a player"""
         # Get available roles
-        roles = await self.role_service.get_all_roles(self.session)
+        system_user = await ensure_system_user(self.session)
+        roles = await self.auth_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
             return
@@ -136,13 +137,14 @@ class PermissionUI:
                     role=role,
                     scope_type=scope_type,
                     scope_id=scope_id,
+                    actor=system_user,
                     session=self.session
                 )
                 print(f"\nAdded role {role.name}")
                 await self.session.refresh(player)
-                
-        except ValueError:
-            print("Invalid selection")
+
+        except ValueError as e:
+            print(f"Invalid selection {str(e)}")
 
     async def _remove_role_flow(self, player: Player):
         """Flow for removing a role from a player"""
@@ -165,7 +167,7 @@ class PermissionUI:
             if 0 <= choice < len(roles_and_scopes):
                 role, scope_type, scope_id = roles_and_scopes[choice]
                 
-                # Remove the role
+                # TODO - Remove the role
                 await self.auth_service.remove_role(
                     player=player,
                     role=role,

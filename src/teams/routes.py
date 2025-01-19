@@ -6,31 +6,26 @@ from typing import List
 import os
 
 from auth.schemas import PlayerPublic
+
 from competitions.models.seasons import Season
 from competitions.season.dependencies import get_active_season
 from db.main import get_session
 from auth.dependencies import get_current_player
 from auth.models import Player
-from auth.service import AuthService
-from competitions.season.service import SeasonService
+
 from teams.schemas import (
     PlayerRosterHistory,
     TeamDetailed,
 )
 from teams.base_schemas import TeamCreateRequest, TeamUpdate
-from teams.service import RosterService, TeamService, TeamServiceError
-from state.service import StateService
-from upload.service import UploadService
+from teams.service.team import TeamServiceError
 from .dependencies import require_team_captain_by_name, require_team_captain_by_id
 from config import Config
+from services.team import team_service
+from services.upload import upload_service
+from services.auth import auth_service
 
 team_router = APIRouter(prefix="/teams")
-team_service = TeamService()
-season_service = SeasonService()
-state_service = StateService(Config.REDIS_URL)
-upload_service = UploadService(state_service)
-auth_service = AuthService()
-
 
 @team_router.get("/", response_model=List[TeamDetailed])
 async def get_all_teams(
@@ -41,13 +36,13 @@ async def get_all_teams(
     """Get all teams with detailed information."""
     return await team_service.get_all_teams_with_details(session)
 
-@team_router.get("/player/{player_uid}", response_model=PlayerRosterHistory)
+@team_router.get("/player/{player_id}", response_model=PlayerRosterHistory)
 async def get_all_teams(
-    player_uid: str,
+    player_id: str,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
 ):
-    return await team_service.get_teams_for_player_by_player_id(player_uid, session)
+    return await team_service.get_teams_for_player_by_player_id(player_id, session)
 
 @team_router.post("/", status_code=status.HTTP_201_CREATED, response_model=TeamDetailed)
 async def create_team(
@@ -198,7 +193,7 @@ async def add_team_captain(
     """Add a team captain. Requires team captain permission."""
     try:
         team = await team_service.get_team_by_name(team_name, session)
-        new_captain = await auth_service.get_player_by_uid(player_id, session)
+        new_captain = await auth_service.get_player_by_id(player_id, session)
         
         if not new_captain:
             raise HTTPException(
@@ -233,7 +228,7 @@ async def remove_team_captain(
     """Remove a team captain. Requires team captain permission."""
     try:
         team = await team_service.get_team_by_name(team_name, session)
-        player = await auth_service.get_player_by_uid(player_id, session)
+        player = await auth_service.get_player_by_id(player_id, session)
         
         if not player:
             raise HTTPException(
@@ -263,8 +258,6 @@ async def remove_team_captain(
             detail=str(e)
         )
 
-
-roster_service = RosterService()
 @team_router.delete(
     '/id/{team_id}/roster/{player_id}',
     dependencies=[Depends(require_team_captain_by_id)]
@@ -277,7 +270,7 @@ async def remove_player_from_team(
     session: AsyncSession = Depends(get_session)
 ):
     '''Remove a player from a team roster by player ID'''
-    roster_member = await roster_service.remove_player_from_team_roster(team_id, 
+    roster_member = await team_service.remove_player_from_team_roster(team_id, 
                                                                    player_id,
                                                                    current_season.id,
                                                                    actor=current_player,

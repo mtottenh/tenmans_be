@@ -2,18 +2,24 @@ from typing import Annotated, List, Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel.ext.asyncio.session import AsyncSession
+from auth.schemas import ScopeType
+from auth.service.token import TokenConfig, TokenService
 from db.main import get_session
 from auth.models import Player
-from auth.service import AuthService, PermissionScope, ScopeType
+from auth.service.permission import PermissionScope, PermissionService
+#import AuthService, PermissionScope, ScopeType
 from pydantic import BaseModel
 import uuid
 import logging
 import pprint
+from config import Config
+from services.identity import identity_service
+from services.permission import permission_service
 
 LOG = logging.getLogger("uvicorn.error")
 class TokenData(BaseModel):
     """Internal model for decoded token data"""
-    player_uid: str
+    player_id: str
     auth_type: str
     exp: int
     is_refresh: bool = False
@@ -22,11 +28,16 @@ class JWTBearer(HTTPBearer):
     """Base JWT token bearer authentication"""
     def __init__(self, auto_error: bool = True):
         super().__init__(auto_error=auto_error)
-        self.auth_service = AuthService()
+        token_config = TokenConfig(
+            secret_key=Config.JWT_SECRET,
+            algorithm=Config.JWT_ALGORITHM,
+        )
+    
+        self.token_service = TokenService(token_config)
 
     async def __call__(self, request: Request) -> TokenData:
         credentials: HTTPAuthorizationCredentials = await super().__call__(request)
-        token_data = self.auth_service.verify_token(credentials.credentials)
+        token_data = self.token_service.verify_token(credentials.credentials)
         
         if not token_data:
             raise HTTPException(
@@ -57,14 +68,15 @@ class RefreshTokenBearer(JWTBearer):
                 detail="Refresh token required"
             )
         return token_data
+    
+
 
 async def get_current_player(
     token_data: TokenData = Depends(AccessTokenBearer()),
     session: AsyncSession = Depends(get_session)
 ) -> Player:
     """Gets the current authenticated player"""
-    auth_service = AuthService()
-    player = await auth_service.get_player_by_uid(token_data.player_uid, session)
+    player = await identity_service.get_player_by_id(token_data.player_id, session)
     
     if not player:
         raise HTTPException(
@@ -79,11 +91,12 @@ class ScopedPermissionChecker:
     def __init__(
         self,
         required_permissions: List[str],
-        scope_type: Optional[ScopeType] = None
+        scope_type: Optional[ScopeType] = None,
+        permission_service: Optional[PermissionService] = None,
     ):
         self.required_permissions = required_permissions
         self.scope_type = scope_type
-        self.auth_service = AuthService()
+        self.permission_service = permission_service or PermissionService()
 
     async def __call__(
         self,
@@ -100,7 +113,7 @@ class ScopedPermissionChecker:
         if self.scope_type:
             scope = PermissionScope(self.scope_type, scope_id)
 
-        has_permissions = await self.auth_service.verify_permissions(
+        has_permissions = await self.permission_service.verify_permissions(
             player,
             self.required_permissions,
             scope,
@@ -116,29 +129,31 @@ class ScopedPermissionChecker:
 
 class GlobalPermissionChecker(ScopedPermissionChecker):
     """Checks for global permissions only"""
-    def __init__(self, required_permissions: List[str]):
-        super().__init__(required_permissions, None)
+    def __init__(self, required_permissions: List[str],  permission_service: Optional[PermissionService] = None):
+        super().__init__(required_permissions, None, permission_service)
 
 class TeamPermissionChecker(ScopedPermissionChecker):
     """Checks for team-scoped permissions"""
-    def __init__(self, required_permissions: List[str]):
-        super().__init__(required_permissions, ScopeType.TEAM)
+    def __init__(self, required_permissions: List[str],  permission_service: Optional[PermissionService] = None):
+        super().__init__(required_permissions, ScopeType.TEAM, permission_service)
 
 class TournamentPermissionChecker(ScopedPermissionChecker):
     """Checks for tournament-scoped permissions"""
-    def __init__(self, required_permissions: List[str]):
-        super().__init__(required_permissions, ScopeType.TOURNAMENT)
+    def __init__(self, required_permissions: List[str],  permission_service: Optional[PermissionService] = None):
+        super().__init__(required_permissions, ScopeType.TOURNAMENT, permission_service)
 
 
 class RoleChecker:
     """Checks for a player being one of a list of roles"""
-    def __init__(self, required_roles: List[str]):
+    def __init__(self, required_roles: List[str],
+                 permission_service: Optional[PermissionService] = None
+                 ):
         self.required_roles=required_roles
-        self.auth_service = AuthService()
+        self.permission_service = permission_service or PermissionService()
 
     async def __call__(self, player: Player = Depends(get_current_player),
         session: AsyncSession = Depends(get_session)) -> bool:
-            has_role = await self.auth_service.verify_role(player, self.required_roles, session)
+            has_role = await self.permission_service.verify_role(player, self.required_roles, session)
 
 
 # Type alias for dependency injection
@@ -147,18 +162,23 @@ CurrentPlayer = Annotated[Player, Depends(get_current_player)]
 # Example global permission checkers
 
 #GlobalPermissionChecker(["league_admin"])
-require_moderator = GlobalPermissionChecker(["moderator"])
-require_user = GlobalPermissionChecker(["user"])
-
+require_moderator = GlobalPermissionChecker(["moderator"], permission_service)
+require_user = GlobalPermissionChecker(["user"], permission_service)
+require_season_admin = GlobalPermissionChecker(["manage_seasons"], permission_service)
 
 # Example team permission checkers
-require_team_management = TeamPermissionChecker(["manage_teams"])
-require_team_roster = TeamPermissionChecker(["manage_roster"])
-require_team_captain = TeamPermissionChecker(["team_captain"])
+require_team_management = TeamPermissionChecker(["manage_teams"], permission_service)
+require_team_roster = TeamPermissionChecker(["manage_roster"], permission_service)
+require_team_captain = TeamPermissionChecker(["team_captain"], permission_service)
+
 
 # Example tournament permission checkers
-require_tournament_management = TournamentPermissionChecker(["manage_tournaments"])
-require_tournament_admin = TournamentPermissionChecker(["tournament_admin"])
+require_tournament_management = TournamentPermissionChecker(["manage_tournaments"], permission_service)
+require_tournament_admin = TournamentPermissionChecker(["tournament_admin"], permission_service)
+
+
+# Permission checkers
+require_fixture_admin = GlobalPermissionChecker(["manage_fixtures"], permission_service)
 
 # Example Role based checkers (not advised..)
-require_admin = RoleChecker(['league_admin'])
+require_admin = RoleChecker(['league_admin'], permission_service)

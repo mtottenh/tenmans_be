@@ -23,7 +23,9 @@ class MatchServiceError(Exception):
     pass
 
 class MatchService:
-    def __init__(self):
+    def __init__(self,
+                 
+                 ):
         self.audit_service = AuditService()
         self.fixture_service = FixtureService()
 
@@ -54,7 +56,7 @@ class MatchService:
         """Validate that a player is captain of a team"""
         stmt = select(TeamCaptain).where(
             TeamCaptain.team_id == team.id,
-            TeamCaptain.player_uid == player.uid
+            TeamCaptain.player_id == player.id
         )
         result = (await session.execute(stmt)).scalars()
         return result.first() is not None
@@ -97,7 +99,7 @@ class MatchService:
             team_1_score=result_data.team_1_score,
             team_2_score=result_data.team_2_score,
             team_1_side_first=result_data.team_1_side_first,
-            submitted_by=submitting_player.uid,
+            submitted_by=submitting_player.id,
             confirmation_status=ConfirmationStatus.PENDING,
             demo_url=result_data.demo_url,
             screenshot_urls=result_data.screenshot_urls,
@@ -138,7 +140,7 @@ class MatchService:
             raise MatchServiceError("Only the opposing team captain can confirm results")
 
         result.confirmation_status = ConfirmationStatus.CONFIRMED
-        result.confirmed_by = confirming_player.uid
+        result.confirmed_by = confirming_player.id
         result.updated_at = datetime.now()
 
         session.add(result)
@@ -209,7 +211,7 @@ class MatchService:
         result.team_1_score = override_data.team_1_score
         result.team_2_score = override_data.team_2_score
         result.admin_override = True
-        result.admin_override_by = admin.uid
+        result.admin_override_by = admin.id
         result.admin_override_reason = override_data.reason
         result.confirmation_status = ConfirmationStatus.CONFIRMED
         result.updated_at = datetime.now()
@@ -263,7 +265,7 @@ class MatchService:
 
         match_player = MatchPlayer(
             fixture_id=fixture_id,
-            player_uid=player_data.player_id,
+            player_id=player_data.player_id,
             team_id=player_data.team_id,
             is_substitute=player_data.is_substitute,
             created_at=datetime.now()

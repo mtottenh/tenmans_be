@@ -11,7 +11,7 @@ from ..base_schemas import FixtureBase, MatchPlayerBase, FixtureStatus
 class MatchPlayerCreate(BaseModel):
     """Schema for adding a player to a match"""
     fixture_id: UUID4
-    player_uid: UUID4
+    player_id: UUID4
     team_id: UUID4
     is_substitute: bool = False
 

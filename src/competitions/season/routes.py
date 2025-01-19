@@ -5,16 +5,13 @@ import uuid
 
 from competitions.schemas import SeasonCreate
 from db.main import get_session
-from auth.dependencies import get_current_player, GlobalPermissionChecker
+from auth.dependencies import get_current_player, require_season_admin
 from auth.models import Player
 from ..models.seasons import Season
-from .service import SeasonService, SeasonStateError
+from .service import SeasonStateError
+from services.season import season_service
 
 season_router = APIRouter(prefix="/seasons")
-season_service = SeasonService()
-
-# Permission checker
-require_season_admin = GlobalPermissionChecker(["manage_seasons"])
 
 @season_router.post("/", response_model=Season, status_code=status.HTTP_201_CREATED)
 async def create_season(

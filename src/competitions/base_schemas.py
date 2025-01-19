@@ -77,7 +77,7 @@ class TeamELOHistoryBase(BaseModel):
 class MatchPlayerBase(BaseModel):
     """Base schema for match player response"""
     fixture_id: UUID4
-    player_uid: UUID4
+    player_id: UUID4
     team_id: UUID4
     is_substitute: bool
     created_at: datetime

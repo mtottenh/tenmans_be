@@ -18,7 +18,7 @@ class BanStatus(StrEnum):
 
 # Request Schemas
 class BanCreate(BaseModel):
-    player_uid: Optional[UUID4] = None
+    player_id: Optional[UUID4] = None
     team_id: Optional[UUID4] = None
     scope: BanScope
     scope_id: Optional[UUID4] = None
@@ -35,8 +35,8 @@ class BanCreate(BaseModel):
 
     @model_validator(mode='after')
     def validate_target(self) -> Self:
-        if self.player_uid is not None and self.team_id is not None:
-            raise ValueError('Exactly one of player_uid or team_id must be provided')
+        if self.player_id is not None and self.team_id is not None:
+            raise ValueError('Exactly one of player_id or team_id must be provided')
         return self
 
 class BanUpdate(BaseModel):

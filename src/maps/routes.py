@@ -1,24 +1,19 @@
 import os
-import aiofiles
-from fastapi import APIRouter, Depends, Form, UploadFile, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from auth.dependencies import get_current_player, require_admin
 from auth.models import Player
 from db.main import get_session
-from upload.service import UploadService
 from .models import Map
 from .schemas import MapBase, MapCreate, MapCreateRequest
-from .service import MapService
-from config import Config
 from typing import List
+from services.map import map_service
+from services.upload import upload_service
 
-from state.service import StateService
+
 map_router = APIRouter(prefix="/maps")
-map_service = MapService()
-state_service = StateService(Config.REDIS_URL)
-upload_service = UploadService(state_service)
 
 @map_router.post("/", 
                  dependencies=[Depends(require_admin)], 

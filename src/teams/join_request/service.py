@@ -4,6 +4,9 @@ from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import uuid
 from sqlalchemy.orm import joinedload, selectinload
+
+from competitions.season.service import SeasonService, create_season_service
+
 from .schemas import JoinRequestStatus
 
 from .models import TeamJoinRequest
@@ -11,24 +14,26 @@ from teams.models import Team
 from auth.models import Player, Role
 from competitions.models.seasons import Season
 from audit.service import AuditService
-from teams.service import RosterService, TeamService
+from teams.service.roster import RosterService, create_roster_service
+from teams.service.team import TeamService, create_team_service
 
 class JoinRequestError(Exception):
     """Base exception for join request operations"""
     pass
 
 class TeamJoinRequestService:
-    def __init__(self):
-        self.audit_service = AuditService()
-        self.roster_service = RosterService()
-        self.team_service = TeamService()
+    def __init__(self, roster_service: Optional[RosterService] = None,
+                 team_service: Optional[TeamService] = None,
+                 ):
+        self.roster_service = roster_service or create_roster_service()
+        self.team_service = team_service or create_team_service(roster_service.audit_service, roster_service, None)
 
     def _join_request_audit_details(self, request: TeamJoinRequest) -> Dict:
         """Extract audit details from a join request operation"""
         return {
             "request_id": str(request.id),
             "team_id": str(request.team_id),
-            "player_id": str(request.player_uid),
+            "player_id": str(request.player_id),
             "season_id": str(request.season_id),
             "status": request.status,
             "timestamp": datetime.now().isoformat(),
@@ -61,7 +66,7 @@ class TeamJoinRequestService:
 
         # Create request
         request = TeamJoinRequest(
-            player_uid=player.uid,
+            player_id=player.id,
             team_id=team.id,
             season_id=season.id,
             message=message
@@ -90,7 +95,7 @@ class TeamJoinRequestService:
             raise JoinRequestError("Only team captains can review requests")
         # Update request status
         request.status = JoinRequestStatus.APPROVED
-        request.responded_by = captain.uid
+        request.responded_by = captain.id
         request.responded_at = datetime.now()
         request.response_message = response_message
         request.updated_at = datetime.now()
@@ -98,7 +103,7 @@ class TeamJoinRequestService:
         # Add player to roster
         await self.roster_service.add_player_to_roster(
             team=await session.get(Team, request.team_id),
-            player=await session.get(Player, request.player_uid),
+            player=await session.get(Player, request.player_id),
             season=await session.get(Season, request.season_id),
             actor=captain,
             session=session
@@ -125,7 +130,7 @@ class TeamJoinRequestService:
             raise JoinRequestError("Can only reject pending requests")
 
         request.status = JoinRequestStatus.REJECTED
-        request.responded_by = captain.uid
+        request.responded_by = captain.id
         request.responded_at = datetime.now()
         request.response_message = response_message
         request.updated_at = datetime.now()
@@ -146,7 +151,7 @@ class TeamJoinRequestService:
         session: AsyncSession
     ) -> TeamJoinRequest:
         """Cancel a join request (by the requesting player)"""
-        if request.player_uid != player.uid:
+        if request.player_id != player.id:
             raise JoinRequestError("Only requesting player can cancel request")
 
         if request.status != JoinRequestStatus.PENDING:
@@ -205,7 +210,7 @@ class TeamJoinRequestService:
         include_resolved: bool = False
     ) -> List[TeamJoinRequest]:
         """Get all join requests made by a player"""
-        stmt = select(TeamJoinRequest).where(TeamJoinRequest.player_uid == player.uid)
+        stmt = select(TeamJoinRequest).where(TeamJoinRequest.player_id == player.id)
         if not include_resolved:
             stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING)
         result = (await session.execute(stmt)).scalars()
@@ -219,7 +224,7 @@ class TeamJoinRequestService:
     ) -> Optional[TeamJoinRequest]:
         """Check for existing active join request"""
         stmt = select(TeamJoinRequest).where(
-            TeamJoinRequest.player_uid == player.uid,
+            TeamJoinRequest.player_id == player.id,
             TeamJoinRequest.season_id == season.id,
             TeamJoinRequest.status == JoinRequestStatus.PENDING
         )
@@ -246,3 +251,16 @@ class TeamJoinRequestService:
             
         await session.commit()
         return len(expired_requests)
+    
+
+
+
+
+def create_team_join_request_service(roster_svc: Optional[RosterService] = None,
+                 team_svc: Optional[TeamService] = None,
+                 ) -> TeamJoinRequestService:
+    
+    
+    roster_service = roster_svc or create_roster_service()
+    team_service = team_svc or create_team_service(roster_service.audit_service, roster_service, None)
+    return TeamJoinRequestService(roster_service, team_service)

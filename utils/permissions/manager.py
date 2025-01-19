@@ -6,10 +6,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from auth.models import Player, Role, PlayerRole, VerificationStatus, AuthType
 from auth.schemas import Permission
-from auth.service import AuthService, ScopeType
+from auth.service.auth import create_auth_service, ScopeType
 from teams.models import Team
-from roles.models import PermissionTemplate
-from roles.service import RoleService
+from auth.schemas import PermissionTemplate
+from auth.service.role import create_role_service
 from audit.service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ class PermissionManager:
     
     def __init__(self, session: AsyncSession, system_user: Player):
         self.session = session
-        self.auth_service = AuthService()
-        self.role_service = RoleService()
+        self.auth_service = create_auth_service()
+        self.role_service = create_role_service()
         self.audit_service = AuditService()
         self.system_user = system_user
 

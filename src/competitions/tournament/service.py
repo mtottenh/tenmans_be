@@ -11,7 +11,7 @@ from competitions.models.rounds import Round
 from competitions.models.fixtures import Fixture
 from competitions.tournament.standings import get_standings_calculator
 from matches.service import MatchService
-from teams.service import RosterService, TeamService
+from teams.service.team import TeamService
 from teams.models import Team
 from .schemas import RegistrationReviewRequest, RegistrationStatus, RegistrationWithdrawRequest, TournamentCreate, TournamentRegistrationList, TournamentRegistrationRequest, TournamentUpdate, TournamentTeam, TournamentStandings
 from audit.service import AuditService
@@ -31,11 +31,14 @@ class RegistrationError(Exception):
     pass
 
 class TournamentService:
-    def __init__(self):
-        self.audit_service = AuditService()
-        self.team_service = TeamService()
-        self.roster_service = RosterService()
-        self.match_service = MatchService()
+    def __init__(self,
+                 team_service: Optional[TeamService] = None,
+                 match_service: Optional[MatchService] = None,
+                 audit_service: Optional[AuditService] = None, 
+                 ):
+        self.audit_service = audit_service or AuditService()
+        self.team_service = team_service or TeamService()
+        self.match_service = match_service or MatchService()
         self.validator = TournamentValidator()
 
     def _tournament_audit_details(self, tournament: Tournament) -> dict:
@@ -427,7 +430,7 @@ class TournamentService:
             tournament_id=tournament_id,
             team_id=team.id,
             status=RegistrationStatus.PENDING,
-            requested_by=actor.uid,
+            requested_by=actor.id,
             requested_at=datetime.now(),
             notes=registration.notes
         )
@@ -462,7 +465,7 @@ class TournamentService:
             
         # Update registration
         registration.status = review.status
-        registration.reviewed_by = actor.uid
+        registration.reviewed_by = actor.id
         registration.reviewed_at = datetime.now()
         registration.review_notes = review.notes
         
@@ -516,7 +519,7 @@ class TournamentService:
                 "Cannot withdraw in current tournament state"
             )
             
-        registration.withdrawn_by = actor.uid
+        registration.withdrawn_by = actor.id
         registration.withdrawn_at = datetime.now()
         registration.withdrawal_reason = withdrawal.reason
         
@@ -565,7 +568,7 @@ class TournamentService:
             
         # Check team size requirements
         season = await tournament.awaitable_attrs.season
-        roster_size = await self.roster_service.get_active_roster_count(team,season, session)
+        roster_size = await self.team_service.get_active_roster_count(team ,season, session)
         if roster_size < tournament.min_team_size:
             raise RegistrationError(
                 f"Team must have at least {tournament.min_team_size} players"
@@ -764,6 +767,17 @@ class TournamentService:
         stmt = select(Fixture).where(Fixture.round_id == round_id)
         result = (await session.execute(stmt)).scalars()
         return result.all()
+
+    async def get_fixtures_for_round(
+        self,
+        tournament_id: uuid.UUID,
+        round_num: int,
+        session: AsyncSession
+    ) -> List[Fixture]:
+        round = await self._get_round_by_number(tournament_id, round_num, session)
+        if round is None:
+            raise TournamentServiceError(f"Round '{round_num}' does not exist for tournament {tournament_id}")
+        return await self._get_round_fixtures(round.id, session)
 
 
     async def get_tournament_standings(

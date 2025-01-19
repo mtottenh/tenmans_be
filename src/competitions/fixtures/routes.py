@@ -18,23 +18,20 @@ from competitions.fixtures.schemas import (
     MatchPlayerCreate,
     UpcomingFixturesResponse
 )
-from competitions.fixtures.service import FixtureService, FixtureServiceError
+from competitions.fixtures.service import FixtureServiceError
+from services.fixture import fixture_service
 from db.main import get_session
 from auth.models import Player
 from auth.dependencies import (
     get_current_player,
-    GlobalPermissionChecker,
-    TournamentPermissionChecker
+    require_fixture_admin,
+    require_tournament_admin,
+    require_team_captain,
 )
 from competitions.season.dependencies import get_active_season
 
 fixture_router = APIRouter(prefix="/fixtures")
-fixture_service = FixtureService()
 
-# Permission checkers
-require_fixture_admin = GlobalPermissionChecker(["manage_fixtures"])
-require_tournament_admin = TournamentPermissionChecker(["tournament_admin"])
-require_team_captain = GlobalPermissionChecker(["team_captain"])
 
 @fixture_router.get(
     "/",

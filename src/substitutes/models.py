@@ -12,7 +12,7 @@ class SubstituteAvailability(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "substitute_availability"
     id: uuid.UUID = Field(
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
-    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     tournament_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("tournaments.id")))
     season_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("seasons.id")))
     is_available: bool = Field(default=True)

@@ -1,8 +1,8 @@
+
 from typing import Dict, List, Optional
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
 from sqlalchemy.orm import selectinload
-from sqlalchemy.sql.functions import count
 import uuid
 from datetime import datetime
 
@@ -11,18 +11,26 @@ from teams.models import Team, TeamCaptain, Roster, TeamStatus
 from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
 from teams.base_schemas import TeamUpdate
 from auth.models import Player, Role
-from competitions.models.seasons import Season
 from audit.service import AuditService
+from teams.service.roster import RosterService
 
-season_service = SeasonService()
+
+
+
 class TeamServiceError(Exception):
     """Base exception for team service errors"""
     pass
 
+# TODO - delegate methods to roster service.
 class TeamService:
-    def __init__(self):
-        self.audit_service = AuditService()
-        self.roster_service = RosterService()
+    def __init__(self, 
+                 season_service: Optional[SeasonService] = None, 
+                 audit_service: Optional[AuditService] = None, 
+                 roster_service: Optional[RosterService] = None
+                ):
+        self.audit_service = audit_service or AuditService()
+        self.season_service = season_service or SeasonService()
+        self.roster_service = roster_service or RosterService(audit_service)
 
     # Audit detail extractors
     def _team_audit_details(self, team: Team) -> dict:
@@ -39,7 +47,7 @@ class TeamService:
         """Extracts audit details from a captain operation"""
         return {
             "team_id": str(captain.team_id),
-            "player_id": str(captain.player_uid),
+            "player_id": str(captain.player_id),
             "created_at": captain.created_at.isoformat() if captain.created_at else None
         }
 
@@ -114,7 +122,7 @@ class TeamService:
         teams = result.scalars().all()
         
         # Get active season for roster counts
-        season = await season_service.get_active_season(session)
+        season = await self.season_service.get_active_season(session)
         
         detailed_teams = []
         for team in teams:
@@ -134,6 +142,7 @@ class TeamService:
                 #active_roster_count=active_roster_count,
                 created_at=team.created_at,
                 updated_at=team.updated_at,
+                recruitment_status=team.recruitment_status,
                 rosters=roster,
                 captains=captains
             ))
@@ -172,12 +181,12 @@ class TeamService:
         team_captain = await self._create_captain_internal(new_team, captain, session)
 
         await session.flush()
-        cur_season = await season_service.get_active_season(session)
+        cur_season = await self.season_service.get_active_season(session)
 
         # TODO - use self.roster_service._add_to_roster_internal?
         initial_roster_entry = Roster(
             team_id=new_team.id,
-            player_uid=captain.uid,
+            player_id=captain.id,
             season_id=cur_season.id,
             pending=False
 
@@ -204,7 +213,7 @@ class TeamService:
 
         new_captain = TeamCaptain(
             team_id=team.id,
-            player_uid=player.uid,
+            player_id=player.id,
             created_at=datetime.now()
         )
         session.add(new_captain)
@@ -229,7 +238,7 @@ class TeamService:
     async def get_captain(self, team: Team, player: Player, session: AsyncSession):
         stmt = select(TeamCaptain).where(
             TeamCaptain.team_id == team.id,
-            TeamCaptain.player_uid == player.uid
+            TeamCaptain.player_id == player.id
         )
         result = (await session.execute(stmt)).scalars()
         captain = result.first()
@@ -258,7 +267,7 @@ class TeamService:
         stmt = select(Player).where(
             Team.name == team_name,
             Team.id == TeamCaptain.team_id,
-            Player.uid == TeamCaptain.player_uid
+            Player.id == TeamCaptain.player_id
         ).options(
             selectinload(Player.roles)
             .selectinload(Role.permissions)
@@ -271,7 +280,7 @@ class TeamService:
         stmt = select(Player).where(
             Team.id == team_id,
             Team.id == TeamCaptain.team_id,
-            Player.uid == TeamCaptain.player_uid
+            Player.id == TeamCaptain.player_id
         ).options(
 
             selectinload(Player.roles)
@@ -284,7 +293,7 @@ class TeamService:
         """Checks if a player is captain of a team"""
         stmt = select(TeamCaptain).where(
             TeamCaptain.team_id == team.id,
-            TeamCaptain.player_uid == player.uid
+            TeamCaptain.player_id == player.id
         )
         result = (await session.execute(stmt)).scalars()
         return result.first() is not None
@@ -334,7 +343,7 @@ class TeamService:
         team.status = TeamStatus.DISBANDED
         team.disbanded_at = datetime.now()
         team.disbanded_reason = reason
-        team.disbanded_by = actor.uid
+        team.disbanded_by = actor.id
         session.add(team)
         return team
 
@@ -358,14 +367,14 @@ class TeamService:
         return team  # Return team for audit logging before deletion
 
 
-    async def get_teams_for_player_by_player_id(self, player_uid: str, session: AsyncSession):
-        stmnt = select(Roster).where(Roster.player_uid == player_uid).where(Roster.team_id == Team.id).options(
+    async def get_teams_for_player_by_player_id(self, player_id: str, session: AsyncSession):
+        stmnt = select(Roster).where(Roster.player_id == player_id).where(Roster.team_id == Team.id).options(
             selectinload(Roster.team)
         )
         result: List[Roster] = (await session.execute(stmnt)).scalars().all()
         if len(result) == 0:
             return PlayerRosterHistory(current=None, previous=None)
-        current_season = await season_service.get_active_season(session)
+        current_season = await self.season_service.get_active_season(session)
         
         current_team = [ x for x in result if x.season_id == current_season.id and x.team.status == TeamStatus.ACTIVE]
         previous_team = [ x for x in result if x.season_id != current_season.id or x.team.status != TeamStatus.ACTIVE]
@@ -386,210 +395,18 @@ class TeamService:
             current=roster_to_team_history(current_team),
             previous=previous_rosters if len(previous_rosters) > 0 else None
         )
-
-class RosterServiceError(Exception):#
-    """Base exception for roster operations"""
-    pass
-
-class RosterService:
-    def __init__(self):
-        self.audit_service = AuditService()
-
-    def _roster_audit_details(self, roster: Roster, details: Optional[Dict] = None) -> Dict:
-        """Extract audit details from a roster operation"""
-        audit_data = {
-            "team_id": str(roster.team_id),
-            "player_id": str(roster.player_uid),
-            "season_id": str(roster.season_id),
-            "timestamp": datetime.now().isoformat(),
-            "status": "active" if not roster.pending else "pending"
-        }
-        if details:
-            audit_data.update(details)
-        return audit_data
-
-    def _roster_id_gen(self, roster: Roster) -> uuid.UUID:
-        return uuid.uuid4()
     
-    @AuditService.audited_transaction(
-        action_type="roster_add",
-        entity_type="roster",
-        details_extractor=_roster_audit_details,
-        id_extractor=_roster_id_gen
-    )
-    async def add_player_to_roster(
-        self,
-        team: Team,
-        player: Player,
-        season: Season,
-        actor: Player,
-        session: AsyncSession,
-        details: Optional[Dict] = None
-    ) -> Roster:
-        """Add a player to team roster"""
-        # Check if player is already on a team this season
-        current_roster = await self._get_player_roster(player.uid, season.id, session)
-        if current_roster:
-            raise RosterServiceError("Player is already on a team this season")
 
-        # Create roster entry
-        roster_entry = Roster(
-            team_id=team.id,
-            player_uid=player.uid,
-            season_id=season.id,
-            # Player is immediately active when added directly by captain
-            pending=False
-        )
-        
-        session.add(roster_entry)
-        return roster_entry
-
-    @AuditService.audited_deletion(
-        action_type="roster_remove",
-        entity_type="roster",
-        details_extractor=_roster_audit_details,
-        id_extractor=_roster_id_gen
-    )
-    async def _remove_player_from_roster(
-        self,
-        rostered_member: Roster,
-        actor: Player,
-        session: AsyncSession
-    ) -> None:
-        """Remove a player from team roster"""
-        await session.delete(rostered_member)
-        return
-
-    async def remove_player_from_team_roster(self, team_id: str, player_uid: str, season_id: str,actor: Player, session: AsyncSession):
-        roster_entry = await self._get_player_roster(player_uid, season_id, session, team_id=team_id)
-
-        if not roster_entry:
-            raise RosterServiceError("Player not found on team roster")
-
-        # Check if removing team captain
-        # This is handled for us by the route service.
-        # is_captain = await (session.execute(
-        #     select(TeamCaptain).where(
-        #         TeamCaptain.team_id == team.id,
-        #         TeamCaptain.player_uid == player.uid
-        #     )
-        # )).scalar_one_or_none()
-        # if is_captain:
-        #     raise RosterServiceError("Cannot remove team captain from roster")
-        return await self._remove_player_from_roster(roster_entry, actor=actor, session=session)
-        # Add removal details for audit
-        # details = {
-        #     "removal_reason": reason,
-        #     "removed_by": str(actor.uid)
-        # }
-        
-
-    async def get_team_roster(
-        self,
-        team: Team,
-        season: Season,
-        session: AsyncSession,
-        include_pending: bool = False
-    ) -> List[Roster]:
-        """Get all players on team roster for season"""
-        stmt = select(Roster).where(
-            Roster.team_id == team.id,
-            Roster.season_id == season.id
-        )
-        if not include_pending:
-            stmt = stmt.where(Roster.pending == False)
-            
-        result = (await session.execute(stmt)).scalars()
-        return result.all()
-
-    async def get_active_roster_count(
-        self,
-        team: Team,
-        season: Season,
-        session: AsyncSession
-    ) -> int:
-        """Get count of active roster players"""
-        stmt = select(Roster).where(
-            Roster.team_id == team.id,
-            Roster.season_id == season.id,
-            Roster.pending == False
-        )
-        result = (await session.execute(stmt)).scalars()
-        return len(result.all())
-
-    async def get_team_roster_history(
-        self,
-        team: Team,
-        session: AsyncSession
-    ) -> List[Dict]:
-        """Get roster change history from audit logs"""
-        # Fetch audit logs for roster changes
-        audit_logs = await self.audit_service.get_entity_audit_logs(
-            entity_type="roster",
-            entity_id=team.id,
-            session=session
-        )
-        
-        # Transform logs into roster history
-        history = []
-        for log in audit_logs:
-            history.append({
-                "timestamp": log.created_at,
-                "action": log.action_type,
-                "player_id": log.details.get("player_id"),
-                "actor_id": log.actor_id,
-                "details": log.details
-            })
-            
-        return history
-
-    async def _get_player_roster(
-        self,
-        player_uid: str,
-        season_id: str,
-        session: AsyncSession,
-        team_id: Optional[str] = None
-    ) -> Optional[Roster]:
-        """Get player's current roster entry for season"""
-        stmt = select(Roster).where(
-            Roster.player_uid == player_uid,
-            Roster.season_id == season_id
-        )
-        if team_id:
-            stmt = stmt.where(Roster.team_id == team_id)
-        result = (await session.execute(stmt)).scalars()
-        return result.first()
-
-    async def get_teams_with_min_players(
-        self,
-        season_id: uuid.UUID,
-        min_players: int,
-        session: AsyncSession
-    ) -> List[Team]:
-        """Get teams that have minimum required active players"""
-        stmt = select(Team).join(Roster).where(
-            Roster.season_id == season_id,
-            Roster.pending == False
-        ).group_by(Team.id).having(
-            count(Roster.player_uid) >= min_players
-        )
-        result = (await session.execute(stmt)).scalars()
-        return result.all()
-
-    async def validate_roster_size(
-        self,
-        team: Team,
-        season: Season,
-        min_size: int,
-        max_size: int,
-        session: AsyncSession
-    ) -> tuple[bool, str]:
-        """Validate roster size against requirements"""
-        roster_size = await self.get_active_roster_count(team, season, session)
-        
-        if roster_size < min_size:
-            return False, f"Team roster below minimum size ({roster_size}/{min_size})"
-        if roster_size > max_size:
-            return False, f"Team roster exceeds maximum size ({roster_size}/{max_size})"
-            
-        return True, "Roster size valid"
+    async def get_active_roster_count(self, *args, **kwargs):
+        return await self.roster_service.get_active_roster_count(*args, **kwargs)
+    
+    async def remove_player_from_team_roster(self, *args, **kwargs):
+        return await self.roster_service.remove_player_from_team_roster(*args, **kwargs)
+    
+def create_team_service(audit_service: Optional[AuditService], 
+                        roster_service: Optional[RosterService] = None,
+                        season_service: Optional[SeasonService] = None) -> TeamService:
+    audit_service = audit_service or AuditService()
+    roster_service = roster_service or RosterService(audit_service)
+    season_service = season_service or SeasonService()
+    return TeamService(season_service, audit_service, roster_service)

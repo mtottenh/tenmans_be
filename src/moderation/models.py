@@ -27,7 +27,7 @@ class Ban(SQLModel, AsyncAttrs, table=True):
         sa_column=Column(UUID, nullable=False, primary_key=True, default=uuid.uuid4)
     )
     # Target can be either a player or team
-    player_uid: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid"), nullable=True))
+    player_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id"), nullable=True))
     team_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("teams.id"), nullable=True))
     
     # Scope of the ban
@@ -43,8 +43,8 @@ class Ban(SQLModel, AsyncAttrs, table=True):
     end_date: Optional[datetime]  # Null for permanent bans
     
     # Administrative details
-    issued_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))  # Admin who issued ban
-    revoked_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
+    issued_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))  # Admin who issued ban
+    revoked_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
     revoke_reason: Optional[str]
     
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -53,7 +53,7 @@ class Ban(SQLModel, AsyncAttrs, table=True):
     # Relationships
     player: Optional["Player"] = Relationship(
         back_populates="bans",
-        sa_relationship_kwargs={"primaryjoin": "Ban.player_uid == Player.uid"}
+        sa_relationship_kwargs={"primaryjoin": "Ban.player_id == Player.id"}
     )
     team: Optional["Team"] = Relationship(back_populates="bans")
     admin: "Player" = Relationship(

@@ -11,7 +11,7 @@ from auth.dependencies import (
 )
 from auth.models import Player
 from teams.models import Team
-from teams.service import TeamService
+from services.team import team_service
 from teams.dependencies import CaptainCheckerByTeamName, CaptainCheckerByTeamId
 from competitions.season.dependencies import get_active_season
 from competitions.models.seasons import Season
@@ -24,11 +24,12 @@ from .schemas import (
     JoinRequestDetailed,
     JoinRequestStats
 )
-from .service import TeamJoinRequestService, JoinRequestError
+from .service import JoinRequestError
+from services.team_join_request import join_request_service
 
 team_join_request_router = APIRouter(prefix="/id/{team_id}/join-requests")
-join_request_service = TeamJoinRequestService()
-team_service = TeamService()
+
+
 
 # Additional permissions
 require_team_captain = CaptainCheckerByTeamId()
@@ -127,7 +128,7 @@ async def get_join_request(
     # - Player is the requester
     # - Player is team captain
     # - Player is admin/moderator
-    is_requester = request.player_uid == current_player.uid
+    is_requester = request.player_id == current_player.id
     is_captain = await team_service.player_is_team_captain(
         current_player,
         request.team,

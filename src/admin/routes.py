@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from admin.schemas import ExtendRoundRequest, RoundForfeitRequest, UndoForfeitRequest
+from auth.service.auth import create_auth_service
 from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round
 from competitions.rounds.service import RoundService, RoundServiceError
@@ -26,7 +27,7 @@ from audit.schemas import AuditLogBase
 from .service import AdminService, AdminServiceError
 
 admin_router = APIRouter(prefix="/admin/players")
-admin_service = AdminService()
+admin_service = AdminService(create_auth_service())
 
 # Permission checkers
 require_user_management = GlobalPermissionChecker(["manage_users"])
@@ -60,12 +61,12 @@ async def get_all_players(
         )
 
 @admin_router.patch(
-    "/{player_uid}/verify",
+    "/{player_id}/verify",
     response_model=PlayerPrivate,
     dependencies=[Depends(require_verification)]
 )
 async def verify_player(
-    player_uid: str,
+    player_id: str,
     verification: PlayerVerificationUpdate,
     current_admin: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
@@ -73,7 +74,7 @@ async def verify_player(
     """Process a player verification request"""
     try:
         return await admin_service.verify_player(
-            player_uid=player_uid,
+            player_id=player_id,
             verification=verification,
             actor=current_admin,
             session=session
@@ -85,12 +86,12 @@ async def verify_player(
         )
 
 @admin_router.post(
-    "/{player_uid}/ban",
+    "/{player_id}/ban",
     response_model=BanDetailed,
     dependencies=[Depends(require_ban_management)]
 )
 async def ban_player(
-    player_uid: str,
+    player_id: str,
     ban_data: BanCreate,
     current_admin: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
@@ -98,7 +99,7 @@ async def ban_player(
     """Ban a player"""
     try:
         return await admin_service.ban_player(
-            player_uid=player_uid,
+            player_id=player_id,
             ban_data=ban_data,
             actor=current_admin,
             session=session
@@ -140,19 +141,19 @@ async def revoke_ban(
         )
 
 @admin_router.get(
-    "/{player_uid}/bans",
+    "/{player_id}/bans",
     response_model=List[BanDetailed],
     dependencies=[Depends(require_user_management)]
 )
 async def get_player_bans(
-    player_uid: str,
+    player_id: str,
     session: AsyncSession = Depends(get_session),
     include_inactive: bool = False
 ):
     """Get a player's ban history"""
     try:
         return await admin_service.get_player_bans(
-            player_uid=player_uid,
+            player_id=player_id,
             include_inactive=include_inactive,
             session=session
         )
@@ -163,12 +164,12 @@ async def get_player_bans(
         )
 
 @admin_router.patch(
-    "/{player_uid}/roles",
+    "/{player_id}/roles",
     response_model=PlayerPrivate,
     dependencies=[Depends(require_role_management)]
 )
 async def assign_player_role(
-    player_uid: str,
+    player_id: str,
     role_data: PlayerRoleAssign,
     current_admin: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
@@ -176,7 +177,7 @@ async def assign_player_role(
     """Assign a role to a player"""
     try:
         return await admin_service.assign_role(
-            player_uid=player_uid,
+            player_id=player_id,
             role_data=role_data,
             actor=current_admin,
             session=session

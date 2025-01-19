@@ -129,3 +129,8 @@ class SeasonService:
         stmt = select(Season).where(Season.state == SeasonState.IN_PROGRESS)
         result = (await session.execute(stmt)).scalars()
         return result.first()
+    
+
+
+def create_season_service() -> SeasonService:
+    return SeasonService()

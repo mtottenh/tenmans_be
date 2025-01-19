@@ -37,7 +37,7 @@ class JoinRequestBase(BaseModel):
 
 class JoinRequestDetailed(JoinRequestBase):
     """Detailed join request information"""
-    player_uid: uuid.UUID
+    player_id: uuid.UUID
     team_id: uuid.UUID
     season_id: uuid.UUID
     responded_by: Optional[uuid.UUID]

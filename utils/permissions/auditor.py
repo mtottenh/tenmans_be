@@ -1,20 +1,15 @@
-import asyncio
-import logging
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
-import csv
-from pathlib import Path
-import json
-from dataclasses import dataclass
 
+import logging
+from typing import Dict, List, Set
+from dataclasses import dataclass
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
-
-from auth.models import Player, Permission, Role, PlayerRole
-from auth.service import AuthService, ScopeType
+from auth.models import Player
+from auth.service.auth import create_auth_service, ScopeType
+from auth.service.role import create_role_service
 from teams.models import Team
 from competitions.models.tournaments import Tournament
-from roles.service import RoleService
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PermissionAuditResult:
     """Container for permission audit results"""
-    player_uid: str
+    player_id: str
     player_name: str
     steam_id: str
     roles: List[str]
@@ -36,8 +31,8 @@ class PermissionAuditor:
     
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.auth_service = AuthService()
-        self.role_service = RoleService()
+        self.auth_service = create_auth_service()
+        self.role_service = create_role_service()
         
         # Cache for entity lookups
         self._team_cache: Dict[str, Team] = {}
@@ -53,24 +48,24 @@ class PermissionAuditor:
         # Audit each player
         results = []
         for player in players:
-            result = await self.audit_player(player.uid)
+            result = await self.audit_player(player.id)
             results.append(result)
             
         logger.info(f"Completed audit of {len(results)} players")
         return results
 
-    async def audit_player(self, player_uid: str) -> PermissionAuditResult:
+    async def audit_player(self, player_id: str) -> PermissionAuditResult:
         """Audit permissions for a specific player"""
-        logger.debug(f"Auditing player {player_uid}")
+        logger.debug(f"Auditing player {player_id}")
         
         # Get player and their roles
-        player = await self.auth_service.get_player_by_uid(player_uid, self.session)
+        player = await self.auth_service.get_player_by_id(player_id, self.session)
         if not player:
-            raise ValueError(f"Player {player_uid} not found")
+            raise ValueError(f"Player {player_id} not found")
             
         # Initialize audit result
         result = PermissionAuditResult(
-            player_uid=str(player.uid),
+            player_id=str(player.id),
             player_name=player.name,
             steam_id=player.steam_id,
             roles=[],
@@ -81,7 +76,7 @@ class PermissionAuditor:
         )
         
         # Get all roles and permissions using RoleService
-        roles_and_scopes = await self.auth_service.get_player_roles(player, self.session)
+        roles_and_scopes = await self.role_service.get_player_roles(player, self.session)
         
         for role, scope_type, scope_id in roles_and_scopes:
             result.roles.append(role.name)

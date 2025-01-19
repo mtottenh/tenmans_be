@@ -70,7 +70,7 @@ class UploadService:
             state_type=StateType.FILE_UPLOAD,
             data=request,
             metadata={
-                "player_id": str(player.uid),
+                "player_id": str(player.id),
                 "original_filename": request.filename,
                 "created_at" : str(datetime.utcnow()),
             },

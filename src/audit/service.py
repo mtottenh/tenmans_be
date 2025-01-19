@@ -5,6 +5,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from audit.models import AuditEvent, AuditEventType
 from auth.models import Player
 import inspect
+
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import uuid
 from typing import List
@@ -101,7 +103,7 @@ class AuditService:
             event_type=event_type,
             entity_type=entity_type,
             entity_id=entity_id,
-            actor_id=actor.uid,
+            actor_id=actor.id,
             details=details,
             status_from=status_from,
             status_to=status_to,
@@ -199,7 +201,7 @@ class AuditService:
                     event_type = AuditEventType.CREATE if not original_status else AuditEventType.UPDATE
                     if original_status and new_status and original_status != new_status:
                         event_type = AuditEventType.STATUS_CHANGE
-
+                    await session.refresh(actor)
                     # Create audit event
                     await audit_service._create_audit_event(
                         session=session,
@@ -358,3 +360,8 @@ class AuditService:
             stmt = stmt.where(AuditEvent.entity_type == entity_type)
             
         return (await session.execute(stmt)).scalars().all()
+
+
+
+def create_audit_service() -> AuditService:
+    return AuditService()

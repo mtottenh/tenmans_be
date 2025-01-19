@@ -10,8 +10,8 @@ from competitions.models.rounds import Round, RoundType
 from teams.models import Team
 from auth.models import Player
 from matches.models import Result, MatchPlayer
-from audit.service import AuditService
-from competitions.rounds.service import RoundService
+from audit.service import AuditService, create_audit_service
+from competitions.rounds.service import RoundService, create_round_service
 
 from competitions.fixtures.schemas import (
     FixtureCreate,
@@ -26,9 +26,11 @@ class FixtureServiceError(Exception):
     pass
 
 class FixtureService:
-    def __init__(self):
-        self.audit_service = AuditService()
-        self.round_service = RoundService()
+    def __init__(self, audit_service: Optional[AuditService] = None,
+                 round_service: Optional[RoundService] = None
+                  ):
+        self.audit_service = audit_service or create_audit_service()
+        self.round_service = round_service or create_round_service(audit_service)
 
     def _fixture_audit_details(self, fixture: Fixture) -> dict:
         """Extract audit details from a fixture operation"""
@@ -341,3 +343,10 @@ class FixtureService:
         ).join(Tournament).join(Round).join(Team, Fixture.team_1 == Team.id)
         result = (await session.execute(stmt)).scalars()
         return result.first()
+    
+
+def create_fixture_service(audit_svc: Optional[AuditService] = None,
+                 round_svc: Optional[RoundService] = None):
+    audit_service = audit_svc or create_audit_service()
+    round_service = round_svc or create_round_service(audit_service)
+    return FixtureService(audit_service, round_service)

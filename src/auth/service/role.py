@@ -1,19 +1,21 @@
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
 from datetime import datetime
 
-from auth.models import PlayerRole, Role, Permission, RolePermission
+from auth.models import Player, PlayerRole, Role, Permission, RolePermission
 from audit.service import AuditService
+from auth.schemas import ScopeType
+from auth.service.permission import PermissionService
 
 class RoleServiceError(Exception):
     """Base exception for role service errors"""
     pass
 
 class RoleService:
-    def __init__(self):
-        self.audit_service = AuditService()
+    def __init__(self, permission_service: PermissionService):
+        self.permission_service = permission_service
 
     def _role_audit_details(self, role: Role) -> dict:
         """Extract audit details from a role operation"""
@@ -22,6 +24,9 @@ class RoleService:
             "role_name": role.name,
             "created_at": role.created_at.isoformat() if role.created_at else None
         }
+    # We need to make a uuid up as the PlayerRole() table has no primary key
+    def _id_extractor_player_role(self, role: Role) -> uuid:
+        return uuid.uuid4()
 
     async def get_role(self, role_id: uuid.UUID, session: AsyncSession) -> Optional[Role]:
         """Get a role by ID"""
@@ -46,24 +51,6 @@ class RoleService:
         result = await session.execute(stmt)
         return result.scalars().all()
 
-    async def get_permission(self, permission_id: uuid.UUID, session: AsyncSession) -> Optional[Permission]:
-        """Get a permission by ID"""
-        stmt = select(Permission).where(Permission.id == permission_id)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def get_permission_by_name(self, name: str, session: AsyncSession) -> Optional[Permission]:
-        """Get a permission by name"""
-        stmt = select(Permission).where(Permission.name == name)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def get_all_permissions(self, session: AsyncSession) -> List[Permission]:
-        """Get all permissions"""
-        stmt = select(Permission)
-        result = await session.execute(stmt)
-        return result.scalars().all()
-
     @AuditService.audited_transaction(
         action_type="role_create",
         entity_type="role",
@@ -79,7 +66,7 @@ class RoleService:
         # Verify all permissions exist
         permissions = []
         for perm_id in permission_ids:
-            permission = await self.get_permission(perm_id, session)
+            permission = await self.permission_service.get_permission(perm_id, session)
             if not permission:
                 raise RoleServiceError(f"Permission {perm_id} not found")
             permissions.append(permission)
@@ -99,7 +86,7 @@ class RoleService:
         self,
         role_id: uuid.UUID,
         permission_ids: List[uuid.UUID],
-        actor,
+        actor: Any,
         session: AsyncSession
     ) -> Role:
         """Update a role's permissions"""
@@ -120,12 +107,17 @@ class RoleService:
         session.add(role)
         return role
 
-    @AuditService.audited_transaction(
+    @AuditService.audited_deletion(
         action_type="role_delete",
         entity_type="role",
         details_extractor=_role_audit_details
     )
-    async def delete_role(self, role_id: uuid.UUID, actor, session: AsyncSession) -> Role:
+    async def delete_role(
+        self,
+        role_id: uuid.UUID,
+        actor: Any,
+        session: AsyncSession
+    ) -> Role:
         """Delete a role"""
         role = await self.get_role(role_id, session)
         if not role:
@@ -142,47 +134,81 @@ class RoleService:
         await session.delete(role)
         return role
 
-    async def create_permission(
-        self,
-        name: str,
-        description: str,
-        
+    async def verify_role(self,
+        player: Player,
+        allowed_roles: List[str],
         session: AsyncSession
-    ) -> Permission:
-        """Create a new permission"""
-        # Check if permission already exists
-        existing_permission = await self.get_permission_by_name(name, session)
-        if existing_permission:
-            raise RoleServiceError(f"Permission '{name}' already exists")
+    ) -> bool:
+        """Check if player has any of the allowed roles"""
+        player_roles = await self.get_player_roles(player, session)
+        player_role_names = {role.name for role, _, _ in player_roles}
+        return bool(player_role_names & set(allowed_roles))
 
-        permission = Permission(
-            name=name,
-            description=description,
-            created_at=datetime.now()
+    async def get_player_roles(
+        self,
+        player: Player,
+        session: AsyncSession
+    ) -> List[Tuple[Role, ScopeType, Optional[uuid.UUID]]]:
+        """Get all roles for a player with their scopes"""
+        stmt = select(
+            Role,
+            PlayerRole.scope_type,
+            PlayerRole.scope_id
+        ).join(
+            PlayerRole,
+            Role.id == PlayerRole.role_id
+        ).where(
+            PlayerRole.player_id == player.id
         )
-        session.add(permission)
-        await session.commit()
-        await session.refresh(permission)
-        return permission
-
-    async def delete_permission(
-        self,
-        permission_id: uuid.UUID,
-        session: AsyncSession
-    ) -> Permission:
-        """Delete a permission"""
-        permission = await self.get_permission(permission_id, session)
-        if not permission:
-            raise RoleServiceError("Permission not found")
-
-        # Remove permission from all roles
-        stmt = select(RolePermission).where(RolePermission.permission_id == permission_id)
+        
         result = await session.execute(stmt)
-        role_permissions = result.scalars().all()
+        return [(row[0], ScopeType(row[1]), row[2]) for row in result]
+    
+    
+############# TODO - BELONGS IN ADMIN_SERVICE? ######################
+    @AuditService.audited_transaction(
+        action_type="role_assign",
+        entity_type="player_role",
+        details_extractor=_role_audit_details,
+        id_extractor=_id_extractor_player_role
+    )
+    async def assign_role(
+        self,
+        player: Player,
+        role: Role,
+        scope_type: ScopeType,
+        scope_id: Optional[uuid.UUID],
+        actor: Player,
+        session: AsyncSession
+    ) -> PlayerRole:
+        """Assign a role to a player"""
+        if scope_type != ScopeType.GLOBAL and scope_id is None:
+            raise ValueError("scope_id is required for non-global scopes")
 
-        for rp in role_permissions:
-            await session.delete(rp)
-
-        await session.delete(permission)
+        player_role = PlayerRole(
+            player_id=player.id,
+            role_id=role.id,
+            scope_type=scope_type,
+            scope_id=scope_id
+        )
+        
+        session.add(player_role)
         await session.commit()
-        return permission
+        await session.refresh(player_role)
+        return player_role
+    
+    # Delegated methods
+    async def get_permission_by_name(self, *args, **kwargs):
+        return await self.permission_service.get_permission_by_name(*args, **kwargs)
+    
+    async def get_all_permissions(self, *args, **kwargs):
+        return await self.permission_service.get_all_permissions(*args, **kwargs)
+    
+    async def create_permission(self, *args, **kwargs):
+        return await self.permission_service.create_permission(*args, **kwargs)
+#######################################################################
+
+
+def create_role_service(permission_svc: Optional[PermissionService] = None) -> RoleService:
+    permission_service = permission_svc or PermissionService()
+    return RoleService(permission_service)

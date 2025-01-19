@@ -29,7 +29,7 @@ class Pug(SQLModel, AsyncAttrs, table=True):
     max_players_per_team: int
     require_full_teams: bool = Field(default=True)
     map_pool: List[uuid.UUID] = Field(sa_column=Column(JSON))  # Array of map IDs
-    created_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    created_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     completed_at: Optional[datetime]
 
@@ -43,7 +43,7 @@ class PugTeam(SQLModel, AsyncAttrs, table=True):
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
     team_number: int = Field(primary_key=True)  # 1 or 2
     team_name: str
-    captain_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    captain_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
     pug: Pug = Relationship(back_populates="teams")
@@ -55,7 +55,7 @@ class PugTeam(SQLModel, AsyncAttrs, table=True):
 class PugPlayer(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "pug_players"
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
-    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))
+    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id"), primary_key=True))
     team_number: Optional[int] = Field(default=None)
     joined_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 

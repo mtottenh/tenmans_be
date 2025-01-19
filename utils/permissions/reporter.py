@@ -1,19 +1,8 @@
-import asyncio
-import logging
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
 import csv
+from typing import Dict, List
 from pathlib import Path
 import json
-from dataclasses import dataclass
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
-
-from auth.models import Player, Permission, Role, PlayerRole
-from auth.service import AuthService, ScopeType
-from teams.models import Team
-from competitions.models.tournaments import Tournament
-from roles.models import PermissionAuditResult
+from auth.schemas import PermissionAuditResult
 
 class PermissionReporter:
     """Utility for generating permission audit reports"""
@@ -34,7 +23,7 @@ class PermissionReporter:
             # Write data
             for result in results:
                 writer.writerow([
-                    result.player_uid,
+                    result.player_id,
                     result.player_name,
                     result.steam_id,
                     ','.join(result.roles),
@@ -50,7 +39,7 @@ class PermissionReporter:
         report_data = []
         for result in results:
             report_data.append({
-                'player_id': result.player_uid,
+                'player_id': result.player_id,
                 'name': result.player_name,
                 'steam_id': result.steam_id,
                 'roles': list(result.roles),

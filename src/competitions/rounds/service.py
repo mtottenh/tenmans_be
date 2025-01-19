@@ -16,8 +16,8 @@ class RoundServiceError(Exception):
     pass
 
 class RoundService:
-    def __init__(self):
-        self.audit_service = AuditService()
+    def __init__(self, audit_service: Optional[AuditService] = None):
+        self.audit_service = audit_service or  AuditService()
 
     def _round_audit_details(self, round: Round) -> dict:
         """Extract audit details from a round operation"""
@@ -375,3 +375,7 @@ class RoundService:
 
             # Get next round
             current_round = await self._get_next_round(current_round, session)
+
+def create_round_service(audit_svc: Optional[AuditService] = None) -> RoundService:
+    audit_service = audit_svc or AuditService()
+    return RoundService(audit_service)

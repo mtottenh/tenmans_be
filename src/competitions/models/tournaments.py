@@ -91,14 +91,14 @@ class TournamentRegistration(SQLModel, AsyncAttrs, table=True):
     status: RegistrationStatus = Field(sa_column=sa.Column(sa.Enum(RegistrationStatus)))
     
     # Registration workflow fields
-    requested_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    requested_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     requested_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    reviewed_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
+    reviewed_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
     reviewed_at: Optional[datetime]
     review_notes: Optional[str]
     
     # Withdrawal fields
-    withdrawn_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
+    withdrawn_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
     withdrawn_at: Optional[datetime]
     withdrawal_reason: Optional[str]
     
@@ -111,10 +111,10 @@ class TournamentRegistration(SQLModel, AsyncAttrs, table=True):
     tournament: "Tournament" = Relationship(back_populates="registrations")
     team: "Team" = Relationship(back_populates="tournament_registrations")
     requester: "Player" = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "TournamentRegistration.requested_by == Player.uid"},
+        sa_relationship_kwargs={"primaryjoin": "TournamentRegistration.requested_by == Player.id"},
         back_populates="tournament_registration_requests"
     )
     reviewer: Optional["Player"] = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "TournamentRegistration.reviewed_by == Player.uid"},
+        sa_relationship_kwargs={"primaryjoin": "TournamentRegistration.reviewed_by == Player.id"},
         back_populates="tournament_registration_reviews"
     )

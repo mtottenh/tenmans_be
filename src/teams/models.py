@@ -10,7 +10,6 @@ from competitions.models.seasons import Season
 from teams.base_schemas import TeamStatus, RecruitmentStatus
 
 
-
 class Team(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "teams"
     id: uuid.UUID = Field(
@@ -19,7 +18,7 @@ class Team(SQLModel, AsyncAttrs, table=True):
     status: TeamStatus = Field(default=TeamStatus.ACTIVE)
     disbanded_at: Optional[datetime] = None
     disbanded_reason: Optional[str] = None
-    disbanded_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.uid")))
+    disbanded_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
     logo: Optional[str]
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -44,7 +43,7 @@ class Team(SQLModel, AsyncAttrs, table=True):
 class Roster(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "rosters"
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id"), primary_key=True))
-    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid"), primary_key=True))
+    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id"), primary_key=True))
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id"), primary_key=True))
     pending: bool = Field(default=True)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -60,11 +59,13 @@ class TeamCaptain(SQLModel, AsyncAttrs, table=True):
         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
     
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
-    player_uid: uuid.UUID = Field(sa_column=Column(ForeignKey("players.uid")))
+    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
     team: Team = Relationship(back_populates="captains")
     player: "Player" = Relationship(back_populates="captain_of")
+
+
 
 # class TeamELOHistory(SQLModel, table=True):
 #     __tablename__ = "team_elo_history"

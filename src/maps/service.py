@@ -50,3 +50,6 @@ class MapService:
 
     def get_map_img_path(self, m: Map) -> str:
         return f"/maps/id/{m.id}/img"
+
+def create_map_service() -> MapService:
+    return MapService()

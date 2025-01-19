@@ -1,25 +1,10 @@
 from fastapi import Depends, HTTPException, Path, status
 from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import Optional
 from auth.models import Player
 from auth.dependencies import get_current_player
 from db.main import get_session
-from teams.service import TeamService
-from auth.service import AuthService
-
-team_service = TeamService()
-auth_service = AuthService()
-
-from fastapi import Depends, HTTPException, status
-from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import Optional
-from auth.models import Player
-from auth.service import AuthService
-from db.main import get_session
-from teams.service import TeamService
-
-team_service = TeamService()
-auth_service = AuthService()
+from services.team import team_service
+from services.auth import auth_service
 
 class CaptainCheckerBase:
     """Permission checker for team captain operations."""

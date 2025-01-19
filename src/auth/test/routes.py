@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
-from auth.models import AuthType
 from auth.schemas import PlayerEmailCreate, PlayerLogin, TokenResponse
-from auth.service import AuthService
+from auth.service.auth import create_auth_service
 from db.main import get_session
 from state.service import StateService, StateType
 from config import Config
 
 auth_test_router = APIRouter(prefix="/auth/test")
-auth_service = AuthService()
+auth_service = create_auth_service()
 state_service = StateService(Config.REDIS_URL)
 
 @auth_test_router.post("/register", response_model=TokenResponse)
@@ -23,7 +22,7 @@ async def register_test_user(
         state_id = await state_service.store_state(
             StateType.AUTH,
             tokens,
-            metadata={"player_id": str(player.uid)}
+            metadata={"player_id": str(player.id)}
         )
         return RedirectResponse(
             f"http://localhost:5173/auth/callback?state={state_id}",
@@ -53,7 +52,7 @@ async def login_test_user(
         state_id = await state_service.store_state(
             StateType.AUTH,
             tokens,
-            metadata={"player_id": str(player.uid)}
+            metadata={"player_id": str(player.id)}
         )
         return RedirectResponse(
             f"http://localhost:5173/auth/callback?state={state_id}",
