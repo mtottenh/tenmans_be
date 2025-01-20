@@ -3,6 +3,14 @@ from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
 
+
+class SubstituteAvailabilityStatus(StrEnum):
+    AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
+    CONDITIONAL = "CONDITIONAL"
+    USED = "USED"
+    EXCLUDED = "EXCLUDED"
+
 class SubstituteAvailabilityCreate(BaseModel):
     tournament_id: Optional[UUID4]
     season_id: Optional[UUID4]

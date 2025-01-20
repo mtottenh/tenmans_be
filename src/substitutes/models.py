@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import List, Optional
 import uuid
 
+from substitutes.schemas import SubstituteAvailabilityStatus
+
 
 class SubstituteAvailability(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "substitute_availability"
@@ -15,7 +17,7 @@ class SubstituteAvailability(SQLModel, AsyncAttrs, table=True):
     player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     tournament_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("tournaments.id")))
     season_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("seasons.id")))
-    is_available: bool = Field(default=True)
+    status: SubstituteAvailabilityStatus = Field(default=SubstituteAvailabilityStatus.AVAILABLE) 
     availability_notes: Optional[str]  # e.g., "Only available weekends"
     last_substitute_date: Optional[datetime]  # Track last time used as substitute
     created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
