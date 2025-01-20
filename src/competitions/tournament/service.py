@@ -5,6 +5,7 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
+from audit.models import AuditEventType
 from competitions.base_schemas import FixtureStatus
 from competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
 from competitions.models.rounds import Round
@@ -34,12 +35,13 @@ class TournamentService:
     def __init__(self,
                  team_service: Optional[TeamService] = None,
                  match_service: Optional[MatchService] = None,
-                 audit_service: Optional[AuditService] = None, 
+                 audit_service: Optional[AuditService] = None,
+                 validator: Optional[TournamentValidator] = None,
                  ):
         self.audit_service = audit_service or AuditService()
         self.team_service = team_service or TeamService()
         self.match_service = match_service or MatchService()
-        self.validator = TournamentValidator()
+        self.validator = validator or TournamentValidator()
 
     def _tournament_audit_details(self, tournament: Tournament) -> dict:
         """Extracts audit details from a tournament operation"""
@@ -117,8 +119,8 @@ class TournamentService:
         return tournaments, total
 
     @AuditService.audited_transaction(
-        action_type="tournament_create",
-        entity_type="tournament",
+        action_type=AuditEventType.CREATE,
+        entity_type="Tournament",
         details_extractor=_tournament_audit_details
     )
     async def create_tournament(
@@ -146,8 +148,8 @@ class TournamentService:
             raise TournamentServiceError(str(e))
 
     @AuditService.audited_transaction(
-        action_type="tournament_update",
-        entity_type="tournament",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Tournament",
         details_extractor=_tournament_audit_details
     )
     async def update_tournament(
@@ -183,8 +185,8 @@ class TournamentService:
 
     # Tournament lifecycle methods
     @AuditService.audited_transaction(
-        action_type="tournament_generate",
-        entity_type="tournament",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Tournament",
         details_extractor=_tournament_audit_details
     )
     async def generate_tournament_structure(
@@ -249,8 +251,8 @@ class TournamentService:
 
 
     @AuditService.audited_transaction(
-        action_type="tournament_complete",
-        entity_type="tournament",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Tournament",
         details_extractor=_tournament_audit_details
     )
     async def complete_tournament(
@@ -274,8 +276,8 @@ class TournamentService:
         return tournament
 
     @AuditService.audited_transaction(
-        action_type="tournament_cancel",
-        entity_type="tournament",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Tournament",
         details_extractor=_tournament_audit_details
     )
     async def cancel_tournament(
@@ -393,8 +395,8 @@ class TournamentService:
         )
 
     @AuditService.audited_transaction(
-        action_type="tournament_registration_request",
-        entity_type="registration",
+        action_type=AuditEventType.CREATE,
+        entity_type="TournamentRegistration",
         details_extractor=_registration_audit_details
     )
     async def request_registration(
@@ -439,8 +441,8 @@ class TournamentService:
         return registration
 
     @AuditService.audited_transaction(
-        action_type="tournament_registration_review",
-        entity_type="tournament_registration",
+        action_type=AuditEventType.UPDATE,
+        entity_type="TournamentRegistration",
         details_extractor=_registration_audit_details
     )
     async def review_registration(
@@ -473,8 +475,8 @@ class TournamentService:
         return registration
 
     @AuditService.audited_transaction(
-        action_type="tournament_registration_withdraw",
-        entity_type="tournament_registration",
+        action_type=AuditEventType.UPDATE,
+        entity_type="TournamentRegistration",
         details_extractor=_registration_audit_details
     )
     async def withdraw_registration(
@@ -601,11 +603,10 @@ class TournamentService:
         return [ x.team for x in result.all()]
 
     @AuditService.audited_transaction(
-        action_type="tournament_generate",
-        entity_type="tournament",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Tournament",
         details_extractor=_tournament_audit_details
     )
-   
     async def start_tournament(
         self,
         tournament_id: uuid.UUID,
@@ -669,6 +670,7 @@ class TournamentService:
             
         return winners
 
+    # TODO - This should be audited.
     async def complete_round(
         self,
         tournament_id: uuid.UUID,
@@ -794,8 +796,14 @@ class TournamentService:
             calculator = get_standings_calculator(tournament.type)
             return await calculator.calculate_standings(
                 tournament=tournament,
+                match_service=self.match_service,
                 session=session
             )
         except ValueError as e:
             raise TournamentServiceError(str(e))
 
+def create_tournament_service(team_svc: Optional[TeamService] = None, match_svc: Optional[MatchService] = None, audit_svc: Optional[AuditService] = None):
+    team_service = team_svc or TeamService()
+    match_service = match_svc or MatchService()
+    audit_service = audit_svc or AuditService()
+    return TournamentService(team_service, match_service, audit_service)

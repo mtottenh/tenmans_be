@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from auth.models import Player
-from auth.service.auth import create_auth_service, ScopeType
-from auth.service.role import create_role_service
+from auth.service.auth import ScopeType
 from teams.models import Team
 from competitions.models.tournaments import Tournament
+from services.auth import auth_service
 
 
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +31,7 @@ class PermissionAuditor:
     
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.auth_service = create_auth_service()
-        self.role_service = create_role_service()
+        self.auth_service = auth_service
         
         # Cache for entity lookups
         self._team_cache: Dict[str, Team] = {}
@@ -76,7 +75,7 @@ class PermissionAuditor:
         )
         
         # Get all roles and permissions using RoleService
-        roles_and_scopes = await self.role_service.get_player_roles(player, self.session)
+        roles_and_scopes = await self.auth_service.get_player_roles(player, self.session)
         
         for role, scope_type, scope_id in roles_and_scopes:
             result.roles.append(role.name)

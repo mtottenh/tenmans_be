@@ -3,6 +3,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
 from datetime import datetime
+from audit.models import AuditEventType
 from auth.models import Player, Role, Permission, PlayerRole, RolePermission
 from auth.schemas import ScopeType
 from audit.service import AuditService
@@ -56,8 +57,8 @@ class PermissionService:
         return result.scalars().all()
 
     @AuditService.audited_transaction(
-        action_type="permission_create",
-        entity_type="permission",
+        action_type=AuditEventType.CREATE,
+        entity_type="Permission",
         details_extractor=_permission_audit_details
     )
     async def create_permission(
@@ -81,8 +82,8 @@ class PermissionService:
         return permission
 
     @AuditService.audited_deletion(
-        action_type="permission_delete",
-        entity_type="permission",
+        action_type=AuditEventType.DELETE,
+        entity_type="Permission",
         details_extractor=_permission_audit_details
     )
     async def delete_permission(

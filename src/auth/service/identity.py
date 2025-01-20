@@ -68,7 +68,7 @@ class IdentityService:
             email=player.email,
             steam_id=player.steam_id,
             auth_type=player.auth_type,
-            verification_status=player.verification_status,
+            status=player.status,
             current_elo=player.current_elo,
             highest_elo=player.highest_elo,
             created_at=player.created_at,

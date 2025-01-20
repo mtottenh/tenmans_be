@@ -2,12 +2,11 @@ from typing import Any, Dict, Generic, List, Optional, TypeVar
 from datetime import datetime
 import uuid
 from sqlmodel.ext.asyncio.session import AsyncSession
+from audit.models import AuditEvent, AuditEventType
 from audit.service import AuditService
 from auth.models import Player
-from auth.schemas import PlayerStatus
 from auth.service.permission import PermissionService
-from status.models import EntityStatusHistory, create_status_history
-from .transition_validator import HasRequiredReasonValidator, StatusTransitionManager, StatusTransitionRule, SuspensionDurationValidator
+from .transition_validator import StatusTransitionManager
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 T = TypeVar('T')
@@ -41,7 +40,7 @@ class StatusTransitionService(Generic[T]):
         }
 
     @AuditService.audited_transaction(
-        action_type="status_transition",
+        action_type=AuditEventType.STATUS_CHANGE,
         entity_type="status",
         details_extractor=_transition_audit_details
     )
@@ -93,14 +92,18 @@ class StatusTransitionService(Generic[T]):
         )
         
         # Create history entry
-        history_entry = create_status_history(
+        history_entry = AuditEvent(
             entity_type=manager.entity_type,
             entity_id=entity.id,
+            action_type=AuditEventType.STATUS_CHANGE,
+            actor_id=actor.id,
             previous_status=str(current_status),
             new_status=str(new_status_enum),
-            reason=reason,
-            changed_by=actor.id,
-            entity_metadata=entity_metadata
+            transition_reason=reason,
+            details={
+                "metadata": entity_metadata or {},
+                "timestamp": datetime.now().isoformat()
+            }
         )
         session.add(history_entry)
         
@@ -121,13 +124,11 @@ class StatusTransitionService(Generic[T]):
         include_metadata: bool = False
     ) -> List[Dict]:
         """Get status change history for an entity"""
-        stmt = select(EntityStatusHistory).where(
-            EntityStatusHistory.entity_type == entity_type,
-            EntityStatusHistory.entity_id == entity_id
-        ).order_by(EntityStatusHistory.created_at.desc()).options(
-            selectinload(EntityStatusHistory.actor)
-
-        )
+        stmt = select(AuditEvent).where(
+            AuditEvent.entity_type == entity_type,
+            AuditEvent.entity_id == entity_id,
+            AuditEvent.action_type ==  AuditEventType.STATUS_CHANGE
+        ).order_by(AuditEvent.timestamp.desc())
         
         result = await session.execute(stmt)
         history = result.scalars().all()
@@ -136,14 +137,14 @@ class StatusTransitionService(Generic[T]):
             {
                 "previous_status": entry.previous_status,
                 "new_status": entry.new_status,
-                "reason": entry.reason,
-                "changed_by": entry.changed_by,
-                "created_at": entry.created_at,
-                **({"entity_metadata": entry.entity_metadata} if include_metadata else {})
+                "reason": entry.transition_reason,
+                "changed_by": entry.actor_id,
+                "created_at": entry.timestamp,
+                **({"metadata": entry.details.get("metadata")} if include_metadata else {})
             }
             for entry in history
         ]
-    
+
     async def get_entity_status_changes(
         self,
         entity_type: str,
@@ -152,20 +153,21 @@ class StatusTransitionService(Generic[T]):
         to_date: Optional[datetime] = None,
     ) -> List[Dict]:
         """Get status changes for all entities of a type within a date range"""
-        stmt = select(EntityStatusHistory).where(
-            EntityStatusHistory.entity_type == entity_type
+        stmt = select(AuditEvent).where(
+            AuditEvent.entity_type == entity_type,
+            AuditEvent.action_type == AuditEventType.STATUS_CHANGE
         ).options(
-            selectinload(EntityStatusHistory.actor)
+            selectinload(AuditEvent.actor)
         )
         
         if from_date:
-            stmt = stmt.where(EntityStatusHistory.created_at >= from_date)
+            stmt = stmt.where(AuditEvent.timestamp >= from_date)
         if to_date:
-            stmt = stmt.where(EntityStatusHistory.created_at <= to_date)
+            stmt = stmt.where(AuditEvent.timestamp <= to_date)
             
         stmt = stmt.order_by(
-            EntityStatusHistory.entity_id,
-            EntityStatusHistory.created_at.desc()
+            AuditEvent.entity_id,
+            AuditEvent.timestamp.desc()
         )
         
         result = await session.execute(stmt)

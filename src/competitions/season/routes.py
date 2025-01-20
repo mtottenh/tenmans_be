@@ -46,7 +46,7 @@ async def get_active_season(
     """Get current active season"""
     return await season_service.get_active_season(session)
 
-@season_router.get("/{season_id}", response_model=Season)
+@season_router.get("/id/{season_id}", response_model=Season)
 async def get_season(
     season_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -61,7 +61,7 @@ async def get_season(
         )
     return season
 
-@season_router.post("/{season_id}/start", response_model=Season)
+@season_router.post("/id/{season_id}/start", response_model=Season)
 async def start_season(
     season_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -82,7 +82,7 @@ async def start_season(
             detail=str(e)
         )
 
-@season_router.post("/{season_id}/complete", response_model=Season)
+@season_router.post("/id/{season_id}/complete", response_model=Season)
 async def complete_season(
     season_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
@@ -103,7 +103,7 @@ async def complete_season(
             detail=str(e)
         )
 
-@season_router.post("/{season_id}/reopen", response_model=Season)
+@season_router.post("/id/{season_id}/reopen", response_model=Season)
 async def reopen_season(
     season_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),

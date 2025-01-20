@@ -9,7 +9,6 @@ from typing import List, Optional
 from audit.models import AuditEvent
 from auth.schemas import AuthType, PlayerStatus
 from moderation.models import Ban
-from status.models import EntityStatusHistory
 from substitutes.models import SubstituteAvailability
 from teams.join_request.models import TeamJoinRequest
 
@@ -124,9 +123,3 @@ class Player(SQLModel, AsyncAttrs, table=True):
     )
     revoked_bans: List[Ban] = Relationship(back_populates="revoking_admin",
                      sa_relationship=relationship(Ban, back_populates="revoking_admin", foreign_keys="Ban.revoked_by"))
-    
-    # Status Relations
-    status_changes_made: List[EntityStatusHistory] = Relationship(
-        back_populates="actor",
-        sa_relationship_kwargs={"foreign_keys": "EntityStatusHistory.changed_by"}
-    )

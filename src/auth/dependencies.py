@@ -7,7 +7,6 @@ from auth.service.token import TokenConfig, TokenService
 from db.main import get_session
 from auth.models import Player
 from auth.service.permission import PermissionScope, PermissionService
-#import AuthService, PermissionScope, ScopeType
 from pydantic import BaseModel
 import uuid
 import logging
@@ -161,24 +160,92 @@ CurrentPlayer = Annotated[Player, Depends(get_current_player)]
 
 # Example global permission checkers
 
-#GlobalPermissionChecker(["league_admin"])
 require_moderator = GlobalPermissionChecker(["moderator"], permission_service)
 require_user = GlobalPermissionChecker(["user"], permission_service)
 require_season_admin = GlobalPermissionChecker(["manage_seasons"], permission_service)
+require_user_management = GlobalPermissionChecker(["manage_users"], permission_service)
+require_verification = GlobalPermissionChecker(["verify_users"], permission_service)
+require_ban_management = GlobalPermissionChecker(["manage_bans"], permission_service)
+require_role_management = GlobalPermissionChecker(["manage_roles"], permission_service)
+require_fixture_admin = GlobalPermissionChecker(["manage_fixtures"], permission_service)
 
 # Example team permission checkers
-require_team_management = TeamPermissionChecker(["manage_teams"], permission_service)
-require_team_roster = TeamPermissionChecker(["manage_roster"], permission_service)
-require_team_captain = TeamPermissionChecker(["team_captain"], permission_service)
+dep_require_team_management = TeamPermissionChecker(["manage_teams"], permission_service)
+dep_require_team_roster = TeamPermissionChecker(["manage_roster"], permission_service)
+dep_require_team_captain = TeamPermissionChecker(["team_captain"], permission_service)
 
 
 # Example tournament permission checkers
-require_tournament_management = TournamentPermissionChecker(["manage_tournaments"], permission_service)
-require_tournament_admin = TournamentPermissionChecker(["tournament_admin"], permission_service)
-
-
+dep_require_tournament_management = TournamentPermissionChecker(["manage_tournaments"], permission_service)
+dep_require_tournament_manage = TournamentPermissionChecker(["manage_tournament"], permission_service)
+dep_require_tournament_view = TournamentPermissionChecker(["view_tournament"], permission_service)
+dep_require_view_matches = TournamentPermissionChecker(["view_matches"],permission_service)
+dep_require_schedule_matches = TournamentPermissionChecker(["schedule_matches"], permission_service)
+dep_require_confirm_results = TournamentPermissionChecker(["confirm_results"], permission_service)
 # Permission checkers
-require_fixture_admin = GlobalPermissionChecker(["manage_fixtures"], permission_service)
 
 # Example Role based checkers (not advised..)
 require_admin = RoleChecker(['league_admin'], permission_service)
+
+
+async def require_team_management(
+   team_id: uuid.UUID,
+   checker: TeamPermissionChecker = Depends(dep_require_team_management)
+):
+   return await checker(scope_id=team_id)
+
+async def require_team_roster(
+   team_id: uuid.UUID, 
+   checker: TeamPermissionChecker = Depends(dep_require_team_roster)
+):
+   return await checker(scope_id=team_id)
+
+async def require_team_captain(
+   team_id: uuid.UUID,
+   checker: TeamPermissionChecker = Depends(dep_require_team_captain)
+):
+   return await checker(scope_id=team_id)
+
+async def require_tournament_management(
+   tournament_id: uuid.UUID,
+   checker: TournamentPermissionChecker = Depends(dep_require_tournament_management)
+):
+   return await checker(scope_id=tournament_id)
+
+async def require_tournament_manage(
+   tournament_id: uuid.UUID,
+   checker: TournamentPermissionChecker = Depends(dep_require_tournament_manage)
+):
+   return await checker(scope_id=tournament_id)
+
+async def require_tournament_view(
+   tournament_id: uuid.UUID,
+   checker: TournamentPermissionChecker = Depends(dep_require_tournament_view)
+):
+   return await checker(scope_id=tournament_id)
+
+async def require_view_matches(
+   tournament_id: uuid.UUID,
+   checker: TournamentPermissionChecker = Depends(dep_require_view_matches)
+):
+   return await checker(scope_id=tournament_id)
+
+async def require_schedule_matches(
+   tournament_id: uuid.UUID,
+   checker: TournamentPermissionChecker = Depends(dep_require_schedule_matches)
+):
+   return await checker(scope_id=tournament_id)
+
+# TODO - this may also be required to be scoped to a team+tournament rather than just a tournament?
+async def require_confirm_results(
+   tournament_id: uuid.UUID,
+   checker: TournamentPermissionChecker = Depends(dep_require_confirm_results)
+):
+   return await checker(scope_id=tournament_id)
+
+async def require_tournament_manage(
+    tournament_id: uuid.UUID,
+    checker: TournamentPermissionChecker = Depends(dep_require_tournament_manage)
+):
+    return await checker(scope_id=tournament_id)
+

@@ -2,14 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from auth.schemas import PlayerEmailCreate, PlayerLogin, TokenResponse
-from auth.service.auth import create_auth_service
 from db.main import get_session
-from state.service import StateService, StateType
-from config import Config
+from state.service import StateType
+from services.auth import auth_service
+from services.state import state_service
 
 auth_test_router = APIRouter(prefix="/auth/test")
-auth_service = create_auth_service()
-state_service = StateService(Config.REDIS_URL)
+
 
 @auth_test_router.post("/register", response_model=TokenResponse)
 async def register_test_user(

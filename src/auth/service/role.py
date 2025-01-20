@@ -4,7 +4,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
 from datetime import datetime
 
-from auth.models import Player, PlayerRole, Role, Permission, RolePermission
+from audit.models import AuditEventType
+from auth.models import Player, PlayerRole, Role
 from audit.service import AuditService
 from auth.schemas import ScopeType
 from auth.service.permission import PermissionService
@@ -22,6 +23,14 @@ class RoleService:
         return {
             "role_id": str(role.id),
             "role_name": role.name,
+            "created_at": role.created_at.isoformat() if role.created_at else None
+        }
+    
+    def _player_role_audit_details(self, role: PlayerRole) -> dict:
+        return {
+            "role_id": str(role.role_id),
+            "scope_id": str(role.scope_id),
+            "scope_type": str(role.scope_type),
             "created_at": role.created_at.isoformat() if role.created_at else None
         }
     # We need to make a uuid up as the PlayerRole() table has no primary key
@@ -52,8 +61,8 @@ class RoleService:
         return result.scalars().all()
 
     @AuditService.audited_transaction(
-        action_type="role_create",
-        entity_type="role",
+        action_type=AuditEventType.CREATE,
+        entity_type='Role',
         details_extractor=_role_audit_details
     )
     async def create_role(self, name: str, permission_ids: List[uuid.UUID], actor, session: AsyncSession) -> Role:
@@ -78,8 +87,8 @@ class RoleService:
         return role
 
     @AuditService.audited_transaction(
-        action_type="role_update",
-        entity_type="role",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Role",
         details_extractor=_role_audit_details
     )
     async def update_role(
@@ -97,7 +106,7 @@ class RoleService:
         # Verify all permissions exist
         permissions = []
         for perm_id in permission_ids:
-            permission = await self.get_permission(perm_id, session)
+            permission = await self.permission_service.get_permission(perm_id, session)
             if not permission:
                 raise RoleServiceError(f"Permission {perm_id} not found")
             permissions.append(permission)
@@ -108,8 +117,8 @@ class RoleService:
         return role
 
     @AuditService.audited_deletion(
-        action_type="role_delete",
-        entity_type="role",
+        action_type=AuditEventType.DELETE,
+        entity_type="Role",
         details_extractor=_role_audit_details
     )
     async def delete_role(
@@ -164,12 +173,12 @@ class RoleService:
         result = await session.execute(stmt)
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
     
-    
+
 ############# TODO - BELONGS IN ADMIN_SERVICE? ######################
     @AuditService.audited_transaction(
-        action_type="role_assign",
-        entity_type="player_role",
-        details_extractor=_role_audit_details,
+        action_type=AuditEventType.ROLE_CHANGE,
+        entity_type="PlayerRole",
+        details_extractor=_player_role_audit_details,
         id_extractor=_id_extractor_player_role
     )
     async def assign_role(
@@ -196,6 +205,42 @@ class RoleService:
         await session.commit()
         await session.refresh(player_role)
         return player_role
+
+    @AuditService.audited_deletion(
+        action_type=AuditEventType.DELETE,
+        entity_type="PlayerRole",
+        details_extractor=_player_role_audit_details,
+        id_extractor=_id_extractor_player_role
+    )
+    async def delete_player_role(self, player_role: PlayerRole, actor: Player, session: AsyncSession):
+               return await session.delete(player_role)
+
+    async def remove_role_from_player(
+        self,
+        player: Player,
+        role: Role,
+        scope_type: ScopeType,
+        scope_id: Optional[uuid.UUID],
+        actor: Player,
+        session: AsyncSession):
+        """Remove a role assignment from a player"""
+        if scope_type != ScopeType.GLOBAL and scope_id is None:
+            raise ValueError("scope_id is required for non-global scopes")
+        
+        stmt = select(
+            PlayerRole
+        ).where(
+            PlayerRole.player_id == player.id,
+            PlayerRole.role_id == role.id,
+            PlayerRole.scope_type == scope_type
+        )
+        if scope_id:
+            stmt = stmt.where(PlayerRole.scope_id == scope_id)
+        role_to_remove = (await session.execute(stmt)).scalars().all()
+        if len(role_to_remove) > 1:
+            raise RoleServiceError("Bulk removal of roles not supported yet")
+
+        return await self.delete_player_role(role_to_remove[0], actor=actor, session=session)
     
     # Delegated methods
     async def get_permission_by_name(self, *args, **kwargs):

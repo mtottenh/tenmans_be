@@ -17,3 +17,12 @@ docker exec tenmans-api-1 python -m pytest test/test/authentication -v
 
 # Running a specific test
 docker exec tenmans-api-1 python -m pytest test/test/competitions/tournament/test_progression.py::TestTournamentProgression::test_start_tournament -v
+
+
+
+Remember:
+
+* IF reseting the DB, you need to re-create the initial roles with the tool
+* Bring DB UP
+* Recreate roles    
+* Then allow a user to sign up.

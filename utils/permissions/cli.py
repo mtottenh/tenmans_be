@@ -5,13 +5,13 @@ from typing import Optional
 import click
 
 from db.main import get_session
-from auth.service.role import create_role_service
 from manager import PermissionManager
 from auditor import PermissionAuditor
 from reporter import PermissionReporter
 from ui import PermissionUI
 from auth.schemas import PermissionTemplate
 from sys_user import ensure_system_user
+from services.auth import auth_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,7 +50,8 @@ def edit(player_id: str):
     """Edit user permissions interactively"""
     async def run():
         async for session in get_session():
-            ui = PermissionUI(session)
+            system_user = await ensure_system_user(session)
+            ui = PermissionUI(system_user, session)
             await ui.edit_permissions(player_id)
             await session.commit()
 
@@ -109,8 +110,7 @@ def list_roles():
     async def run():
         async for session in get_session():
             try:
-                role_service = create_role_service()
-                roles = await role_service.get_all_roles(session)
+                roles = await auth_service.get_all_roles(session)
                 
                 if not roles:
                     click.echo("No roles defined")
@@ -136,7 +136,6 @@ def create_role(name: str, permissions: Optional[str], template: Optional[str]):
         async for session in get_session():
             try:
                 system_user = await ensure_system_user(session)
-                role_service = create_role_service()
                 
                 # Get permissions list
                 permission_ids = []
@@ -156,13 +155,13 @@ def create_role(name: str, permissions: Optional[str], template: Optional[str]):
                 
                 # Get permission IDs
                 for perm_name in perm_names:
-                    perm = await role_service.get_permission_by_name(perm_name, session)
+                    perm = await auth_service.get_permission_by_name(perm_name, session)
                     if not perm:
                         raise click.ClickException(f"Permission '{perm_name}' not found")
                     permission_ids.append(perm.id)
                 
                 
-                role = await role_service.create_role(name, permission_ids, actor=system_user, session=session)
+                role = await auth_service.create_role(name, permission_ids, actor=system_user, session=session)
                 click.echo(f"Created role '{role.name}' with {len(role.permissions)} permissions")
                 await session.commit()
             except Exception as e:
@@ -179,9 +178,8 @@ def delete_role(name: str, force: bool):
     async def run():
         async for session in get_session():
             try:
-                role_service = create_role_service()
                 system_user = await ensure_system_user(session)
-                role = await role_service.get_role_by_name(name, session)
+                role = await auth_service.get_role_by_name(name, session)
                 if not role:
                     raise click.ClickException(f"Role '{name}' not found")
                     
@@ -191,7 +189,7 @@ def delete_role(name: str, force: bool):
                     return
                     
 
-                await role_service.delete_role(role.id, actor=system_user, session=session)
+                await auth_service.delete_role(role.id, actor=system_user, session=session)
                 click.echo(f"Deleted role '{name}'")
                 await session.commit()
             except Exception as e:
@@ -210,7 +208,6 @@ def initialize_permissions():
         async for session in session_gen:
             # try:
                 system_user = await ensure_system_user(session)
-                role_service = create_role_service()
                 
                 # Create permissions from all templates
                 permissions_created = 0
@@ -220,8 +217,8 @@ def initialize_permissions():
                 
                 for perm_name in sorted(all_permissions):
                     try:
-                        if not await role_service.get_permission_by_name(perm_name, session):
-                            await role_service.create_permission(
+                        if not await auth_service.get_permission_by_name(perm_name, session):
+                            await auth_service.create_permission(
                                 name=perm_name,
                                 description=f"Permission to {perm_name.replace('_', ' ')}",
                                 actor=system_user,
@@ -230,6 +227,7 @@ def initialize_permissions():
                             permissions_created += 1
                     except Exception as e:
                         click.echo(f"Error creating permission '{perm_name}': {e}")
+                        raise
                 
                 click.echo(f"Created {permissions_created} permissions")
                 
@@ -238,19 +236,19 @@ def initialize_permissions():
                 for template_name, template in PermissionTemplate.TEMPLATES.items():
                     # try:
                         # Skip if role exists
-                        if await role_service.get_role_by_name(template_name, session):
+                        if await auth_service.get_role_by_name(template_name, session):
                             continue
                             
                         # Get permission IDs
                         permission_ids = []
                         for perm_name in template["permissions"]:
-                            perm = await role_service.get_permission_by_name(perm_name, session)
+                            perm = await auth_service.get_permission_by_name(perm_name, session)
                             if perm:
                                 permission_ids.append(perm.id)
                         
                         # Create role
                         if permission_ids:
-                            await role_service.create_role(template_name, permission_ids, actor=system_user, session=session)
+                            await auth_service.create_role(template_name, permission_ids, actor=system_user, session=session)
                             roles_created += 1
                             
                     # except Exception as e:

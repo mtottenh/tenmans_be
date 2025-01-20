@@ -4,6 +4,7 @@ from sqlmodel import select, desc, or_
 from datetime import datetime, timedelta
 import uuid
 
+from audit.models import AuditEventType
 from competitions.models.tournaments import Tournament, TournamentState
 from competitions.models.fixtures import Fixture, FixtureStatus
 from competitions.models.rounds import Round, RoundType
@@ -104,8 +105,8 @@ class FixtureService:
         return result.all()
 
     @AuditService.audited_transaction(
-        action_type="fixture_create",
-        entity_type="fixture",
+        action_type=AuditEventType.CREATE,
+        entity_type="Fixture",
         details_extractor=_fixture_audit_details
     )
     async def create_fixture(
@@ -151,8 +152,8 @@ class FixtureService:
         return fixture
 
     @AuditService.audited_transaction(
-        action_type="fixture_update",
-        entity_type="fixture",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Fixture",
         details_extractor=_fixture_audit_details
     )
     async def update_fixture(
@@ -184,8 +185,8 @@ class FixtureService:
         return fixture
 
     @AuditService.audited_transaction(
-        action_type="fixture_reschedule",
-        entity_type="fixture",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Fixture",
         details_extractor=_fixture_audit_details
     )
     async def reschedule_fixture(
@@ -217,8 +218,8 @@ class FixtureService:
         return fixture
 
     @AuditService.audited_transaction(
-        action_type="fixture_forfeit",
-        entity_type="fixture",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Fixture",
         details_extractor=_fixture_audit_details
     )
     async def forfeit_fixture(
@@ -250,8 +251,8 @@ class FixtureService:
         return fixture
 
     @AuditService.audited_transaction(
-        action_type="fixture_complete",
-        entity_type="fixture",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Fixture",
         details_extractor=_fixture_audit_details
     )
     async def complete_fixture(

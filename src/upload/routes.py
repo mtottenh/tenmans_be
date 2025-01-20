@@ -1,26 +1,12 @@
-from fastapi import APIRouter, Depends, UploadFile, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, HTTPException
 from config import Config
-from sqlmodel.ext.asyncio.session import AsyncSession
-from pydantic import BaseModel
-from typing import Optional, Literal
-from pathlib import Path
-import aiofiles
-import os
-import shutil
+from typing import Optional
 from upload.models import UploadRequest, UploadToken
-from upload.service import UploadService
-from werkzeug.utils import secure_filename
-from datetime import timedelta
-
-from db.main import get_session
 from auth.dependencies import get_current_player
 from auth.models import Player
-from state.service import StateService, StateType, get_state_service
-
+from services.upload import upload_service
 
 upload_router = APIRouter(prefix="/uploads")
-state_service = StateService(Config.REDIS_URL)
-upload_service = UploadService(state_service)
 
 @upload_router.post("/request", response_model=UploadToken)
 async def request_upload(

@@ -1,16 +1,8 @@
 import asyncio
-import logging
-from pathlib import Path
-from typing import Optional
 import click
-from sqlmodel.ext.asyncio.session import AsyncSession
-
-from auth.models import Player, Permission, Role, PlayerRole
-from competitions.models.tournaments import Tournament
 from db.main import get_session
-from roles.service import RoleService
-from auth.service import AuthService, AuthType
-from roles.models import PermissionTemplate
+from auth.service.auth import AuthType
+from services.auth import auth_service
 
 @click.group()
 def cli():
@@ -22,7 +14,6 @@ def cli():
 @click.argument('player_uid')
 def gen(player_uid: str):
     async def run():
-        auth_service = AuthService()
         
         # Simulate session or use a real database session if needed
         async for session in get_session():

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import uuid
 from sqlalchemy.orm import joinedload, selectinload
 
+from audit.models import AuditEventType
 from competitions.season.service import SeasonService, create_season_service
 
 from .schemas import JoinRequestStatus
@@ -40,8 +41,8 @@ class TeamJoinRequestService:
         }
 
     @AuditService.audited_transaction(
-        action_type="join_request_create",
-        entity_type="join_request",
+        action_type=AuditEventType.CREATE,
+        entity_type="TeamJoinRequest",
         details_extractor=_join_request_audit_details
     )
     async def create_request(
@@ -76,8 +77,8 @@ class TeamJoinRequestService:
         return request
 
     @AuditService.audited_transaction(
-        action_type="join_request_approve",
-        entity_type="join_request",
+        action_type=AuditEventType.UPDATE,
+        entity_type="TeamJoinRequest",
         details_extractor=_join_request_audit_details
     )
     async def approve_request(
@@ -113,8 +114,8 @@ class TeamJoinRequestService:
         return request
 
     @AuditService.audited_transaction(
-        action_type="join_request_reject",
-        entity_type="join_request",
+        action_type=AuditEventType.UPDATE,
+        entity_type="TeamJoinRequest",
         details_extractor=_join_request_audit_details
     )
     async def reject_request(
@@ -139,8 +140,8 @@ class TeamJoinRequestService:
         return request
 
     @AuditService.audited_transaction(
-        action_type="join_request_cancel",
-        entity_type="join_request",
+        action_type=AuditEventType.UPDATE,
+        entity_type="TeamJoinRequest",
         details_extractor=_join_request_audit_details
     )
     async def cancel_request(

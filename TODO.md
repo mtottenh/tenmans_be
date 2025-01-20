@@ -104,7 +104,7 @@
 
 * [ ] Admin routes need some work.
 ### Player API
-* [ ]  Add support for patching a player that registered through steam and has no email
+* [~]  Add support for patching a player that registered through steam and has no email
 
 ### RCON API
 * Need a separate web service that allows TLS Mutual Auth
@@ -135,11 +135,36 @@ async def select_heroes():
 
 
 # TODO
-* Role Creation
-    * Permission assignment to roles
+
+# Player name editing
+* Name editing is now done
+
+# 'Admin View'
+* Requires Roles to be send to Front end
+    * Requires Role Creation
+        * Permission assignment to roles
 * Bootstrapping initial role script
 * Bootstrap initial admin user script
 * Some way of logging in as an authenticated user (skip steam login flow)
 * Assignment to USER role on player creation
 * Return list of roles in player endpoins
     * Make front-end key of 'is-admin' in returned role list.
+
+
+# Team creation
+    - Requires Season Service/APIS
+        - Requires MGMT interface to create seasons
+        - Requires RBAC to be implemented properly
+            - Requires RBAC service implementation
+            - Requires RBAC API endpoints
+
+
+### Deletion
+* Implement soft deletes for all resource types.
+    * Players
+    * Teams
+    * Maps
+    * Tournaments
+    * Seasons
+    * Fixtures
+    

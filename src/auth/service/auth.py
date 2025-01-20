@@ -79,7 +79,7 @@ class AuthService:
             actor=player,  # Self-registration
             session=session
         )
-        
+        await session.refresh(player)
         # Create auth tokens
         tokens = self.token_service.create_auth_tokens(
             str(player.id),
@@ -113,7 +113,7 @@ class AuthService:
             actor=player,  # Self-registration
             session=session
         )
-        
+        await session.refresh(player)
         # Create auth tokens
         tokens = self.token_service.create_auth_tokens(
             str(player.id),
@@ -220,10 +220,22 @@ class AuthService:
     
     async def get_all_roles(self, *args, **kwargs):
         return await self.role_service.get_all_roles(*args, **kwargs)
-    
-    # async def remove_role(self, *args, **kwargs):
-    #     return await self.role_service.r
 
+    async def get_role_by_name(self, *args, **kwargs):
+        return await self.role_service.get_role_by_name(*args, **kwargs)
+        
+    async def create_role(self, *args, **kwargs):
+        return await self.role_service.create_role(*args, **kwargs)
+    
+    async def delete_role(self, *args, **kwargs):
+        return await self.role_service.delete_role(*args, **kwargs)
+    
+    async def remove_role_from_player(self, *args, **kwargs):
+        return await self.role_service.remove_role_from_player(*args, **kwargs)
+    
+    async def update_role(self, *args, **kwargs):
+        return await self.role_service.update_role(*args, **kwargs)
+    
     # Status Service delegations  
     async def change_player_status(self, *args, **kwargs):
         return await self.player_status_service.change_player_status(*args, **kwargs)

@@ -4,9 +4,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timedelta
 
-from competitions.models.tournaments import Tournament
-from competitions.models.rounds import Round
-from competitions.models.fixtures import Fixture, FixtureStatus
+from competitions.models.fixtures import FixtureStatus
 from competitions.models.seasons import Season
 from competitions.fixtures.schemas import (
     FixtureCreate,
@@ -20,50 +18,24 @@ from competitions.fixtures.schemas import (
 )
 from competitions.fixtures.service import FixtureServiceError
 from services.fixture import fixture_service
+from services.tournament import tournament_service
 from db.main import get_session
 from auth.models import Player
 from auth.dependencies import (
     get_current_player,
-    require_fixture_admin,
-    require_tournament_admin,
+    require_view_matches,
+    require_tournament_manage,
     require_team_captain,
+    require_schedule_matches,
+    require_confirm_results,
 )
 from competitions.season.dependencies import get_active_season
 
-fixture_router = APIRouter(prefix="/fixtures")
+fixture_router = APIRouter(prefix="/id/{tournament_id}/fixtures")
 
 
-@fixture_router.get(
-    "/",
-    response_model=FixturePage,
-    dependencies=[Depends(require_fixture_admin)]
-)
-async def get_all_fixtures(
-    tournament_id: Optional[uuid.UUID] = None,
-    status: Optional[List[FixtureStatus]] = None,
-    page: int = 1,
-    size: int = 20,
-    session: AsyncSession = Depends(get_session)
-):
-    """Get all fixtures with pagination and optional filters"""
-    fixtures, total = await fixture_service.get_fixtures(
-        tournament_id=tournament_id,
-        status=status,
-        offset=(page - 1) * size,
-        limit=size,
-        session=session
-    )
-    
-    return FixturePage(
-        items=fixtures,
-        total=total,
-        page=page,
-        size=size,
-        has_next=total > page * size,
-        has_previous=page > 1
-    )
-
-@fixture_router.get("/upcoming", response_model=UpcomingFixturesResponse)
+global_fixture_router = APIRouter(prefix="/fixtures")
+@global_fixture_router.get("/upcoming", response_model=UpcomingFixturesResponse)
 async def get_upcoming_fixtures(
     days: int = 7,
     session: AsyncSession = Depends(get_session),
@@ -97,11 +69,60 @@ async def get_upcoming_fixtures(
         next_week=next_week
     )
 
+
+
 @fixture_router.get(
-    "/{fixture_id}",
+    "/",
+    response_model=FixturePage,
+    dependencies=[Depends(require_view_matches)]
+)
+async def get_all_fixtures(
+    tournament_id: uuid.UUID,
+    # status: Optional[List[FixtureStatus]] = None,
+    # page: int = 1,
+    # size: int = 20,
+    session: AsyncSession = Depends(get_session)
+):
+    """Get all fixtures with pagination and optional filters"""
+    try:
+        tournament = await tournament_service.get_tournament(tournament_id, session)
+        if tournament is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No tournament with id {tournament_id}"
+            )
+        
+        return await fixture_service.get_tournament_fixtures(tournament.id, session)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{str(e)}"
+        )
+    
+    # fixtures, total = await fixture_service.get_tournament_fixtures(
+    #     tournament_id=tournament_id,
+    #     status=status,
+    #     # offset=(page - 1) * size,
+    #     # limit=size,
+    #     session=session
+    # )
+    
+    # return FixturePage(
+    #     items=fixtures,
+    #     total=total,
+    #     page=page,
+    #     size=size,
+    #     has_next=total > page * size,
+    #     has_previous=page > 1
+    # )
+
+
+@fixture_router.get(
+    "/id/{fixture_id}",
     response_model=FixtureDetailed
 )
 async def get_fixture(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
@@ -119,9 +140,10 @@ async def get_fixture(
     "/",
     response_model=FixtureDetailed,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_manage)]
 )
 async def create_fixture(
+    tournament_id: uuid.UUID,
     fixture_data: FixtureCreate,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
@@ -140,11 +162,12 @@ async def create_fixture(
         )
 
 @fixture_router.patch(
-    "/{fixture_id}/reschedule",
+    "/id/{fixture_id}/reschedule",
     response_model=FixtureDetailed,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_schedule_matches)]
 )
 async def reschedule_fixture(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
     reschedule_data: FixtureReschedule,
     session: AsyncSession = Depends(get_session),
@@ -172,11 +195,12 @@ async def reschedule_fixture(
         )
 
 @fixture_router.post(
-    "/{fixture_id}/start",
+    "/id/{fixture_id}/start",
     response_model=FixtureDetailed,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_schedule_matches)]
 )
 async def start_fixture(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
@@ -202,11 +226,12 @@ async def start_fixture(
         )
 
 @fixture_router.post(
-    "/{fixture_id}/forfeit",
+    "/id/{fixture_id}/forfeit",
     response_model=FixtureDetailed,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_manage)]
 )
 async def forfeit_fixture(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
     forfeit_data: FixtureForfeit,
     session: AsyncSession = Depends(get_session),
@@ -234,11 +259,12 @@ async def forfeit_fixture(
         )
 
 @fixture_router.post(
-    "/{fixture_id}/complete",
+    "/id/{fixture_id}/complete",
     response_model=FixtureDetailed,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_confirm_results)]
 )
 async def complete_fixture(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
@@ -264,12 +290,14 @@ async def complete_fixture(
         )
 
 @fixture_router.post(
-    "/{fixture_id}/players",
+    "/id/{fixture_id}/team/id/{team_id}/players",
     response_model=FixtureDetailed,
     dependencies=[Depends(require_team_captain)]
 )
 async def add_match_player(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
+    team_id: uuid.UUID,
     player_data: MatchPlayerCreate,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
@@ -289,12 +317,14 @@ async def add_match_player(
         )
 
 @fixture_router.delete(
-    "/{fixture_id}/players/{player_id}",
+    "/id/{fixture_id}/team/id/{team_id}/players/id/{player_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_team_captain)]
 )
 async def remove_match_player(
+    tournament_id: uuid.UUID,
     fixture_id: uuid.UUID,
+    team_id: uuid.UUID,
     player_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)

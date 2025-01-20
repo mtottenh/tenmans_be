@@ -4,6 +4,7 @@ from sqlmodel import select, desc
 from datetime import datetime, timedelta
 import uuid
 
+from audit.models import AuditEventType
 from competitions.base_schemas import FixtureStatus
 from competitions.models.rounds import Round, RoundType
 from competitions.models.tournaments import Tournament, TournamentState
@@ -59,8 +60,8 @@ class RoundService:
         return result.all()
 
     @AuditService.audited_transaction(
-        action_type="round_create",
-        entity_type="round",
+        action_type=AuditEventType.CREATE,
+        entity_type="Round",
         details_extractor=_round_audit_details
     )
     async def create_round(
@@ -103,8 +104,8 @@ class RoundService:
         return round
 
     @AuditService.audited_transaction(
-        action_type="round_start",
-        entity_type="round",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Round",
         details_extractor=_round_audit_details
     )
     async def start_round(
@@ -134,8 +135,8 @@ class RoundService:
         return round
 
     @AuditService.audited_transaction(
-        action_type="round_complete",
-        entity_type="round",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Round",
         details_extractor=_round_audit_details
     )
     async def complete_round(
@@ -237,8 +238,8 @@ class RoundService:
     
 
     @AuditService.audited_transaction(
-        action_type="round_extend",
-        entity_type="round",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Round",
         details_extractor=_round_audit_details
     )
     async def extend_round_deadline(
@@ -271,8 +272,8 @@ class RoundService:
         return round
 
     @AuditService.audited_transaction(
-        action_type="round_forfeit_unplayed",
-        entity_type="round",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Round",
         details_extractor=_round_audit_details
     )
     async def forfeit_unplayed_fixtures(
@@ -307,8 +308,8 @@ class RoundService:
         return unplayed_fixtures
 
     @AuditService.audited_transaction(
-        action_type="round_reopen",
-        entity_type="round",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Round",
         details_extractor=_round_audit_details
     )
     async def reopen_round(

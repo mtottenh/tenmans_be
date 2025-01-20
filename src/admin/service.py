@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import List
+from typing import List, Optional
 import uuid
 from sqlmodel import select, desc
 from auth.models import Player, Role
@@ -178,9 +178,9 @@ class AdminService:
         return player
 
 
-def create_admin_service() -> AdminService:
+def create_admin_service(auth_svc: Optional[AuthService] = None) -> AdminService:
     """Create and configure AdminService with its dependencies"""
-    auth_service = create_auth_service()
+    auth_service = auth_svc or  create_auth_service()
     
     return AdminService(
         auth_service=auth_service,

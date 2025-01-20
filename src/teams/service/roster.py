@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.functions import count
 import uuid
 from datetime import datetime
+from audit.models import AuditEventType
 from teams.models import Team, Roster
 from auth.models import Player
 from competitions.models.seasons import Season
@@ -37,8 +38,8 @@ class RosterService:
         return uuid.uuid4()
     
     @AuditService.audited_transaction(
-        action_type="roster_add",
-        entity_type="roster",
+        action_type=AuditEventType.CREATE,
+        entity_type="Roster",
         details_extractor=_roster_audit_details,
         id_extractor=_roster_id_gen
     )
@@ -70,8 +71,8 @@ class RosterService:
         return roster_entry
 
     @AuditService.audited_deletion(
-        action_type="roster_remove",
-        entity_type="roster",
+        action_type=AuditEventType.DELETE,
+        entity_type="Roster",
         details_extractor=_roster_audit_details,
         id_extractor=_roster_id_gen
     )

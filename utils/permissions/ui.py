@@ -9,17 +9,17 @@ from competitions.models.tournaments import Tournament
 from auth.service.role import create_role_service
 from auth.schemas import PermissionTemplate
 import uuid
-from sys_user import ensure_system_user
+from services.auth import auth_service
 
 logger = logging.getLogger(__name__)
 
 class PermissionUI:
     """Interactive UI for permission management"""
     
-    def __init__(self, session: AsyncSession):
+    def __init__(self, system_user, session: AsyncSession):
         self.session = session
-        self.auth_service = create_auth_service()
-        self.role_service = create_role_service()
+        self.auth_service = auth_service
+        self.system_user = system_user
 
     async def edit_permissions(self, player_id: str):
         """Interactive permission editor for a player"""
@@ -28,8 +28,9 @@ class PermissionUI:
             print(f"Error: Player {player_id} not found")
             return
         await self.session.flush()
-        await self.session.refresh(player)
+        
         while True:
+            await self.session.refresh(player)
             await self._show_current_permissions(player)
             
             print("\nPermission Management Options:")
@@ -56,6 +57,7 @@ class PermissionUI:
                     print("Invalid choice")
             except Exception as e:
                 print(f"Error: {e}")
+                raise
 
     async def manage_roles(self):
         """Interactive role management interface"""
@@ -113,7 +115,7 @@ class PermissionUI:
     async def _add_role_flow(self, player: Player):
         """Flow for adding a role to a player"""
         # Get available roles
-        system_user = await ensure_system_user(self.session)
+        
         roles = await self.auth_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
@@ -137,11 +139,13 @@ class PermissionUI:
                     role=role,
                     scope_type=scope_type,
                     scope_id=scope_id,
-                    actor=system_user,
+                    actor=self.system_user,
                     session=self.session
                 )
-                print(f"\nAdded role {role.name}")
                 await self.session.refresh(player)
+                await self.session.refresh(role)
+                print(f"\nAdded role {role.name}")
+                
 
         except ValueError as e:
             print(f"Invalid selection {str(e)}")
@@ -167,17 +171,20 @@ class PermissionUI:
             if 0 <= choice < len(roles_and_scopes):
                 role, scope_type, scope_id = roles_and_scopes[choice]
                 
-                # TODO - Remove the role
-                await self.auth_service.remove_role(
+                
+                await self.auth_service.remove_role_from_player(
                     player=player,
                     role=role,
                     scope_type=scope_type,
                     scope_id=scope_id,
+                    actor=self.system_user,
                     session=self.session
                 )
+                await self.session.refresh(player)
+                await self.session.refresh(role)
                 print(f"\nRemoved role {role.name}")
-        except ValueError:
-            print("Invalid selection")
+        except Exception:
+            raise 
 
     async def _apply_template_flow(self, player: Player):
         """Flow for applying a permission template"""
@@ -218,7 +225,7 @@ class PermissionUI:
             return
 
         print("\nAvailable Permissions:")
-        permissions = await self.role_service.get_all_permissions(self.session)
+        permissions = await self.auth_service.get_all_permissions(self.session)
         for i, perm in enumerate(permissions, 1):
             print(f"{i}. {perm.name}: {perm.description}")
 
@@ -231,7 +238,7 @@ class PermissionUI:
                     perm_ids.append(permissions[idx].id)
             
             if perm_ids:
-                role = await self.role_service.create_role(name, perm_ids, self.session)
+                role = await self.auth_service.create_role(name, perm_ids, self.session)
                 print(f"\nCreated role: {role.name}")
             else:
                 print("No valid permissions selected")
@@ -240,7 +247,7 @@ class PermissionUI:
 
     async def _edit_role_flow(self):
         """Flow for editing an existing role"""
-        roles = await self.role_service.get_all_roles(self.session)
+        roles = await self.auth_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
             return
@@ -255,7 +262,7 @@ class PermissionUI:
                 role = roles[role_idx]
                 
                 print("\nAvailable Permissions:")
-                permissions = await self.role_service.get_all_permissions(self.session)
+                permissions = await self.auth_service.get_all_permissions(self.session)
                 for i, perm in enumerate(permissions, 1):
                     has_perm = perm in await role.awaitable_attrs.permissions
                     mark = "✓" if has_perm else " "
@@ -269,7 +276,7 @@ class PermissionUI:
                         perm_ids.append(permissions[idx].id)
                 
                 if perm_ids:
-                    role = await self.role_service.update_role(role.id, perm_ids, self.session)
+                    role = await self.auth_service.update_role(role.id, perm_ids, self.session)
                     print(f"\nUpdated role: {role.name}")
                 else:
                     print("No valid permissions selected")
@@ -278,7 +285,7 @@ class PermissionUI:
 
     async def _delete_role_flow(self):
         """Flow for deleting a role"""
-        roles = await self.role_service.get_all_roles(self.session)
+        roles = await self.auth_service.get_all_roles(self.session)
         if not roles:
             print("No roles available")
             return
@@ -293,7 +300,7 @@ class PermissionUI:
                 role = roles[role_idx]
                 confirm = input(f"Are you sure you want to delete {role.name}? (y/N): ")
                 if confirm.lower() == 'y':
-                    await self.role_service.delete_role(role.id, self.session)
+                    await self.auth_service.delete_role(role.id, self.session)
                     print(f"\nDeleted role: {role.name}")
         except ValueError:
             print("Invalid input")
@@ -301,14 +308,14 @@ class PermissionUI:
     async def _create_template_roles(self, template_name: str, template: dict):
         """Create roles defined in a template if they don't exist"""
         for role_name in template["roles"]:
-            if not await self.role_service.get_role_by_name(role_name, self.session):
+            if not await self.auth_service.get_role_by_name(role_name, self.session):
                 # Get permission IDs
                 perm_ids = []
                 for perm_name in template["permissions"]:
-                    perm = await self.role_service.get_permission_by_name(perm_name, self.session)
+                    perm = await self.auth_service.get_permission_by_name(perm_name, self.session)
                     if not perm:
                         # Create permission if it doesn't exist
-                        perm = await self.role_service.create_permission(
+                        perm = await self.auth_service.create_permission(
                             name=perm_name,
                             description=f"Permission to {perm_name.replace('_', ' ')}",
                             session=self.session
@@ -316,7 +323,7 @@ class PermissionUI:
                     perm_ids.append(perm.id)
                 
                 # Create role
-                await self.role_service.create_role(role_name, perm_ids, self.session)
+                await self.auth_service.create_role(role_name, perm_ids, self.session)
 
     async def _apply_template_to_player(
         self,
@@ -329,7 +336,7 @@ class PermissionUI:
         roles = []
         
         for role_name in template["roles"]:
-            role = await self.role_service.get_role_by_name(role_name, self.session)
+            role = await self.auth_service.get_role_by_name(role_name, self.session)
             if not role:
                 continue
                 

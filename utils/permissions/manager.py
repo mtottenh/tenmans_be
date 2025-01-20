@@ -4,14 +4,11 @@ import uuid
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from auth.models import Player, Role, PlayerRole, VerificationStatus, AuthType
-from auth.schemas import Permission
-from auth.service.auth import create_auth_service, ScopeType
-from teams.models import Team
+from auth.models import Player, Role, PlayerRole, AuthType
+from auth.schemas import Permission, PlayerStatus
+from auth.service.auth import  ScopeType
 from auth.schemas import PermissionTemplate
-from auth.service.role import create_role_service
-from audit.service import AuditService
-
+from services.auth import auth_service
 logger = logging.getLogger(__name__)
 
 class PermissionManager:
@@ -19,9 +16,8 @@ class PermissionManager:
     
     def __init__(self, session: AsyncSession, system_user: Player):
         self.session = session
-        self.auth_service = create_auth_service()
-        self.role_service = create_role_service()
-        self.audit_service = AuditService()
+        self.auth_service = auth_service
+        #self.auth_service = create_auth_service()
         self.system_user = system_user
 
     async def create_initial_admin(self, steam_id: str, email: Optional[str] = None) -> Player:
@@ -33,12 +29,12 @@ class PermissionManager:
             raise ValueError("Admin user already exists")
 
         # Create admin role if it doesn't exist
-        admin_role = await self.role_service.get_role_by_name("league_admin", self.session)
+        admin_role = await self.auth_service.get_role_by_name("league_admin", self.session)
         if not admin_role:
             # Get or create all admin permissions
             permissions = await self._ensure_admin_permissions()
             # Create admin role with all permissions
-            admin_role = await self.role_service.create_role(
+            admin_role = await self.auth_service.create_role(
                 "league_admin",
                 [p.id for p in permissions],
                 actor=self.system_user,
@@ -51,7 +47,7 @@ class PermissionManager:
             email=email,
             name="Initial Admin",
             auth_type=AuthType.STEAM if not email else AuthType.EMAIL,
-            verification_status=VerificationStatus.VERIFIED
+            status=PlayerStatus.ACTIVE
         )
         self.session.add(player)
         await self.session.flush()
@@ -81,15 +77,15 @@ class PermissionManager:
 
         for role_name in template["roles"]:
             # Get or create role using RoleService
-            role = await self.role_service.get_role_by_name(role_name, self.session)
+            role = await self.auth_service.get_role_by_name(role_name, self.session)
             if not role:
                 # Get permissions for the role
                 permission_ids = []
                 for perm_name in template["permissions"]:
-                    perm = await self.role_service.get_permission_by_name(perm_name, self.session)
+                    perm = await self.auth_service.get_permission_by_name(perm_name, self.session)
                     if not perm:
                         # Create permission if it doesn't exist
-                        perm = await self.role_service.create_permission(
+                        perm = await self.auth_service.create_permission(
                             name=perm_name,
                             description=f"Permission to {perm_name.replace('_', ' ')}",
                             session=self.session
@@ -97,7 +93,7 @@ class PermissionManager:
                     permission_ids.append(perm.id)
                 
                 # Create role with permissions
-                role = await self.role_service.create_role(
+                role = await self.auth_service.create_role(
                     name=role_name,
                     permission_ids=permission_ids,
                     actor=self.system_user,
@@ -135,9 +131,9 @@ class PermissionManager:
         
         permissions = []
         for perm_name in admin_permissions:
-            perm = await self.role_service.get_permission_by_name(perm_name, self.session)
+            perm = await self.auth_service.get_permission_by_name(perm_name, self.session)
             if not perm:
-                perm = await self.role_service.create_permission(
+                perm = await self.auth_service.create_permission(
                     name=perm_name,
                     description=f"Admin permission to {perm_name.replace('_', ' ')}",
                     session=self.session

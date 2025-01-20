@@ -15,8 +15,7 @@ from auth.dependencies import (
     AccessTokenBearer,
     get_current_player,
 )
-from auth.service.auth import create_auth_service
-from config import Config
+
 
 from competitions.models.seasons import Season
 from competitions.season.dependencies import get_active_season
@@ -104,7 +103,7 @@ async def steam_callback(
         # )
         
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise # HTTPException(status_code=400, detail=str(e))
 
 @auth_router.get("/exchange-state")
 async def exchange_state(

@@ -8,8 +8,7 @@ from admin.schemas import ExtendRoundRequest, RoundForfeitRequest, UndoForfeitRe
 from auth.service.auth import create_auth_service
 from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round
-from competitions.rounds.service import RoundService, RoundServiceError
-from competitions.tournament.service import TournamentService
+from competitions.rounds.service import RoundServiceError
 from db.main import get_session
 from auth.models import Player
 from auth.schemas import (
@@ -20,23 +19,24 @@ from auth.schemas import (
 )
 from auth.dependencies import (
     get_current_player,
-    GlobalPermissionChecker,
+    require_user_management,
+    require_verification,
+    require_ban_management,
+    require_role_management,
+    require_tournament_manage,
+    
 )
 from moderation.schemas import BanCreate, BanDetailed
-from audit.schemas import AuditLogBase
-from .service import AdminService, AdminServiceError
+from .service import AdminServiceError
+from services.admin import admin_service
+from services.tournament import tournament_service
+from services.round import round_service
 
-admin_router = APIRouter(prefix="/admin/players")
-admin_service = AdminService(create_auth_service())
+admin_router = APIRouter(prefix="/admin")
 
-# Permission checkers
-require_user_management = GlobalPermissionChecker(["manage_users"])
-require_verification = GlobalPermissionChecker(["verify_users"])
-require_ban_management = GlobalPermissionChecker(["manage_bans"])
-require_role_management = GlobalPermissionChecker(["manage_roles"])
 
 @admin_router.get(
-    "/",
+    "/players",
     response_model=List[PlayerPrivate],
     dependencies=[Depends(require_user_management)]
 )
@@ -61,7 +61,7 @@ async def get_all_players(
         )
 
 @admin_router.patch(
-    "/{player_id}/verify",
+    "/players/id/{player_id}/verify",
     response_model=PlayerPrivate,
     dependencies=[Depends(require_verification)]
 )
@@ -86,7 +86,7 @@ async def verify_player(
         )
 
 @admin_router.post(
-    "/{player_id}/ban",
+    "/players/id/{player_id}/ban",
     response_model=BanDetailed,
     dependencies=[Depends(require_ban_management)]
 )
@@ -111,7 +111,7 @@ async def ban_player(
         )
 
 @admin_router.patch(
-    "/bans/{ban_id}/revoke",
+    "/bans/id/{ban_id}/revoke",
     response_model=BanDetailed,
     dependencies=[Depends(require_ban_management)]
 )
@@ -141,7 +141,7 @@ async def revoke_ban(
         )
 
 @admin_router.get(
-    "/{player_id}/bans",
+    "/players/id/{player_id}/bans",
     response_model=List[BanDetailed],
     dependencies=[Depends(require_user_management)]
 )
@@ -164,7 +164,7 @@ async def get_player_bans(
         )
 
 @admin_router.patch(
-    "/{player_id}/roles",
+    "/players/id/{player_id}/roles",
     response_model=PlayerPrivate,
     dependencies=[Depends(require_role_management)]
 )
@@ -194,17 +194,10 @@ async def assign_player_role(
         )
     
 
-
-tournament_service = TournamentService()
-round_manager = RoundService()
-
-# Permission checker
-require_tournament_admin = GlobalPermissionChecker(["tournament_admin"])
-
 @admin_router.patch(
-    "/{tournament_id}/rounds/{round_number}/extend",
+    "/tournaments/id/{tournament_id}/rounds/{round_number}/extend",
     response_model=Round,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_manage)]
 )
 async def extend_round_deadline(
     tournament_id: uuid.UUID,
@@ -227,7 +220,7 @@ async def extend_round_deadline(
                 detail="Round not found"
             )
 
-        return await round_manager.extend_round_deadline(
+        return await round_service.extend_round_deadline(
             round=round,
             new_end_date=extension.new_end_date,
             reason=extension.reason,
@@ -241,9 +234,9 @@ async def extend_round_deadline(
         )
 
 @admin_router.post(
-    "/{tournament_id}/rounds/{round_number}/forfeit-unplayed",
+    "/tournaments/id/{tournament_id}/rounds/{round_number}/forfeit-unplayed",
     response_model=List[Fixture],
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_manage)]
 )
 async def forfeit_unplayed_matches(
     tournament_id: uuid.UUID,
@@ -265,7 +258,7 @@ async def forfeit_unplayed_matches(
                 detail="Round not found"
             )
 
-        return await round_manager.forfeit_unplayed_fixtures(
+        return await round_service.forfeit_unplayed_fixtures(
             round=round,
             forfeit_notes=forfeit_data.forfeit_notes,
             actor=current_admin,
@@ -278,9 +271,9 @@ async def forfeit_unplayed_matches(
         )
 
 @admin_router.post(
-    "/{tournament_id}/rounds/{round_number}/reopen",
+    "/tournaments/id/{tournament_id}/rounds/{round_number}/reopen",
     response_model=Round,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_manage)]
 )
 async def reopen_round(
     tournament_id: uuid.UUID,
@@ -302,7 +295,7 @@ async def reopen_round(
                 detail="Round not found"
             )
 
-        return await round_manager.reopen_round(
+        return await round_service.reopen_round(
             round=round,
             new_end_date=extension.new_end_date,
             reason=extension.reason,
@@ -316,9 +309,9 @@ async def reopen_round(
         )
 
 @admin_router.post(
-    "/{tournament_id}/fixtures/{fixture_id}/undo-forfeit",
+    "/tournaments/id/{tournament_id}/fixtures/{fixture_id}/undo-forfeit",
     response_model=Fixture,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_manage)]
 )
 async def undo_fixture_forfeit(
     tournament_id: uuid.UUID,
@@ -336,7 +329,7 @@ async def undo_fixture_forfeit(
                 detail="Fixture not found"
             )
 
-        return await round_manager.undo_fixture_forfeit(
+        return await round_service.undo_fixture_forfeit(
             fixture=fixture,
             reason=undo_data.reason,
             actor=current_admin,

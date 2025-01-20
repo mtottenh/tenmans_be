@@ -4,6 +4,7 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
+from audit.models import AuditEventType
 from competitions.models.fixtures import Fixture, FixtureStatus
 from matches.models import Result, MatchPlayer, ConfirmationStatus
 from matches.schemas import (
@@ -23,11 +24,12 @@ class MatchServiceError(Exception):
     pass
 
 class MatchService:
-    def __init__(self,
+    def __init__(self, audit_service: Optional[AuditService] = None,
+                 fixture_service: Optional[FixtureService] = None
                  
                  ):
-        self.audit_service = AuditService()
-        self.fixture_service = FixtureService()
+        self.audit_service = audit_service or AuditService()
+        self.fixture_service = fixture_service or FixtureService(audit_service, None)
 
     def _result_audit_details(self, result: Result) -> dict:
         """Extract audit details from a result operation"""
@@ -62,8 +64,8 @@ class MatchService:
         return result.first() is not None
 
     @AuditService.audited_transaction(
-        action_type="result_submit",
-        entity_type="result",
+        action_type=AuditEventType.CREATE,
+        entity_type="Result",
         details_extractor=_result_audit_details
     )
     async def submit_result(
@@ -111,8 +113,8 @@ class MatchService:
         return result
 
     @AuditService.audited_transaction(
-        action_type="result_confirm",
-        entity_type="result",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Result",
         details_extractor=_result_audit_details
     )
     async def confirm_result(
@@ -152,8 +154,8 @@ class MatchService:
         return result
 
     @AuditService.audited_transaction(
-        action_type="result_dispute",
-        entity_type="result",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Result",
         details_extractor=_result_audit_details
     )
     async def dispute_result(
@@ -190,8 +192,8 @@ class MatchService:
         return result
 
     @AuditService.audited_transaction(
-        action_type="result_admin_override",
-        entity_type="result",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Result",
         details_extractor=_result_audit_details
     )
     async def admin_override_result(
@@ -239,8 +241,8 @@ class MatchService:
         return all(r.confirmation_status == ConfirmationStatus.CONFIRMED for r in results)
 
     @AuditService.audited_transaction(
-        action_type="match_player_add",
-        entity_type="match_player"
+        action_type=AuditEventType.CREATE,
+        entity_type="MatchPlayer"
     )
     async def add_match_player(
         self,
@@ -334,3 +336,8 @@ class MatchService:
             "has_disputes": any(r.confirmation_status == ConfirmationStatus.DISPUTED 
                               for r in results)
         }
+    
+def create_match_service(audit_svc: Optional[AuditService] = None, fixture_svc: Optional[FixtureService] = None) -> MatchService:
+    audit_service = audit_svc or AuditService()
+    fixture_service = fixture_svc or FixtureService(audit_service, None)
+    return MatchService(audit_service, fixture_service)

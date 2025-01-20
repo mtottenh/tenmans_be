@@ -10,10 +10,11 @@ from db.main import get_session
 from auth.models import Player
 from auth.dependencies import (
     get_current_player,
-    GlobalPermissionChecker,
-    TournamentPermissionChecker
+    require_tournament_manage,
+    require_tournament_view,
+    require_tournament_management
 )
-from .service import TournamentService, TournamentServiceError
+from .service import TournamentServiceError
 from .schemas import (
     RegistrationReviewRequest,
     RegistrationStatus,
@@ -30,32 +31,11 @@ from .schemas import (
     TournamentWithStats,
     TournamentStandings
 )
+from services.tournament import tournament_service
+from services.fixture import fixture_service
+
 
 tournament_router = APIRouter(prefix="/tournaments")
-tournament_service = TournamentService()
-
-# Permission checkers
-require_tournament_admin = GlobalPermissionChecker(["manage_tournaments"])
-require_tournament_manage = TournamentPermissionChecker(["manage_tournament"])
-require_tournament_view = TournamentPermissionChecker(["view_tournament"])
-
-# @tournament_router.get(
-#     "/",
-#     response_model=List[TournamentBase],
-#     dependencies=[Depends(require_tournament_view)]
-# )
-# async def get_all_tournaments(
-#     season_id: uuid.UUID,
-#     include_completed: bool = True,
-#     session: AsyncSession = Depends(get_session),
-#     current_player: Player = Depends(get_current_player)
-# ):
-#     """Get all tournaments for a season"""
-#     return await tournament_service.get_tournaments_by_season(
-#         season_id,
-#         session,
-#         include_completed
-#     )
 
 import pprint
 import logging
@@ -103,7 +83,7 @@ async def get_tournaments(
     "/",
     response_model=TournamentBase,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_tournament_admin)]
+    dependencies=[Depends(require_tournament_management)]
 )
 async def create_tournament(
     tournament_data: TournamentCreate,
@@ -124,7 +104,7 @@ async def create_tournament(
         )
 
 @tournament_router.get(
-    "/{tournament_id}",
+    "/id/{tournament_id}",
     response_model=TournamentWithStats,
     dependencies=[Depends(require_tournament_view)]
 )
@@ -143,7 +123,7 @@ async def get_tournament(
     return tournament
 
 @tournament_router.patch(
-    "/{tournament_id}",
+    "/id/{tournament_id}",
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -175,7 +155,7 @@ async def update_tournament(
         )
 
 @tournament_router.post(
-    "/{tournament_id}/start",
+    "/id/{tournament_id}/start",
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -205,7 +185,7 @@ async def start_tournament(
         )
 
 @tournament_router.post(
-    "/{tournament_id}/complete",
+    "/id/{tournament_id}/complete",
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -235,7 +215,7 @@ async def complete_tournament(
         )
 
 @tournament_router.post(
-    "/{tournament_id}/cancel",
+    "/id/{tournament_id}/cancel",
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -265,7 +245,7 @@ async def cancel_tournament(
         )
 
 @tournament_router.get(
-    "/{tournament_id}/standings",
+    "/id/{tournament_id}/standings",
     response_model=TournamentStandings,
     dependencies=[Depends(require_tournament_view)]
 )
@@ -286,7 +266,7 @@ async def get_tournament_standings(
 
 # Registration endpoints
 @tournament_router.post(
-    "/{tournament_id}/registrations",
+    "/id/{tournament_id}/registrations",
     response_model=TournamentRegistrationBase,
     dependencies=[Depends(require_tournament_view)]  # Basic tournament view permission needed
 )
@@ -310,7 +290,7 @@ async def request_tournament_registration(
         )
 
 @tournament_router.get(
-    "/{tournament_id}/registrations",
+    "/id/{tournament_id}/registrations",
     response_model=TournamentRegistrationList,
     dependencies=[Depends(require_tournament_view)]
 )
@@ -328,7 +308,7 @@ async def get_tournament_registrations(
     )
 
 @tournament_router.get(
-    "/{tournament_id}/registrations/{registration_id}",
+    "/id/{tournament_id}/registrations/id/{registration_id}",
     response_model=TournamentRegistrationDetail,
     dependencies=[Depends(require_tournament_view)]
 )
@@ -352,7 +332,7 @@ async def get_tournament_registration(
     return registration
 
 @tournament_router.post(
-    "/{tournament_id}/registrations/{registration_id}/review",
+    "/id/{tournament_id}/registrations/id/{registration_id}/review",
     response_model=TournamentRegistrationDetail,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -379,7 +359,7 @@ async def review_tournament_registration(
         )
 
 @tournament_router.post(
-    "/{tournament_id}/registrations/{registration_id}/withdraw",
+    "/id/{tournament_id}/registrations/id/{registration_id}/withdraw",
     response_model=TournamentRegistrationDetail,
     dependencies=[Depends(require_tournament_view)]  # Will check team captain status in service
 )
@@ -404,14 +384,10 @@ async def withdraw_from_tournament(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
-# Permission checkers
-require_tournament_manage = GlobalPermissionChecker(["manage_tournaments"])
-require_tournament_view = GlobalPermissionChecker(["view_tournaments"])
 
 # Tournament Management Routes
 @tournament_router.post(
-    "/{tournament_id}/generate",
+    "/id/{tournament_id}/generate",
     response_model=TournamentWithStats,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -437,7 +413,7 @@ async def generate_tournament_structure(
         )
 
 @tournament_router.post(
-    "/{tournament_id}/start",
+    "/id/{tournament_id}/start",
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -460,7 +436,7 @@ async def start_tournament(
         )
 
 @tournament_router.post(
-    "/{tournament_id}/rounds/{round_number}/complete",
+    "/id/{tournament_id}/rounds/{round_number}/complete",
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
@@ -485,7 +461,7 @@ async def complete_tournament_round(
         )
 
 @tournament_router.get(
-    "/{tournament_id}/standings",
+    "/id/{tournament_id}/standings",
     response_model=TournamentStandings,
     dependencies=[Depends(require_tournament_view)]
 )
@@ -505,9 +481,8 @@ async def get_tournament_standings(
             detail=str(e)
         )
 
-fixture_service = FixtureService()
 @tournament_router.get(
-    '/{tournament_id}/fixtures',
+    '/id/{tournament_id}/fixtures',
     response_model=List[Fixture],
     dependencies=[Depends(require_tournament_view)]
 )
@@ -532,7 +507,7 @@ async def get_all_fixtures(
     
 
 @tournament_router.get(
-    '/{tournament_id}/rounds/{round_number}/fixtures',
+    '/id/{tournament_id}/rounds/{round_number}/fixtures',
     response_model=List[Fixture],
     dependencies=[Depends(require_tournament_view)]
 )

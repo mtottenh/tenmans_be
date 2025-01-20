@@ -11,7 +11,7 @@ from teams.models import Team, TeamCaptain, Roster, TeamStatus
 from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
 from teams.base_schemas import TeamUpdate
 from auth.models import Player, Role
-from audit.service import AuditService
+from audit.service import AuditService, AuditEventType
 from teams.service.roster import RosterService
 
 
@@ -155,8 +155,8 @@ class TeamService:
         return team is not None
 
     @AuditService.audited_transaction(
-        action_type="team_create",
-        entity_type="team",
+        action_type=AuditEventType.CREATE,
+        entity_type="Team",
         details_extractor=_team_audit_details
     )
     async def create_team(
@@ -220,8 +220,8 @@ class TeamService:
         return new_captain
     
     @AuditService.audited_transaction(
-        action_type="team_captain_add",
-        entity_type="team",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
         details_extractor=_captain_audit_details
     )
     async def create_captain(
@@ -248,8 +248,8 @@ class TeamService:
         return captain
     
     @AuditService.audited_deletion(
-        action_type="team_captain_remove",
-        entity_type="team",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
         details_extractor=_captain_audit_details
     )
     async def remove_captain(
@@ -299,8 +299,8 @@ class TeamService:
         return result.first() is not None
 
     @AuditService.audited_transaction(
-        action_type="team_update",
-        entity_type="team",
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
         details_extractor=_team_audit_details
     )
     async def update_team(
@@ -326,10 +326,10 @@ class TeamService:
 
 
 
-
+    # TODO - This is a soft delete I guess? Should it be update or Delete?
     @AuditService.audited_transaction(
-            action_type="team_disband",
-            entity_type="team",
+            action_type=AuditEventType.UPDATE,
+            entity_type="Team",
             details_extractor=_team_audit_details
     )
     async def disband_team(
@@ -352,8 +352,8 @@ class TeamService:
     # We woul dhave to update our model to cascade dletes, intsead we should
     # use a soft-delete
     @AuditService.audited_transaction(
-        action_type="team_delete",
-        entity_type="team",
+        action_type=AuditEventType.DELETE,
+        entity_type="Team",
         details_extractor=_team_audit_details
     )
     async def delete_team(
