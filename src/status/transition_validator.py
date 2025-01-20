@@ -89,12 +89,13 @@ class StatusTransitionManager(Generic[T]):
         # Check permissions
         actor = context.get('actor')
         session = context.get('session')
+        scope = context.get('scope', None)
         if actor and valid_rule.required_permissions:
             permission_service: PermissionService = context["permission_service"]
             has_permission = await permission_service.verify_permissions(
                 actor,
                 valid_rule.required_permissions,
-                None,
+                scope,
                 session
             )
             if not has_permission:

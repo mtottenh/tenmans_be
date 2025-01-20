@@ -3,10 +3,12 @@ from datetime import datetime
 from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
 
+from audit.service import AuditService, create_audit_service
 from auth.models import Player
 from auth.schemas import PlayerStatus
-from auth.service.identity import IdentityService
-from status.service import StatusTransitionService
+from auth.service.identity import IdentityService, create_identity_service
+from auth.service.permission import PermissionService, create_permission_service
+from status.service import StatusTransitionService, create_status_transition_service
 from status.manager.player import initialize_player_status_manager
 
 class PlayerStatusService:
@@ -136,3 +138,14 @@ class PlayerStatusService:
             return False
             
         return player.status == PlayerStatus.ACTIVE
+    
+
+def create_player_status_service(identity_service: Optional[IdentityService] = None,
+                                 audit_service: Optional[AuditService] = None,
+                                 permission_service: Optional[PermissionService] = None,
+                                 status_transition_service: Optional[StatusTransitionService] = None) -> PlayerStatusService:
+    identity_service = identity_service or create_identity_service()
+    audit_service = audit_service or create_audit_service()
+    permission_service = permission_service or create_permission_service(audit_service)
+    status_transition_service = status_transition_service or create_status_transition_service(audit_service, permission_service)
+    return PlayerStatusService(identity_service, status_transition_service)

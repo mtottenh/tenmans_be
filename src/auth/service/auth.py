@@ -2,16 +2,16 @@ from typing import List, Optional, Tuple, Dict
 from sqlmodel.ext.asyncio.session import AsyncSession
 import logging
 
-from audit.service import AuditService
+from audit.service import AuditService, create_audit_service
 from auth.models import Player, Role
 from auth.schemas import PlayerLogin, PlayerEmailCreate, TokenResponse, PlayerStatus,  AuthType, ScopeType
 from auth.service.identity import IdentityService, create_identity_service
-from auth.service.permission import PermissionService
-from auth.service.role import RoleService
+from auth.service.permission import PermissionService, create_permission_service
+from auth.service.role import RoleService, create_role_service
 from auth.service.status import PlayerStatusService
-from auth.service.token import TokenConfig, TokenService
+from auth.service.token import TokenConfig, TokenService, create_token_service
 from config import Config
-from status.service import StatusTransitionService
+from status.service import StatusTransitionService, create_status_transition_service
 
 LOG = logging.getLogger('uvicorn.error')
 
@@ -258,21 +258,26 @@ class AuthService:
 # Create AuthService instance
 def create_auth_service(
         identity_svc: Optional[IdentityService] = None,
-        audit_svc: Optional[AuditService] = None) -> AuthService:
+        token_service: Optional[TokenService] = None,
+        audit_svc: Optional[AuditService] = None,
+        permission_service: Optional[PermissionService] = None,
+        role_service: Optional[RoleService] = None,
+        status_transition_service: Optional[StatusTransitionService] = None,
+        player_status_service: Optional[PlayerStatusService] = None
+        
+        
+        
+        
+        ) -> AuthService:
     """Create and configure the AuthService with its dependencies"""
-    # Create token config
-    token_config = TokenConfig(
-        secret_key=Config.JWT_SECRET,
-        algorithm=Config.JWT_ALGORITHM,
-    )
-    
+
     # Create service instances
     identity_service = identity_svc or create_identity_service()
-    token_service = TokenService(token_config)
-    audit_service = audit_svc or AuditService()
-    permission_service = PermissionService(audit_service)
-    role_service = RoleService(permission_service)
-    status_transition_service = StatusTransitionService(audit_service, permission_service)
+    token_service = token_service or create_token_service()
+    audit_service = audit_svc or create_audit_service()
+    permission_service = permission_service or create_permission_service(audit_service)
+    role_service = role_service or create_role_service(permission_service)
+    status_transition_service = status_transition_service or create_status_transition_service(audit_service, permission_service)
     player_status_service = PlayerStatusService(identity_service, status_transition_service)
 
     # Create and return AuthService

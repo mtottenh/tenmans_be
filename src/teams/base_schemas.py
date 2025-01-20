@@ -10,6 +10,20 @@ class TeamStatus(StrEnum):
     SUSPENDED = "suspended"
     ARCHIVED = "archived"
 
+class RosterStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PENDING = "PENDING"
+    REMOVED = "REMOVED"
+    PAST = "PAST"
+    SUSPENDED = "SUSPENDED"
+
+class TeamCaptainStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PENDING = "PENDING"
+    REMOVED = "REMOVED"
+    TEMPORARY = "TEMPORARY"
+    DISBANDED = "DISBANDED"
+
 class RecruitmentStatus(StrEnum):
     ACTIVE = "recruiting"
     CLOSED = "closed"

@@ -3,9 +3,9 @@ from datetime import datetime
 import uuid
 from sqlmodel.ext.asyncio.session import AsyncSession
 from audit.models import AuditEvent, AuditEventType
-from audit.service import AuditService
+from audit.service import AuditService, create_audit_service
 from auth.models import Player
-from auth.service.permission import PermissionService
+from auth.service.permission import PermissionScope, PermissionService, create_permission_service
 from .transition_validator import StatusTransitionManager
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -50,6 +50,7 @@ class StatusTransitionService(Generic[T]):
         new_status: str,
         reason: str,
         actor: Player,
+        scope: Optional[PermissionScope] = None,
         entity_metadata: Optional[Dict] = None,
         session: AsyncSession = None
     ) -> T:
@@ -77,6 +78,7 @@ class StatusTransitionService(Generic[T]):
             'actor': actor,
             'reason': reason,
             'entity': entity,
+            'scope' : scope,
             'session': session,
             'permission_service': self.permission_service,
             'entity_metadata': entity_metadata,
@@ -172,3 +174,13 @@ class StatusTransitionService(Generic[T]):
         
         result = await session.execute(stmt)
         return result.scalars().all()
+
+
+def create_status_transition_service(
+        audit_service: Optional[AuditService] = None,
+        permission_service: Optional[PermissionService] = None
+
+) -> StatusTransitionService:
+    audit_service = audit_service or create_audit_service()
+    permission_service = permission_service or create_permission_service(audit_service)
+    return StatusTransitionService(audit_service, permission_service)

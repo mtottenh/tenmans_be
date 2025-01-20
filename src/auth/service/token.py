@@ -2,7 +2,7 @@ from typing import Optional, Dict
 from datetime import datetime, timedelta
 import jwt
 from auth.schemas import TokenResponse, AuthType
-
+from config import Config
 class TokenConfig:
     """Configuration for token generation and validation"""
     def __init__(
@@ -84,3 +84,12 @@ class TokenService:
             token_data['player_id'],
             AuthType(token_data['auth_type'])
         )
+    
+
+def create_token_service(config: Optional[TokenConfig] = None) -> TokenService:
+    config = config or TokenConfig(
+        secret_key=Config.JWT_SECRET,
+        algorithm=Config.JWT_ALGORITHM,
+    )
+    
+    return TokenService(config)

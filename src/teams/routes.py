@@ -106,7 +106,7 @@ async def get_team_by_id(
     return team
 
 @team_router.delete("/id/{team_id}", dependencies=[Depends(require_team_captain_by_id)])
-async def delete_team(
+async def disband_team(
     team_id: str,
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)

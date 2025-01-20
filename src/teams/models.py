@@ -7,7 +7,7 @@ import uuid
 from typing import Dict, List, Optional
 from enum import StrEnum
 from competitions.models.seasons import Season
-from teams.base_schemas import TeamStatus, RecruitmentStatus
+from teams.base_schemas import RosterStatus, TeamCaptainStatus, TeamStatus, RecruitmentStatus
 
 
 class Team(SQLModel, AsyncAttrs, table=True):
@@ -45,7 +45,7 @@ class Roster(SQLModel, AsyncAttrs, table=True):
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id"), primary_key=True))
     player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id"), primary_key=True))
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id"), primary_key=True))
-    pending: bool = Field(default=True)
+    status: RosterStatus = Field(default=RosterStatus.PENDING)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
@@ -60,6 +60,8 @@ class TeamCaptain(SQLModel, AsyncAttrs, table=True):
     
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
+
+    status: TeamCaptainStatus = Field(default=TeamCaptainStatus.ACTIVE) 
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
     team: Team = Relationship(back_populates="captains")
