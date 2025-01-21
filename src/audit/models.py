@@ -4,35 +4,9 @@ from sqlalchemy import CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON, ARRAY
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from audit.schemas import AuditEventType, AuditEventState, ScopeType
 import uuid
 
-# NB - In the database
-# Enums take the value of the LHS, so we have to be careful in 
-# Prepared statments that do things like create indexes.
-class AuditEventType(StrEnum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-    STATUS_CHANGE = "status_transition"
-    PERMISSION_CHANGE = "permission_change"
-    VERIFICATION = "verification"
-    BAN = "ban"
-    ROLE_CHANGE = "role_change"
-    BULK_OPERATION = "bulk_operation"
-    CASCADE = "cascade"
-
-class AuditEventState(StrEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    ROLLED_BACK = "rolled_back"
-
-class ScopeType(StrEnum):
-    GLOBAL = "global"
-    TEAM = "team"
-    TOURNAMENT = "tournament"
-    SEASON = "season"
 
 class AuditEvent(SQLModel, table=True):
     """Enhanced audit log model supporting cascading, bulk operations and status tracking"""
@@ -41,7 +15,7 @@ class AuditEvent(SQLModel, table=True):
     # Base audit fields
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     entity_type: str
-    entity_id: uuid.UUID
+    entity_id: Optional[uuid.UUID] = Field(nullable=True)
     action_type: AuditEventType
     actor_id: uuid.UUID = Field(foreign_key="players.id")
     timestamp: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -98,7 +72,7 @@ class AuditEvent(SQLModel, table=True):
         # Entity type constraint
         CheckConstraint(
             "entity_type IN ('Player', 'Team', 'Tournament', 'Fixture', 'Season', "
-            "'TeamJoinRequest', 'Roster', 'Result', 'MatchPlayer', 'TournamentRegistration','Ban', "
+            "'TeamJoinRequest', 'TeamCaptain', 'Roster', 'Result', 'MatchPlayer', 'TournamentRegistration','Ban', "
             "'Ticket', 'Role', 'PlayerRole', 'Permission', 'status')",
             name="valid_entity_types"
         ),

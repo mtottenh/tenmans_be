@@ -2,6 +2,7 @@ from typing import Any, Dict, Generic, List, Optional, TypeVar
 from datetime import datetime
 import uuid
 from sqlmodel.ext.asyncio.session import AsyncSession
+from audit.context import AuditContext
 from audit.models import AuditEvent, AuditEventType
 from audit.service import AuditService, create_audit_service
 from auth.models import Player
@@ -52,7 +53,8 @@ class StatusTransitionService(Generic[T]):
         actor: Player,
         scope: Optional[PermissionScope] = None,
         entity_metadata: Optional[Dict] = None,
-        session: AsyncSession = None
+        session: AsyncSession = None,
+        audit_context: Optional[AuditContext] = None
     ) -> T:
         """
         Transition an entity's status with validation and history tracking
@@ -111,9 +113,6 @@ class StatusTransitionService(Generic[T]):
         
         # Update entity
         entity.status = new_status_enum
-        entity.status_change_reason = reason
-        entity.status_changed_at = datetime.now()
-        entity.status_changed_by = actor.id
         
         session.add(entity)
         return entity

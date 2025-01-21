@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from datetime import datetime
 from enum import StrEnum
 import uuid
+from teams.models import Team
 from typing import List, Optional
 
 class BanScope(StrEnum):
@@ -55,7 +56,7 @@ class Ban(SQLModel, AsyncAttrs, table=True):
         back_populates="bans",
         sa_relationship_kwargs={"primaryjoin": "Ban.player_id == Player.id"}
     )
-    team: Optional["Team"] = Relationship(back_populates="bans")
+    team: Optional[Team] = Relationship(back_populates="bans")
     admin: "Player" = Relationship(
         back_populates="issued_bans",
         sa_relationship_kwargs={"foreign_keys": "Ban.issued_by"}

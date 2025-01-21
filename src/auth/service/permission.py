@@ -1,8 +1,9 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
 from datetime import datetime
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from auth.models import Player, Role, Permission, PlayerRole, RolePermission
 from auth.schemas import ScopeType
@@ -29,7 +30,7 @@ class PermissionService:
     def __init__(self, audit_service: Optional[AuditService] = None):
         self.audit_service = audit_service or AuditService()
 
-    def _permission_audit_details(self, permission: Permission) -> dict:
+    def _permission_audit_details(self, permission: Permission, context: Dict) -> dict:
         """Extract audit details from a permission operation"""
         return {
             "permission_id": str(permission.id),
@@ -66,7 +67,8 @@ class PermissionService:
         name: str,
         description: str,
         actor: Any,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Permission:
         """Create a new permission"""
         existing = await self.get_permission_by_name(name, session)
@@ -81,7 +83,7 @@ class PermissionService:
         session.add(permission)
         return permission
 
-    @AuditService.audited_deletion(
+    @AuditService.audited_transaction(
         action_type=AuditEventType.DELETE,
         entity_type="Permission",
         details_extractor=_permission_audit_details
@@ -90,7 +92,8 @@ class PermissionService:
         self,
         permission_id: uuid.UUID,
         actor: Any,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Permission:
         """Delete a permission"""
         permission = await self.get_permission(permission_id, session)

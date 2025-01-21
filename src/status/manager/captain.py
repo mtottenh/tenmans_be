@@ -36,7 +36,13 @@ class TeamPermissionValidator(TransitionValidator):
         session = context["session"]
         team = context["entity"].team
 
-        # Allow if actor has global admin permissions for team management
+        # Special case: Initial captain creation
+        if (current_status == TeamCaptainStatus.PENDING and 
+            new_status == TeamCaptainStatus.ACTIVE and
+            context.get("is_initial_captain")):
+            return True
+
+        # Regular permission checks...
         has_admin = await permission_service.verify_permissions(
             actor,
             ["manage_teams"],
@@ -46,7 +52,6 @@ class TeamPermissionValidator(TransitionValidator):
         if has_admin:
             return True
 
-        # Check if actor is team captain
         is_captain = await permission_service.verify_permissions(
             actor,
             ["manage_team"],
@@ -57,7 +62,6 @@ class TeamPermissionValidator(TransitionValidator):
             raise TransitionError("Only team captains can modify captain status")
 
         return True
-
 def initialize_captain_status_manager() -> StatusTransitionManager:
     """Initialize the captain status transition manager with rules"""
     manager = StatusTransitionManager(
@@ -78,7 +82,6 @@ def initialize_captain_status_manager() -> StatusTransitionManager:
         from_status={TeamCaptainStatus.ACTIVE},
         to_status={TeamCaptainStatus.REMOVED},
         validators=common_validators,
-        required_permissions=["manage_team"]
     ))
 
     # Active -> Temporary (temporary handoff of duties)
@@ -86,7 +89,6 @@ def initialize_captain_status_manager() -> StatusTransitionManager:
         from_status={TeamCaptainStatus.ACTIVE},
         to_status={TeamCaptainStatus.TEMPORARY},
         validators=common_validators,
-        required_permissions=["manage_team"]  
     ))
 
     # Temporary -> Active (resume duties)
@@ -94,7 +96,6 @@ def initialize_captain_status_manager() -> StatusTransitionManager:
         from_status={TeamCaptainStatus.TEMPORARY},
         to_status={TeamCaptainStatus.ACTIVE},
         validators=common_validators,
-        required_permissions=["manage_team"]
     ))
 
     # Pending -> Active (accept captaincy)
@@ -102,23 +103,20 @@ def initialize_captain_status_manager() -> StatusTransitionManager:
         from_status={TeamCaptainStatus.PENDING},
         to_status={TeamCaptainStatus.ACTIVE},
         validators=common_validators,
-        required_permissions=["manage_team"]
     ))
 
     # Pending -> Disbanded (team disbanded while pending)
     manager.add_rule(StatusTransitionRule(
         from_status={TeamCaptainStatus.PENDING},
         to_status={TeamCaptainStatus.DISBANDED},
-        validators=[HasValidReasonValidator()],
-        required_permissions=["manage_team"]
+        validators=common_validators,
     ))
 
     # Any -> Disbanded (when team is disbanded)
     manager.add_rule(StatusTransitionRule(
         from_status=None,  # Can transition from any status
         to_status={TeamCaptainStatus.DISBANDED},
-        validators=[HasValidReasonValidator()],
-        required_permissions=["manage_team"]
+        validators=common_validators,
     ))
 
     return manager

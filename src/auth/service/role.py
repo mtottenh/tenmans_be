@@ -1,9 +1,10 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 import uuid
 from datetime import datetime
 
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from auth.models import Player, PlayerRole, Role
 from audit.service import AuditService
@@ -18,7 +19,7 @@ class RoleService:
     def __init__(self, permission_service: PermissionService):
         self.permission_service = permission_service
 
-    def _role_audit_details(self, role: Role) -> dict:
+    def _role_audit_details(self, role: Role, context: Dict) -> dict:
         """Extract audit details from a role operation"""
         return {
             "role_id": str(role.id),
@@ -26,7 +27,7 @@ class RoleService:
             "created_at": role.created_at.isoformat() if role.created_at else None
         }
     
-    def _player_role_audit_details(self, role: PlayerRole) -> dict:
+    def _player_role_audit_details(self, role: PlayerRole,  context: Dict) -> dict:
         return {
             "role_id": str(role.role_id),
             "scope_id": str(role.scope_id),
@@ -65,7 +66,12 @@ class RoleService:
         entity_type='Role',
         details_extractor=_role_audit_details
     )
-    async def create_role(self, name: str, permission_ids: List[uuid.UUID], actor, session: AsyncSession) -> Role:
+    async def create_role(self, name: str, 
+                          permission_ids: List[uuid.UUID], 
+                          actor, 
+                          session: AsyncSession,
+                          audit_context: Optional[AuditContext] = None
+                          ) -> Role:
         """Create a new role with permissions"""
         # Check if role already exists
         existing_role = await self.get_role_by_name(name, session)
@@ -96,7 +102,8 @@ class RoleService:
         role_id: uuid.UUID,
         permission_ids: List[uuid.UUID],
         actor: Any,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Role:
         """Update a role's permissions"""
         role = await self.get_role(role_id, session)
@@ -116,7 +123,7 @@ class RoleService:
         session.add(role)
         return role
 
-    @AuditService.audited_deletion(
+    @AuditService.audited_transaction(
         action_type=AuditEventType.DELETE,
         entity_type="Role",
         details_extractor=_role_audit_details
@@ -125,7 +132,8 @@ class RoleService:
         self,
         role_id: uuid.UUID,
         actor: Any,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Role:
         """Delete a role"""
         role = await self.get_role(role_id, session)
@@ -188,7 +196,8 @@ class RoleService:
         scope_type: ScopeType,
         scope_id: Optional[uuid.UUID],
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> PlayerRole:
         """Assign a role to a player"""
         if scope_type != ScopeType.GLOBAL and scope_id is None:
@@ -206,13 +215,13 @@ class RoleService:
         await session.refresh(player_role)
         return player_role
 
-    @AuditService.audited_deletion(
+    @AuditService.audited_transaction(
         action_type=AuditEventType.DELETE,
         entity_type="PlayerRole",
         details_extractor=_player_role_audit_details,
         id_extractor=_id_extractor_player_role
     )
-    async def delete_player_role(self, player_role: PlayerRole, actor: Player, session: AsyncSession):
+    async def delete_player_role(self, player_role: PlayerRole, actor: Player, session: AsyncSession, audit_context: Optional[AuditContext] = None):
                return await session.delete(player_role)
 
     async def remove_role_from_player(

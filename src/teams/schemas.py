@@ -1,14 +1,14 @@
 from pydantic import BaseModel, UUID4, ConfigDict, Field, computed_field
 from typing import List, Optional
 from datetime import datetime
-from teams.base_schemas import TeamBase, TeamHistory
+from teams.base_schemas import RosterStatus, TeamBase, TeamCaptainStatus, TeamHistory
 from auth.schemas import PlayerPublic
 
 
 # Response Schemas
 class RosterMember(BaseModel):
     player: PlayerPublic
-    pending: bool
+    status: RosterStatus
     created_at: datetime
     updated_at: datetime
     season_id: UUID4
@@ -17,6 +17,7 @@ class RosterMember(BaseModel):
 class TeamCaptainInfo(BaseModel):
     id: UUID4
     player: PlayerPublic
+    status: TeamCaptainStatus
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -29,7 +30,7 @@ class TeamDetailed(TeamBase):
     @computed_field
     @property
     def active_roster_count(self) ->int:
-        return len([x for x in self.rosters if not x.pending])
+        return len([x for x in self.rosters if  x.status == RosterStatus.ACTIVE])
     
 class PlayerRosterHistory(BaseModel):
     current: Optional[TeamHistory]

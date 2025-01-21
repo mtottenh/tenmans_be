@@ -5,6 +5,7 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from competitions.base_schemas import FixtureStatus
 from competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
@@ -43,7 +44,7 @@ class TournamentService:
         self.match_service = match_service or MatchService()
         self.validator = validator or TournamentValidator()
 
-    def _tournament_audit_details(self, tournament: Tournament) -> dict:
+    def _tournament_audit_details(self, tournament: Tournament,  context: Dict) -> dict:
         """Extracts audit details from a tournament operation"""
         return {
             "tournament_id": str(tournament.id),
@@ -127,7 +128,8 @@ class TournamentService:
         self,
         tournament_data: TournamentCreate,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Create a new tournament"""
         try:
@@ -157,7 +159,8 @@ class TournamentService:
         tournament: Tournament,
         update_data: TournamentUpdate,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Update tournament details"""
         if tournament.state != TournamentState.NOT_STARTED:
@@ -193,7 +196,8 @@ class TournamentService:
         self,
         tournament_id: uuid.UUID,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Generate tournament structure including rounds and fixtures"""
         tournament = await self.get_tournament(tournament_id, session)
@@ -259,7 +263,8 @@ class TournamentService:
         self,
         tournament: Tournament,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Marks a tournament as completed"""
         if tournament.state != TournamentState.IN_PROGRESS:
@@ -284,7 +289,8 @@ class TournamentService:
         self,
         tournament: Tournament,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Cancels a tournament"""
         if tournament.state == TournamentState.COMPLETED:
@@ -403,7 +409,8 @@ class TournamentService:
         self,
         registration: TournamentRegistrationRequest,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> TournamentRegistration:
         """Request registration in a tournament"""
         # Get tournament and team
@@ -451,7 +458,8 @@ class TournamentService:
         registration_id: uuid.UUID,
         review: RegistrationReviewRequest,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> TournamentRegistration:
         """Review a tournament registration request"""
         registration = await self.get_registration(
@@ -485,7 +493,8 @@ class TournamentService:
         registration_id: uuid.UUID,
         withdrawal: RegistrationWithdrawRequest,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> TournamentRegistration:
         """Withdraw from a tournament"""
         registration = await self.get_registration(
@@ -611,7 +620,8 @@ class TournamentService:
         self,
         tournament_id: uuid.UUID,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Start a tournament"""
         tournament = await self.get_tournament(tournament_id, session)
@@ -670,16 +680,21 @@ class TournamentService:
             
         return winners
 
-    # TODO - This should be audited.
+    @AuditService.audited_transaction(
+            action_type=AuditEventType.UPDATE,
+            entity_type='Tournament',
+            details_extractor=_tournament_audit_details
+
+    )
     async def complete_round(
         self,
-        tournament_id: uuid.UUID,
+        tournament: Tournament,
         round_number: int,
         actor: Player,
         session: AsyncSession
     ) -> Tournament:
         """Complete a tournament round and progress to next if available"""
-        tournament = await self.get_tournament(tournament_id, session)
+        tournament = await self.get_tournament(tournament.id, session)
         if not tournament:
             raise TournamentServiceError("Tournament not found")
 

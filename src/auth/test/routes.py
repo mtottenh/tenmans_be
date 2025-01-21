@@ -17,7 +17,14 @@ async def register_test_user(
 ):
     """Register a test user with email/password"""
     try:
-        player, tokens = await auth_service.create_player(user_data, session)
+        system_user = await auth_service.get_player_by_name("SYSTEM", session)
+        if not system_user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Unable to register new players. SYSTEM user not yet created"
+            )
+        player = await auth_service.create_player(user_data, actor=system_user, session=session)
+        tokens = auth_service.create_auth_tokens(player.id, player.auth_type)
         state_id = await state_service.store_state(
             StateType.AUTH,
             tokens,

@@ -4,6 +4,7 @@ from sqlmodel import select, desc
 from datetime import datetime
 import uuid
 
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from competitions.models.fixtures import Fixture, FixtureStatus
 from matches.models import Result, MatchPlayer, ConfirmationStatus
@@ -31,7 +32,7 @@ class MatchService:
         self.audit_service = audit_service or AuditService()
         self.fixture_service = fixture_service or FixtureService(audit_service, None)
 
-    def _result_audit_details(self, result: Result) -> dict:
+    def _result_audit_details(self, result: Result,  context: Dict) -> dict:
         """Extract audit details from a result operation"""
         return {
             "result_id": str(result.id),
@@ -73,7 +74,8 @@ class MatchService:
         fixture_id: uuid.UUID,
         result_data: ResultCreate,
         submitting_player: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Result:
         """Submit a match result"""
         # Get fixture and validate state
@@ -121,7 +123,8 @@ class MatchService:
         self,
         result_id: uuid.UUID,
         confirming_player: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Result:
         """Confirm a match result"""
         result = await session.get(Result, result_id)
@@ -149,7 +152,7 @@ class MatchService:
 
         # Complete fixture if all maps are confirmed
         if await self._check_all_maps_confirmed(fixture.id, session):
-            await self.fixture_service.complete_fixture(fixture, confirming_player, session)
+            await self.fixture_service.complete_fixture(fixture, confirming_player, session, audit_context)
 
         return result
 
@@ -163,7 +166,8 @@ class MatchService:
         result_id: uuid.UUID,
         dispute_data: ResultDispute,
         disputing_player: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Result:
         """Dispute a match result"""
         result = await session.get(Result, result_id)
@@ -201,7 +205,8 @@ class MatchService:
         result_id: uuid.UUID,
         override_data: AdminResultOverride,
         admin: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Result:
         """Admin override of a match result"""
         result = await session.get(Result, result_id)
@@ -223,7 +228,7 @@ class MatchService:
         # Complete fixture if all maps are confirmed
         fixture = await self.fixture_service.get_fixture(result.fixture_id, session)
         if await self._check_all_maps_confirmed(fixture.id, session):
-            await self.fixture_service.complete_fixture(fixture, admin, session)
+            await self.fixture_service.complete_fixture(fixture, admin, session, audit_context)
 
         return result
 
@@ -249,7 +254,8 @@ class MatchService:
         fixture_id: uuid.UUID,
         player_data: MatchPlayerAdd,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> MatchPlayer:
         """Add a player to a match"""
         fixture = await self.fixture_service.get_fixture(fixture_id, session)

@@ -1,11 +1,13 @@
 
 from typing import Dict, List, Optional, Tuple
+from sqlalchemy import func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
 from sqlalchemy.orm import selectinload
 import uuid
 from datetime import datetime
 
+from audit.context import AuditContext
 from auth.service.permission import PermissionService
 from competitions.models.tournaments import RegistrationStatus, TournamentRegistration
 from competitions.season.service import SeasonService
@@ -13,7 +15,7 @@ from status.manager.team import initialize_team_status_manager
 from status.service import StatusTransitionService
 from teams.models import Team, TeamCaptain, Roster, TeamStatus
 from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
-from teams.base_schemas import TeamUpdate
+from teams.base_schemas import RosterStatus, TeamUpdate
 from auth.models import Player, Role
 from audit.service import AuditService, AuditEventType
 from teams.service.captain import CaptainService
@@ -46,7 +48,7 @@ class TeamService:
         self.status_transition_service.register_transition_manager("Team", team_status_manager)
 
     # Audit detail extractors
-    def _team_audit_details(self, team: Team) -> dict:
+    def _team_audit_details(self, team: Team,  context: Optional[Dict] = None) -> dict:
         """Extracts audit details from a team operation"""
         return {
             "team_id": str(team.id),
@@ -308,16 +310,10 @@ class TeamService:
             roster = team.rosters
             captains = team.captains
             
-            # Count active roster members for current season
-            active_roster = [r for r in roster if not r.pending and 
-                            (not season or r.season_id == season.id)]
-            active_roster_count = len(active_roster)
-            
             detailed_teams.append(TeamDetailed(
                 id=team.id,
                 name=team.name,
                 logo=team.logo,
-                #active_roster_count=active_roster_count,
                 created_at=team.created_at,
                 updated_at=team.updated_at,
                 recruitment_status=team.recruitment_status,
@@ -331,11 +327,10 @@ class TeamService:
         """Checks if a team exists by name"""
         team = await self.get_team_by_name(name, session)
         return team is not None
-
     @AuditService.audited_transaction(
-        action_type=AuditEventType.CREATE,
-        entity_type="Team",
-        details_extractor=_team_audit_details
+            action_type=AuditEventType.CREATE,
+            entity_type='Team',
+            details_extractor=_team_audit_details
     )
     async def create_team(
         self,
@@ -343,10 +338,9 @@ class TeamService:
         captain: Player,
         actor: Player,
         logo_path: Optional[str],
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Team:
-        """Creates a new team and assigns initial captain"""
-        # Create the team
         new_team = Team(
             name=name,
             logo=logo_path,
@@ -354,24 +348,34 @@ class TeamService:
             updated_at=datetime.now()
         )
         session.add(new_team)
-        await session.flush()  # Get ID before creating captain
+        await session.flush()
         await session.refresh(new_team)
-        team_captain = await self.captain_service._create_captain_internal(new_team, captain, session)
-
-        await session.flush()
+        
         cur_season = await self.season_service.get_active_season(session)
+        team_captain = await self.captain_service.create_captain(new_team,
+                                                                    captain,
+                                                                    actor=captain,
+                                                                    session=session,
+                                                                    auto_activate=True,
+                                                                    is_initial_captain=True,
+                                                                    audit_context=audit_context)
 
-        # TODO - use self.roster_service._add_to_roster_internal?
-        initial_roster_entry = Roster(
-            team_id=new_team.id,
-            player_id=captain.id,
-            season_id=cur_season.id,
-            pending=False
+        await session.refresh(new_team)
+        await session.refresh(captain)
+        await session.refresh(cur_season)
 
+
+        await self.roster_service.add_player_to_roster(
+            team=new_team,
+            player=captain,
+            season=cur_season,
+            actor=captain,
+            session=session,
+            details={'reason' : "Initial team creation"},
+            audit_context=audit_context
         )
-        session.add(initial_roster_entry)
+
         await session.flush()
-        await session.refresh(initial_roster_entry)
         await session.refresh(team_captain)
         await session.refresh(actor)
         await session.refresh(new_team)
@@ -388,7 +392,8 @@ class TeamService:
         update_data: TeamUpdate,
         actor: Player,
         logo_path: Optional[str],
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Team:
         """Updates team details"""
         update_dict = update_data.model_dump(exclude_unset=True)
@@ -411,7 +416,7 @@ class TeamService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        entity_metadata: Optional[Dict] = None,
+        entity_metadata: Optional[Dict] = None
     ) -> Team:
         """
         Change a team's status with validation and history tracking
@@ -517,9 +522,14 @@ class TeamService:
     async def remove_player_from_team_roster(self, *args, **kwargs):
         return await self.roster_service.remove_player_from_team_roster(*args, **kwargs)
     
+    async def get_teams_for_player_by_player_id(self, *args, **kwargs):
+        return await self.roster_service.get_teams_for_player_by_player_id(*args, **kwargs)
 
     # CaptainService Delegations
-
+    async def get_team_captains_by_team_id(self, *args, **kwargs):
+        return await self.captain_service.get_team_captains_by_team_id(*args, **kwargs)
+    async def player_is_team_captain(self, *args, **kwargs):
+        return await self.captain_service.player_is_team_captain(*args, **kwargs)
 
 # Factory method
 def create_team_service(audit_service: Optional[AuditService], 

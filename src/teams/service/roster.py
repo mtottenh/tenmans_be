@@ -1,11 +1,13 @@
 
 from typing import Dict, List, Optional
+from sqlalchemy import func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.functions import count
 import uuid
 from datetime import datetime
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from auth.schemas import ScopeType
 from auth.service.permission import PermissionService
@@ -14,7 +16,7 @@ from status.manager.roster import initialize_roster_status_manager
 from status.service import StatusTransitionService, create_status_transition_service
 from teams.base_schemas import RosterStatus, TeamHistory, TeamStatus
 from teams.models import Team, Roster
-from auth.models import Player
+from auth.models import Player, Role
 from competitions.models.seasons import Season
 from audit.service import AuditService, create_audit_service
 from teams.schemas import PlayerRosterHistory
@@ -39,7 +41,7 @@ class RosterService:
         roster_manager = initialize_roster_status_manager()
         self.status_transition_service.register_transition_manager("Roster", roster_manager)
 
-    def _roster_audit_details(self, roster: Roster, details: Optional[Dict] = None) -> Dict:
+    def _roster_audit_details(self, roster: Roster,  context: Dict) -> Dict:
         """Extract audit details from a roster operation"""
         audit_data = {
             "team_id": str(roster.team_id),
@@ -48,8 +50,8 @@ class RosterService:
             "timestamp": datetime.now().isoformat(),
             "status": roster.status
         }
-        if details:
-            audit_data.update(details)
+        # if details:
+        #     audit_data.update(details)
         return audit_data
 
     def _roster_id_gen(self, roster: Roster) -> uuid.UUID:
@@ -259,7 +261,8 @@ class RosterService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        audit_context: Optional[AuditContext] = None
     ) -> Roster:
         """Change a roster entry's status with validation and history tracking"""
         try:
@@ -277,7 +280,8 @@ class RosterService:
                 actor=actor,
                 scope=scope,
                 entity_metadata=metadata,
-                session=session
+                session=session,
+                audit_context=audit_context
             )
             
             return updated_roster
@@ -297,7 +301,8 @@ class RosterService:
         season: Season,
         actor: Player,
         session: AsyncSession,
-        details: Optional[Dict] = None
+        details: Optional[Dict] = None,
+        audit_context: Optional[AuditContext] = None
     ) -> Roster:
         """Add a player to team roster"""
         # Check if player is already on a team this season
@@ -310,7 +315,6 @@ class RosterService:
             team_id=team.id,
             player_id=player.id,
             season_id=season.id,
-            pending=False,
             status=RosterStatus.ACTIVE  # New players are added as active
         )
         
@@ -330,8 +334,10 @@ class RosterService:
             reason="Initial roster addition",
             actor=actor,
             session=session,
-            metadata=metadata
+            metadata=metadata,
+            audit_context=audit_context
         )
+        await session.refresh(roster_entry)
         
         return roster_entry
 
@@ -342,7 +348,8 @@ class RosterService:
         season_id: str,
         actor: Player,
         session: AsyncSession,
-        reason: str = "Removed from roster"
+        reason: str = "Removed from roster",
+        audit_context: Optional[AuditContext] = None
     ) -> None:
         """Remove a player from team roster"""
         roster_entry = await self._get_player_roster(
@@ -362,7 +369,8 @@ class RosterService:
             reason=reason,
             actor=actor,
             session=session,
-            metadata={"action": "roster_remove"}
+            metadata={"action": "roster_remove"},
+            audit_context=audit_context
         )
 
     async def suspend_roster_member(
@@ -371,7 +379,8 @@ class RosterService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        audit_context: Optional[AuditContext] = None
     ) -> Roster:
         """Suspend a roster member"""
         return await self.change_roster_status(
@@ -380,7 +389,8 @@ class RosterService:
             reason=reason,
             actor=actor,
             session=session,
-            metadata={"action": "roster_suspend", **(metadata or {})}
+            metadata={"action": "roster_suspend", **(metadata or {})},
+            audit_context=audit_context
         )
 
     async def reactivate_roster_member(
@@ -389,7 +399,8 @@ class RosterService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        audit_context: Optional[AuditContext] = None
     ) -> Roster:
         """Reactivate a suspended roster member"""
         return await self.change_roster_status(
@@ -398,7 +409,8 @@ class RosterService:
             reason=reason,
             actor=actor,
             session=session,
-            metadata={"action": "roster_reactivate", **(metadata or {})}
+            metadata={"action": "roster_reactivate", **(metadata or {})},
+            audit_context=audit_context
         )
 
     async def get_roster_status_history(

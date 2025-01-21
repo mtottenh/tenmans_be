@@ -36,7 +36,7 @@ async def get_all_teams(
     """Get all teams with detailed information."""
     return await team_service.get_all_teams_with_details(session)
 
-@team_router.get("/player/{player_id}", response_model=PlayerRosterHistory)
+@team_router.get("/players/id/{player_id}", response_model=PlayerRosterHistory)
 async def get_all_teams(
     player_id: str,
     session: AsyncSession = Depends(get_session),

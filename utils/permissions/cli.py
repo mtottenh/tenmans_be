@@ -1,9 +1,15 @@
+#!/usr/bin/env python3
+
 import asyncio
+import click
 import logging
 from pathlib import Path
 from typing import Optional
 import click
+import sys
+import os
 
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src'))
 from db.main import get_session
 from manager import PermissionManager
 from auditor import PermissionAuditor

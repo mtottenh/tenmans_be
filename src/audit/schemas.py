@@ -1,6 +1,38 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, UUID4, ConfigDict
+from typing import Dict, Any
 from datetime import datetime
+from enum import StrEnum
+
+
+
+# NB - In the database
+# Enums take the value of the LHS, so we have to be careful in 
+# Prepared statments that do things like create indexes.
+class AuditEventType(StrEnum):
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+    STATUS_CHANGE = "status_transition"
+    PERMISSION_CHANGE = "permission_change"
+    VERIFICATION = "verification"
+    BAN = "ban"
+    ROLE_CHANGE = "role_change"
+    BULK_OPERATION = "bulk_operation"
+    CASCADE = "cascade"
+
+class AuditEventState(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ROLLED_BACK = "rolled_back"
+
+class ScopeType(StrEnum):
+    GLOBAL = "global"
+    TEAM = "team"
+    TOURNAMENT = "tournament"
+    SEASON = "season"
+
 
 # Audit Schemas
 class AuditLogCreate(BaseModel):

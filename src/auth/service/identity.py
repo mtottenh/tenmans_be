@@ -4,6 +4,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload
 import httpx
 import logging
+from audit.context import AuditContext
+from audit.schemas import AuditEventType
+from audit.service import AuditService
 from auth.models import Player, Role
 from teams.models import Roster
 from teams.base_schemas import TeamBase
@@ -103,10 +106,16 @@ class IdentityService:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+    @AuditService.audited_transaction(
+            action_type=AuditEventType.CREATE,
+            entity_type='Player'
+    )
     async def create_player_with_email(
         self,
         player_data: PlayerEmailCreate,
-        session: AsyncSession
+        actor: Player,
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Player:
         if await self.get_player_by_email(player_data.email, session):
             raise ValueError("Player with this email already exists")
@@ -127,7 +136,16 @@ class IdentityService:
         await session.refresh(player)
         return player
 
-    async def create_player_with_steam(self, steam_id: str, session: AsyncSession) -> Player:
+    @AuditService.audited_transaction(
+            action_type=AuditEventType.CREATE,
+            entity_type='Player'
+    )
+    async def create_player_with_steam(self,
+                                       steam_id: str, 
+                                       actor: Player,
+                                       session: AsyncSession,
+                                       audit_context: Optional[AuditContext] = None
+                                       ) -> Player:
         player_name = await self._fetch_steam_player_name(steam_id)
         
         player = Player(

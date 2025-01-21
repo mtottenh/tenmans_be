@@ -1,9 +1,10 @@
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc, or_
 from datetime import datetime, timedelta
 import uuid
 
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from competitions.models.tournaments import Tournament, TournamentState
 from competitions.models.fixtures import Fixture, FixtureStatus
@@ -33,7 +34,7 @@ class FixtureService:
         self.audit_service = audit_service or create_audit_service()
         self.round_service = round_service or create_round_service(audit_service)
 
-    def _fixture_audit_details(self, fixture: Fixture) -> dict:
+    def _fixture_audit_details(self, fixture: Fixture,  context: Dict) -> dict:
         """Extract audit details from a fixture operation"""
         return {
             "fixture_id": str(fixture.id),
@@ -113,7 +114,8 @@ class FixtureService:
         self,
         fixture_data: FixtureCreate,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Fixture:
         """Create a new fixture"""
         # Validate tournament state
@@ -161,7 +163,8 @@ class FixtureService:
         fixture: Fixture,
         update_data: FixtureUpdate,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Fixture:
         """Update fixture details"""
         if fixture.status in [FixtureStatus.COMPLETED, FixtureStatus.CANCELLED]:
@@ -194,7 +197,8 @@ class FixtureService:
         fixture: Fixture,
         reschedule_data: FixtureReschedule,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Fixture:
         """Reschedule a fixture"""
         if fixture.status in [FixtureStatus.COMPLETED, FixtureStatus.CANCELLED]:
@@ -227,7 +231,8 @@ class FixtureService:
         fixture: Fixture,
         forfeit_data: FixtureForfeit,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Fixture:
         """Mark a fixture as forfeited"""
         if fixture.status == FixtureStatus.COMPLETED:
@@ -246,7 +251,7 @@ class FixtureService:
         # Check if round can be completed
         round = await self.round_service.get_round(fixture.round_id, session)
         if round and await self._check_round_completion(round, session):
-            await self.round_service.complete_round(round, actor, session)
+            await self.round_service.complete_round(round, actor, session, audit_context)
 
         return fixture
 
@@ -259,7 +264,8 @@ class FixtureService:
         self,
         fixture: Fixture,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Fixture:
         """Mark a fixture as completed"""
         if fixture.status != FixtureStatus.IN_PROGRESS:
@@ -272,7 +278,7 @@ class FixtureService:
         # Check if round can be completed
         round = await self.round_service.get_round(fixture.round_id, session)
         if round and await self._check_round_completion(round, session):
-            await self.round_service.complete_round(round, actor, session)
+            await self.round_service.complete_round(round, actor, session, audit_context)
 
         return fixture
 
@@ -313,7 +319,8 @@ class FixtureService:
         self,
         player_data: MatchPlayerCreate,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> MatchPlayer:
         """Add a player to a match"""
         fixture = await self.get_fixture(player_data.fixture_id, session)

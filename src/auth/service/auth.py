@@ -2,6 +2,8 @@ from typing import List, Optional, Tuple, Dict
 from sqlmodel.ext.asyncio.session import AsyncSession
 import logging
 
+from audit.context import AuditContext
+from audit.schemas import AuditEventType
 from audit.service import AuditService, create_audit_service
 from auth.models import Player, Role
 from auth.schemas import PlayerLogin, PlayerEmailCreate, TokenResponse, PlayerStatus,  AuthType, ScopeType
@@ -53,17 +55,26 @@ class AuthService:
             
         tokens = self.token_service.create_auth_tokens(str(player.id), player.auth_type)
         return player, tokens
-
+    
+    # TODO - Add details extractor?
+    @AuditService.audited_transaction(
+            action_type=AuditEventType.CREATE,
+            entity_type='Player',
+    )
     async def create_player(
         self,
         player_data: PlayerEmailCreate,
-        session: AsyncSession
-    ) -> Tuple[Player, TokenResponse]:
+        actor: Player,
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
+    ) -> Player:
         """Create a new player account with email"""
         # Create player
         player = await self.identity_service.create_player_with_email(
             player_data,
-            session
+            actor=actor,
+            session=session,
+            audit_context=audit_context
         )
         
         # Assign default role
@@ -77,27 +88,31 @@ class AuthService:
             scope_type=ScopeType.GLOBAL,
             scope_id=None,
             actor=player,  # Self-registration
-            session=session
+            session=session,
+            audit_context=audit_context
         )
         await session.refresh(player)
-        # Create auth tokens
-        tokens = self.token_service.create_auth_tokens(
-            str(player.id),
-            player.auth_type
-        )
         
-        return player, tokens
-
+        return player
+    
+    @AuditService.audited_transaction(
+            action_type=AuditEventType.CREATE,
+            entity_type='Player',
+    )
     async def create_steam_player(
         self,
         steam_id: str,
-        session: AsyncSession
-    ) -> Tuple[Player, TokenResponse]:
+        actor: Player,
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
+    ) -> Player:
         """Create a new player account with Steam"""
         # Create player
         player = await self.identity_service.create_player_with_steam(
             steam_id,
-            session
+            actor=actor,
+            session=session,
+            audit_context=audit_context
         )
         
         # Assign default role
@@ -111,16 +126,12 @@ class AuthService:
             scope_type=ScopeType.GLOBAL,
             scope_id=None,
             actor=player,  # Self-registration
-            session=session
+            session=session,
+            audit_context=audit_context
         )
         await session.refresh(player)
-        # Create auth tokens
-        tokens = self.token_service.create_auth_tokens(
-            str(player.id),
-            player.auth_type
-        )
         
-        return player, tokens
+        return player
 
     async def refresh_auth_tokens(
         self,

@@ -42,7 +42,7 @@ class TeamJoinRequestService:
         self.status_transition_service.register_transition_manager("TeamJoinRequest", join_request_manager)
 
 
-    def _join_request_audit_details(self, request: TeamJoinRequest) -> Dict:
+    def _join_request_audit_details(self, request: TeamJoinRequest,  context: Dict) -> Dict:
         """Extract audit details from a join request operation"""
         return {
             "request_id": str(request.id),

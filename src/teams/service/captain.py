@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 
 
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from audit.service import AuditService, create_audit_service
 from auth.models import Player, Role
@@ -38,7 +39,7 @@ class CaptainService:
         self.status_transition_service.register_transition_manager("TeamCaptain", captain_manager)
 
 
-    def _captain_audit_details(self, captain: TeamCaptain) -> dict:
+    def _captain_audit_details(self, captain: TeamCaptain,  context: Dict) -> dict:
         """Extracts audit details from a captain operation"""
         return {
             "team_id": str(captain.team_id),
@@ -78,7 +79,9 @@ class CaptainService:
         player: Player,
         actor: Player,
         session: AsyncSession,
-        auto_activate: bool = True
+        auto_activate: bool = True,
+        is_initial_captain: bool = False,
+        audit_context: Optional[AuditContext] = None
     ) -> TeamCaptain:
         """Adds a new captain to a team"""
         new_captain = await self._create_captain_internal(team, player, session)
@@ -91,7 +94,9 @@ class CaptainService:
                 new_status=TeamCaptainStatus.ACTIVE,
                 reason="Initial captain activation",
                 actor=actor,
-                session=session
+                session=session,
+                metadata={"is_initial_captain": is_initial_captain},
+                audit_context=audit_context
             )
 
         return new_captain
@@ -103,7 +108,8 @@ class CaptainService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        audit_context: Optional[AuditContext] = None
     ) -> TeamCaptain:
         """Change a captain's status using the transition service"""
         return await self.status_transition_service.transition_status(
@@ -112,7 +118,8 @@ class CaptainService:
             reason=reason,
             actor=actor,
             entity_metadata=metadata,
-            session=session
+            session=session,
+            audit_context=audit_context
         )
 
     async def get_captain(self, team: Team, player: Player, session: AsyncSession):
@@ -150,7 +157,8 @@ class CaptainService:
         captain: TeamCaptain,
         actor: Player,
         session: AsyncSession,
-        reason: str = "Captain removed"
+        reason: str = "Captain removed",
+        audit_context: Optional[AuditContext] = None
     ) -> TeamCaptain:
         """Removes a player as team captain"""
         return await self.change_captain_status(
@@ -158,7 +166,8 @@ class CaptainService:
             new_status=TeamCaptainStatus.REMOVED,
             reason=reason,
             actor=actor,
-            session=session
+            session=session,
+            audit_context=audit_context
         )
 
     async def get_team_captains(

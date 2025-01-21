@@ -38,8 +38,14 @@ def get_openid_consumer():
     return Consumer({}, None)
 
 @auth_router.get("/login/steam")
-async def login_with_steam(request: Request):
+async def login_with_steam(request: Request, session: AsyncSession = Depends(get_session)):
     """Initialize Steam OpenID login flow"""
+    system_user = await auth_service.get_player_by_name("SYSTEM", session)
+    if not system_user:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to register/login players. SYSTEM user not yet created"
+        )
     # Initialize OpenID consumer
     oidconsumer = get_openid_consumer()
     
@@ -83,9 +89,10 @@ async def steam_callback(
         tokens = None
         if not player:
             LOG.info("Creating new player")
-            (player, tokens) = await auth_service.create_steam_player(steam_id, session)
-        else:
-            tokens = auth_service.create_auth_tokens(player.id, player.auth_type)
+            system_user = await auth_service.get_player_by_name("SYSTEM", session)
+            player = await auth_service.create_steam_player(steam_id, system_user, session)
+
+        tokens = auth_service.create_auth_tokens(player.id, player.auth_type)
         # Store tokens in state service
         state_id = await state_service.store_state(
             StateType.AUTH,
@@ -123,6 +130,7 @@ async def exchange_state(
     return tokens
 
 # Generic get routes.
+
 access_token_bearer = AccessTokenBearer()
 @auth_router.get("/", response_model=List[PlayerPublic])
 async def get_players(
@@ -133,6 +141,8 @@ async def get_players(
     players = [p for p in players if p.name != "SYSTEM" ] # Don't return the system user to external queries
     return players
 
+# TODO - Probably need to make the frontend not use this
+# endpoint for the player search dialog.
 @auth_router.get("/current-season", response_model=List[PlayerWithTeamBasic])
 async def get_players(
     player_details = Depends(access_token_bearer),
@@ -140,6 +150,8 @@ async def get_players(
     season: Season = Depends(get_active_season)
 
 ):
+    if season is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"No active season")
     players = await auth_service.get_all_players_with_basic_team_info(season.id, session)
     players = [p for p in players if p.name != "SYSTEM" ] # Don't return the system user to external queries
     return players
@@ -218,7 +230,7 @@ async def delete_player(
     session: AsyncSession = Depends(get_session),
     player_details=Depends(get_current_player),
 ):
-    result = await auth_service.delete_player(player_id, session)
+    result = await auth_service.soft_delete_player(player_id, session)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -254,7 +266,7 @@ async def refresh_token(
         )
     
     # Create new tokens
-    tokens = auth_service.create_tokens(
+    tokens = auth_service.create_auth_tokens(
         str(player.id), 
         AuthType(token_payload['auth_type'])
     )

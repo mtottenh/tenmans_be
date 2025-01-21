@@ -1,11 +1,10 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 import uuid
-from typing import Dict, List, Optional
-from enum import StrEnum
+from typing import List, Optional
 from competitions.models.seasons import Season
 from teams.base_schemas import RosterStatus, TeamCaptainStatus, TeamStatus, RecruitmentStatus
 

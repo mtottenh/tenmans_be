@@ -4,6 +4,7 @@ from sqlmodel import select, desc
 from datetime import datetime, timedelta
 import uuid
 
+from audit.context import AuditContext
 from audit.models import AuditEventType
 from competitions.base_schemas import FixtureStatus
 from competitions.models.rounds import Round, RoundType
@@ -20,7 +21,7 @@ class RoundService:
     def __init__(self, audit_service: Optional[AuditService] = None):
         self.audit_service = audit_service or  AuditService()
 
-    def _round_audit_details(self, round: Round) -> dict:
+    def _round_audit_details(self, round: Round,  context: Dict) -> dict:
         """Extract audit details from a round operation"""
         return {
             "round_id": str(round.id),
@@ -73,7 +74,8 @@ class RoundService:
         start_date: datetime,
         end_date: datetime,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Round:
         """Create a new tournament round"""
         # Validate tournament exists and is in proper state
@@ -106,13 +108,14 @@ class RoundService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
-        details_extractor=_round_audit_details
+        details_extractor=_round_audit_details,
     )
     async def start_round(
         self,
         round: Round,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Round:
         """Start a tournament round"""
         # Validate round can be started
@@ -143,7 +146,8 @@ class RoundService:
         self,
         round: Round,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Round:
         """Complete a tournament round"""
         # Validate round can be completed
@@ -248,7 +252,8 @@ class RoundService:
         new_end_date: datetime,
         reason: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Round:
         """Extend a round's deadline"""
         if round.status == "completed":
@@ -271,6 +276,10 @@ class RoundService:
         session.add(round)
         return round
 
+    # TODO - Move logic for this into fixture service
+    # Should be: 
+    # fixture_service.get_unplayed_fixtures()
+    # fixture_service.forefit_fixture()
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
@@ -281,7 +290,8 @@ class RoundService:
         round: Round,
         forfeit_notes: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> List[Fixture]:
         """Forfeit all unplayed fixtures in a round after deadline"""
         if round.status == "completed":
@@ -318,7 +328,8 @@ class RoundService:
         new_end_date: datetime,
         reason: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Round:
         """Reopen a completed round"""
         if round.status != "completed":
