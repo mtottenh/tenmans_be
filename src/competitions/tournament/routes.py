@@ -1,3 +1,4 @@
+from math import ceil
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Optional
@@ -12,7 +13,7 @@ from auth.dependencies import (
     get_current_player,
     require_tournament_manage,
     require_tournament_view,
-    require_tournament_management
+    require_global_tournament_management
 )
 from .service import TournamentServiceError
 from .schemas import (
@@ -73,7 +74,7 @@ async def get_tournaments(
         total=total,
         page=page,
         size=size,
-        total_pages = total / size,
+        total_pages = ceil(total / size),
         stats=TournamentPageStats(active_tournaments=1, enrolled_teams=1),
         has_next=total > page * size,
         has_previous=page > 1
@@ -83,7 +84,7 @@ async def get_tournaments(
     "/",
     response_model=TournamentBase,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_tournament_management)]
+    dependencies=[Depends(require_global_tournament_management)]
 )
 async def create_tournament(
     tournament_data: TournamentCreate,
@@ -94,8 +95,8 @@ async def create_tournament(
     try:
         return await tournament_service.create_tournament(
             tournament_data,
-            current_player,
-            session
+            actor=current_player,
+            session=session
         )
     except TournamentServiceError as e:
         raise HTTPException(

@@ -10,7 +10,9 @@ from audit.context import AuditContext
 from audit.models import AuditEventType
 from audit.service import AuditService, create_audit_service
 from auth.models import Player, Role
+from auth.schemas import ScopeType
 from auth.service.permission import PermissionService, create_permission_service
+from auth.service.role import RoleService, create_role_service
 from status.manager.captain import initialize_captain_status_manager
 from status.service import StatusTransitionService, create_status_transition_service
 from teams.base_schemas import TeamCaptainStatus
@@ -25,10 +27,12 @@ class CaptainService:
         self,
         audit_service: Optional[AuditService] = None,
         permission_service: Optional[PermissionService] = None,
+        role_service: Optional[RoleService] = None,
         status_transition_service: Optional[StatusTransitionService] = None
     ):
         self.audit_service = audit_service or create_audit_service()
         self.permission_service = permission_service or create_permission_service(self.audit_service)
+        self.role_service = role_service or create_role_service(self.role_service)
         self.status_transition_service = status_transition_service or create_status_transition_service(
             self.audit_service,
             self.permission_service
@@ -54,15 +58,24 @@ class CaptainService:
             player: Player,
             session: AsyncSession
     ) -> TeamCaptain:
-        # Verify player isn't already captain
-        is_captain = await self.player_is_team_captain(player, team, session)
-        if is_captain:
-            raise CaptainServiceError("Player is already a captain of this team")
-
+        # Check for existing captain record
+        stmt = select(TeamCaptain).where(
+            TeamCaptain.team_id == team.id,
+            TeamCaptain.player_id == player.id
+        )
+        result = (await session.execute(stmt)).scalars().first()
+        
+        if result:
+            # If record exists, only allow if it's in REMOVED status
+            if result.status != TeamCaptainStatus.REMOVED:
+                raise CaptainServiceError("Player is already a captain of this team")
+            return result
+        
+        # Create new record as ACTIVE if none exists
         new_captain = TeamCaptain(
             team_id=team.id,
             player_id=player.id,
-            status=TeamCaptainStatus.PENDING,
+            status=TeamCaptainStatus.ACTIVE,
             created_at=datetime.now()
         )
         session.add(new_captain)
@@ -79,27 +92,40 @@ class CaptainService:
         player: Player,
         actor: Player,
         session: AsyncSession,
-        auto_activate: bool = True,
         is_initial_captain: bool = False,
         audit_context: Optional[AuditContext] = None
     ) -> TeamCaptain:
-        """Adds a new captain to a team"""
-        new_captain = await self._create_captain_internal(team, player, session)
+        """Adds a new captain to a team or reactivates a removed captain"""
+        captain = await self._create_captain_internal(team, player, session)
         await session.flush()
+        await session.refresh(player)
+        await session.refresh(team)
 
-        if auto_activate:
-            # Automatically set status to active
+        # Assign role for both new captains and reactivating removed captains
+        captain_role = await self.role_service.get_role_by_name('team_captain', session)
+        await self.role_service.assign_role(
+            player, 
+            captain_role, 
+            ScopeType.TEAM, 
+            team.id, 
+            actor=actor, 
+            session=session, 
+            audit_context=audit_context
+        )
+        await session.refresh(captain)
+        # Only need to change status if reactivating a removed captain
+        if captain.status == TeamCaptainStatus.REMOVED:
             await self.change_captain_status(
-                captain=new_captain,
+                captain=captain,
                 new_status=TeamCaptainStatus.ACTIVE,
-                reason="Initial captain activation",
+                reason="Captain reactivation",
                 actor=actor,
                 session=session,
                 metadata={"is_initial_captain": is_initial_captain},
                 audit_context=audit_context
             )
-
-        return new_captain
+        
+        return captain
 
     async def change_captain_status(
         self,
@@ -161,6 +187,9 @@ class CaptainService:
         audit_context: Optional[AuditContext] = None
     ) -> TeamCaptain:
         """Removes a player as team captain"""
+        team_captain_role = await self.role_service.get_role_by_name('team_captain', session)
+        player = await session.get(Player, captain.player_id)
+        await self.role_service.remove_role_from_player(player, team_captain_role, ScopeType.TEAM, captain.team_id, actor=actor, session=session, audit_context=audit_context)
         return await self.change_captain_status(
             captain=captain,
             new_status=TeamCaptainStatus.REMOVED,
@@ -198,7 +227,7 @@ class CaptainService:
             Team.id == team_id,
             Team.id == TeamCaptain.team_id,
             Player.id == TeamCaptain.player_id,
-            TeamCaptain.status.in_([TeamCaptainStatus.ACTIVE, TeamCaptainStatus.TEMPORARY])
+            TeamCaptain.status.in_([TeamCaptainStatus.ACTIVE, TeamCaptainStatus.TEMPORARY, TeamCaptainStatus.PENDING])
         ).options(
             selectinload(Player.roles)
             .selectinload(Role.permissions)
@@ -225,12 +254,14 @@ class CaptainService:
 def create_captain_service(
     audit_service: Optional[AuditService] = None,
     permission_service: Optional[PermissionService] = None,
+    role_service: Optional[RoleService] = None,
     status_transition_service: Optional[StatusTransitionService] = None
 ) -> CaptainService:
     audit_service = audit_service or create_audit_service()
     permission_service = permission_service or create_permission_service(audit_service)
+    role_service = role_service or create_role_service(permission_service)
     status_transition_service = status_transition_service or create_status_transition_service(
         audit_service,
         permission_service
     )
-    return CaptainService(audit_service, permission_service, status_transition_service)
+    return CaptainService(audit_service, permission_service, role_service, status_transition_service)

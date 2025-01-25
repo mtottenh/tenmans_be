@@ -28,6 +28,8 @@ import logging
 from services.team import team_service
 from services.auth import auth_service
 from teams.schemas import PlayerRosterHistory
+from config import Config
+
 LOG =logging.getLogger('uvicorn.error')
 auth_router = APIRouter(prefix="/auth")
 
@@ -54,11 +56,11 @@ async def login_with_steam(request: Request, session: AsyncSession = Depends(get
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return_url = str(request.base_url) + "api/v1/auth/steam/callback"
+    return_url = str(request.base_url.replace(scheme='https')) + "api/v1/auth/steam/callback"
     LOG.info(f"client_host: {str(request.client.host)} base_url: {str(request.base_url)}")
     return RedirectResponse(auth_request.redirectURL(
         return_to=return_url,
-        realm=str(request.base_url)
+        realm=str(request.base_url.replace(scheme='https'))
     ))
 import traceback
 @auth_router.get("/steam/callback")
@@ -71,9 +73,10 @@ async def steam_callback(
     LOG.info("Got to callback handler")
     oidconsumer = get_openid_consumer()
     params = dict(request.query_params)
-    current_url = str(request.url)
+    current_url = str(request.url.replace(scheme='https'))
     
     try:
+        LOG.info(f"Params {params} current URL: {current_url}")
         info = oidconsumer.complete(params, current_url)
         if info.status != SUCCESS:
             raise HTTPException(status_code=400, detail="Steam authentication failed")
@@ -83,14 +86,14 @@ async def steam_callback(
             raise HTTPException(status_code=400, detail="Could not extract Steam ID")
         LOG.info(f"Got Auth callback!: {info.identity_url}")
         steam_id = match.group(1)
-        LOG.info("Steam ID: {setam_id}")
+        LOG.info(f"Steam ID: {steam_id}")
         player = await auth_service.get_player_by_steam_id(steam_id, session)
-        LOG.info("player: {player}")
+        LOG.info(f"player: {player}")
         tokens = None
         if not player:
             LOG.info("Creating new player")
             system_user = await auth_service.get_player_by_name("SYSTEM", session)
-            player = await auth_service.create_steam_player(steam_id, system_user, session)
+            player = await auth_service.create_steam_player(steam_id, actor=system_user, session=session)
 
         tokens = auth_service.create_auth_tokens(player.id, player.auth_type)
         # Store tokens in state service
@@ -99,15 +102,13 @@ async def steam_callback(
             tokens,
             metadata={"player_id": str(player.id)}
         )
+        redir_url=f"{Config.FRONTEND_URL}auth/callback?state={state_id}"
+        LOG.info(f"Redirecting to: {redir_url}")
+        # TODO = uncomment for deployment         
         return RedirectResponse(
-            f"http://localhost:5173/auth/callback?state={state_id}",
+            redir_url,
             status_code=status.HTTP_303_SEE_OTHER
         )
-        # TODO = uncomment for deployment         
-        # return RedirectResponse(
-        #     f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
-        #     status_code=status.HTTP_303_SEE_OTHER
-        # )
         
     except Exception as e:
         raise # HTTPException(status_code=400, detail=str(e))
@@ -277,12 +278,8 @@ async def refresh_token(
         tokens,
         metadata={"player_id": str(player.id)}
     )
+    # Return redirect to frontend callback
     return RedirectResponse(
-        f"http://localhost:5173/auth/callback?state={state_id}",
+        f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
         status_code=status.HTTP_303_SEE_OTHER
     )
-    # # Return redirect to frontend callback
-    # return RedirectResponse(
-    #     f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
-    #     status_code=status.HTTP_303_SEE_OTHER
-    # )

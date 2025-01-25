@@ -15,7 +15,7 @@ from competitions.models.tournaments import Tournament
 from audit.schemas import  AuditEventType, AuditEventState
 from audit.models import AuditEvent
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger('uvicorn.error')
 T = TypeVar('T')
 
 
@@ -485,6 +485,7 @@ class AuditService:
 
                 # Check if an AuditContext exists, either from kwargs or an existing context
                 audit_context: Optional[AuditContext] = kwargs.get('audit_context', None)
+                await session.refresh(actor)
                 result = None
                 # If no context exists, create a new one
                 if audit_context is None:
@@ -496,8 +497,7 @@ class AuditService:
                             await audit_context.create_root_event(action_type, entity_type, actor, "Root Event")
                         result = await func(self, *args, **kwargs)
                         await session.flush()
-                        await session.refresh(result)
-                        await session.refresh(actor)
+
                         if action_type == AuditEventType.DELETE:
                             await audit_context.create_audit_event(
                                 session=session,
@@ -509,6 +509,9 @@ class AuditService:
                                 grace_period=grace_period
                             )
                         else:
+                            if hasattr(result, '__table__'):
+                                await session.refresh(result)
+                            await session.refresh(actor)
                             entity_id = cls._extract_id(id_extractor, None, result)
                             if action_type == AuditEventType.CREATE:
                                 if entity_id and audit_context.root_event:
@@ -538,8 +541,7 @@ class AuditService:
                 else:
                     result = await func(self, *args, **kwargs)
                     await session.flush()
-                    await session.refresh(result)
-                    await session.refresh(actor)
+
                     if action_type == AuditEventType.DELETE:
                         await audit_context.create_audit_event(
                             session=session,
@@ -551,6 +553,9 @@ class AuditService:
                             grace_period=grace_period
                         )
                     else:
+                        if hasattr(result, '__table__'):
+                            await session.refresh(result)
+                        await session.refresh(actor)
                         entity_id = cls._extract_id(id_extractor, None, result)
                         if action_type == AuditEventType.CREATE:
                             if entity_id and audit_context.root_event:
@@ -575,9 +580,14 @@ class AuditService:
                             scope_type=scope_type,
                             scope_id=kwargs.get('scope_id')
                         )
-                await session.refresh(result) 
-                return result
-
+                
+                if hasattr(result, '__table__'):
+                    LOG.info(f"hasattr! Returning {result}")
+                    await session.refresh(result)
+                    return result
+                else:
+                    LOG.info(f"Returning {result}")
+                    return result
             return wrapper
         return decorator
 

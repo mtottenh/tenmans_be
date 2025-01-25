@@ -5,9 +5,10 @@ import uuid
 
 from db.main import get_session
 from auth.dependencies import (
-    get_current_player, 
-    require_admin,
-    GlobalPermissionChecker
+    TeamPermissionChecker,
+    get_current_player,
+    require_team_captain, 
+    require_global_team_management
 )
 from auth.models import Player
 from teams.models import Team
@@ -31,9 +32,6 @@ team_join_request_router = APIRouter(prefix="/id/{team_id}/join-requests")
 
 
 
-# Additional permissions
-require_team_captain = CaptainCheckerByTeamId()
-require_moderator = GlobalPermissionChecker(["moderator"])
 
 @team_join_request_router.post(
     "/",
@@ -73,13 +71,13 @@ async def create_join_request_id(
 @team_join_request_router.get(
     "/",
     response_model=JoinRequestList,
-    dependencies=[Depends(require_team_captain)]
 )
 async def get_team_join_requests_id(
     team_id: str,
     include_resolved: bool = False,
     current_player: Player = Depends(get_current_player),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    checker: TeamPermissionChecker  = Depends(require_team_captain)
 ):
     """Get all join requests for a team (requires team captain)"""
     team = await team_service.get_team_by_id(team_id, session)
@@ -134,8 +132,8 @@ async def get_join_request(
         request.team,
         session
     )
-    has_permission = await require_moderator(current_player, session)
-    
+    # has_permission = await require_moderator(current_player, session)
+    has_permission = False
     if not (is_requester or is_captain or has_permission):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -323,7 +321,7 @@ async def get_my_join_requests(
 @global_join_request_router.post(
     "/cleanup",
     response_model=dict,
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_global_team_management)]
 )
 async def cleanup_expired_requests(
     expiry_days: int = 7,

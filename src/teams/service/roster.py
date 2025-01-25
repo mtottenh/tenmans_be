@@ -10,7 +10,7 @@ from datetime import datetime
 from audit.context import AuditContext
 from audit.models import AuditEventType
 from auth.schemas import ScopeType
-from auth.service.permission import PermissionService
+from auth.service.permission import PermissionScope, PermissionService
 from competitions.season.service import SeasonService, create_season_service
 from status.manager.roster import initialize_roster_status_manager
 from status.service import StatusTransitionService, create_status_transition_service
@@ -267,7 +267,7 @@ class RosterService:
         """Change a roster entry's status with validation and history tracking"""
         try:
             # Create scope for permission checking
-            scope = ScopeType(
+            scope = PermissionScope(
                 scope_type=ScopeType.TEAM,
                 scope_id=roster.team_id
             )
@@ -287,7 +287,8 @@ class RosterService:
             return updated_roster
             
         except Exception as e:
-            raise RosterServiceError(f"Failed to change roster status: {str(e)}")
+            raise
+        # raise RosterServiceError(f"Failed to change roster status: {str(e)}")
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.CREATE,
@@ -315,12 +316,12 @@ class RosterService:
             team_id=team.id,
             player_id=player.id,
             season_id=season.id,
-            status=RosterStatus.ACTIVE  # New players are added as active
+            status=RosterStatus.PENDING 
         )
         
         session.add(roster_entry)
         await session.flush()
-        
+        await session.refresh(roster_entry)
         # Record the status change in history
         metadata = {
             "action": "roster_add",

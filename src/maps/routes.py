@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
-from auth.dependencies import get_current_player, require_admin
+from auth.dependencies import get_current_player, require_map_management
 from auth.models import Player
 from db.main import get_session
 from .models import Map
@@ -16,7 +16,7 @@ from services.upload import upload_service
 map_router = APIRouter(prefix="/maps")
 
 @map_router.post("/", 
-                 dependencies=[Depends(require_admin)], 
+                 dependencies=[Depends(require_map_management)], 
                  status_code=status.HTTP_201_CREATED,
                  response_model=MapBase
                  )

@@ -7,9 +7,16 @@ from typing import List, Optional, Dict
 import asyncio
 import logging
 from faker import Faker
-from sqlmodel.ext.asyncio.session import AsyncSession
+import sys
+import os
 
-from auth.models import Player, AuthType, VerificationStatus
+
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src'))
+
+from sqlmodel.ext.asyncio.session import AsyncSession
+from auth.schemas import PlayerStatus
+
+from auth.models import Player, AuthType
 from teams.models import Team, TeamCaptain, Roster
 from competitions.models.seasons import Season, SeasonState
 from competitions.models.tournaments import Tournament, TournamentType, TournamentState
@@ -26,8 +33,8 @@ fake = Faker()
 
 class TestDataConfig:
     """Configuration for test data generation"""
-    MIN_ELO = 800
-    MAX_ELO = 2000
+    MIN_ELO = 2000
+    MAX_ELO = 30000
     MIN_PLAYERS_PER_TEAM = 5
     MAX_PLAYERS_PER_TEAM = 7
     STEAM_ID_PREFIX = "7656119"  # Standard Steam64 ID prefix
@@ -92,7 +99,7 @@ class TestDataGenerator:
                     TestDataConfig.MIN_ELO,
                     TestDataConfig.MAX_ELO
                 ),
-                verification_status=random.choice(list(VerificationStatus)),
+                status=random.choice(list(PlayerStatus)),
                 created_at=fake.date_time_between(
                     start_date='-1y',
                     end_date='now'
@@ -135,7 +142,7 @@ class TestDataGenerator:
                 await self.session.refresh(captain)
                 team_captain = TeamCaptain(
                     team_id=team_id,
-                    player_uid=captain.uid
+                    player_id=captain.id
                 )
                 self.session.add(team_captain)
 
@@ -155,7 +162,7 @@ class TestDataGenerator:
                     roster_entry = Roster(
                         season_id=season.id,
                         team_id=team_id,  # Link the player to the team
-                        player_uid=player.uid  # Ensure correct player association
+                        player_id=player.id  # Ensure correct player association
                     )
                     logger.info(f"Creating roster entry for {player.name}")
                     self.session.add(roster_entry)
@@ -185,7 +192,7 @@ class TestDataGenerator:
             raise ValueError("Season must be generated before tournament")
             
         logger.info("Generating tournament...")
-        
+        await self.session.refresh(self.season)
         tournament = Tournament(
             season_id=self.season.id,
             name=f"{self.season.name} Regular Season",
@@ -200,15 +207,15 @@ class TestDataGenerator:
             scheduled_start_date=datetime.now() - timedelta(days=15),
             scheduled_end_date=datetime.now() + timedelta(days=15),
             format_config={
-                "group_size": 4,
                 "teams_per_group": len(self.teams) // 2,
-                "teams_advancing": 4
+                "match_format": "bo3"
             },
             map_pool=[str(map_obj.id) for map_obj in self.maps]
         )
         
         self.session.add(tournament)
         await self.session.commit()
+        await self.session.refresh(tournament)
         logger.info(f"Generated tournament: {tournament.name}")
 
     async def generate_matches(self, tournament_id: uuid.UUID):
@@ -231,7 +238,7 @@ class TestDataGenerator:
                 )
                 self.session.add(fixture)
                 await self.session.flush()
-                
+                await self.session.refresh(fixture)
                 # Generate results for completed matches
                 if fixture.scheduled_at < datetime.now():
                     # Random score favoring higher ELO team

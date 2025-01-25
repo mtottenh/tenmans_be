@@ -13,11 +13,12 @@ from db.main import get_session
 from auth.dependencies import get_current_player
 from auth.models import Player
 
+from teams.models import TeamCaptain
 from teams.schemas import (
     PlayerRosterHistory,
     TeamDetailed,
 )
-from teams.base_schemas import TeamCreateRequest, TeamUpdate
+from teams.base_schemas import TeamCaptainStatus, TeamCreateRequest, TeamUpdate
 from teams.service.team import TeamServiceError
 from .dependencies import require_team_captain_by_name, require_team_captain_by_id
 from config import Config
@@ -114,7 +115,7 @@ async def disband_team(
     team = await team_service.get_team_by_id(team_id, session)
     if team is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Team with id {team_id} not found")
-    return await team_service.disband_team(team, "REASON", current_player, session)
+    return await team_service.disband_team(team, "REASON", actor=current_player, session=session)
 
 @team_router.get('/id/{team_id}/logo')
 async def get_team_logo_by_id(team_id: str, session: AsyncSession = Depends(get_session)):
@@ -182,18 +183,18 @@ async def get_team_captains(
     return await team_service.get_team_captains_by_team_id(team_id, session)
 
 @team_router.post(
-    "/name/{team_name}/captains/{player_id}",
-    dependencies=[Depends(require_team_captain_by_name)]
+    "/id/{team_id}/captains/players/id/{player_id}",
+    dependencies=[Depends(require_team_captain_by_id)]
 )
 async def add_team_captain(
-    team_name: str,
+    team_id: str,
     player_id: str,
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
     """Add a team captain. Requires team captain permission."""
     try:
-        team = await team_service.get_team_by_name(team_name, session)
+        team = await team_service.get_team_by_id(team_id, session)
         new_captain = await auth_service.get_player_by_id(player_id, session)
         
         if not new_captain:
@@ -218,7 +219,7 @@ async def add_team_captain(
 
 @team_router.delete(
     "/id/{team_id}/captains/players/id/{player_id}",
-    dependencies=[Depends(require_team_captain_by_name)]
+    dependencies=[Depends(require_team_captain_by_id)]
 )
 async def remove_team_captain(
     team_id: str,
@@ -238,13 +239,18 @@ async def remove_team_captain(
             )
 
         # Check this won't remove the last captain
-        captains = await team_service.get_team_captains_by_team_id(team_id, session)
-        if len(captains) <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot remove the last team captain"
-            )
-        captain = await team_service.get_captain(team, player, session)
+        captain: TeamCaptain = await team_service.get_captain(team, player, session)
+        if not captain:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Player {player_id} is not a captain of {team_id}")
+        
+        if captain.status in [TeamCaptainStatus.ACTIVE, TeamCaptainStatus.TEMPORARY]:
+            captains = await team_service.get_team_captains_by_team_id(team_id, session)
+            if len(captains) <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot remove the last team captain"
+                )
+
         await team_service.remove_captain(
             captain,
             actor=current_player,

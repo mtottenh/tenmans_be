@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime
 
 from audit.context import AuditContext
+from auth.schemas import ScopeType
 from auth.service.permission import PermissionService
 from competitions.models.tournaments import RegistrationStatus, TournamentRegistration
 from competitions.season.service import SeasonService
@@ -15,13 +16,13 @@ from status.manager.team import initialize_team_status_manager
 from status.service import StatusTransitionService
 from teams.models import Team, TeamCaptain, Roster, TeamStatus
 from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
-from teams.base_schemas import RosterStatus, TeamUpdate
+from teams.base_schemas import RosterStatus, TeamCaptainStatus, TeamUpdate
 from auth.models import Player, Role
 from audit.service import AuditService, AuditEventType
 from teams.service.captain import CaptainService
 from teams.service.roster import RosterService
-
-
+import logging
+LOG= logging.getLogger('uvicorn.error')
 
 
 class TeamServiceError(Exception):
@@ -350,20 +351,20 @@ class TeamService:
         session.add(new_team)
         await session.flush()
         await session.refresh(new_team)
-        
+        LOG.info("Created Team")
         cur_season = await self.season_service.get_active_season(session)
+        LOG.info("About to create captain")
         team_captain = await self.captain_service.create_captain(new_team,
                                                                     captain,
                                                                     actor=captain,
                                                                     session=session,
-                                                                    auto_activate=True,
                                                                     is_initial_captain=True,
                                                                     audit_context=audit_context)
-
+        LOG.info(f"State: team {new_team} captain {captain} season: {cur_season}")
+        cur_season = await self.season_service.get_active_season(session)
         await session.refresh(new_team)
         await session.refresh(captain)
-        await session.refresh(cur_season)
-
+        LOG.info("Created Captain")
 
         await self.roster_service.add_player_to_roster(
             team=new_team,
@@ -374,7 +375,7 @@ class TeamService:
             details={'reason' : "Initial team creation"},
             audit_context=audit_context
         )
-
+        LOG.info("Added player to roster")
         await session.flush()
         await session.refresh(team_captain)
         await session.refresh(actor)
@@ -438,70 +439,164 @@ class TeamService:
             session=session
         )
 
+    @AuditService.audited_transaction(
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
+        details_extractor=_team_audit_details
+    )
     async def disband_team(
         self,
         team: Team,
         reason: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Team:
-        """Disband a team"""
-        return await self.change_team_status(
+        """Disband a team and cleanup related data"""
+        # Get and update all captains
+        captains = await self.get_team_captains_by_team_id(team.id, session)
+        await self._update_captain_roles(
+            team=team,
+            captains=captains,
+            new_captain_status=TeamCaptainStatus.DISBANDED,
+            should_remove_role=True,
+            reason=f"Team disbanded: {reason}",
+            actor=actor,
+            session=session,
+            audit_context=audit_context
+        )
+        season = await self.season_service.get_active_season(session)
+        for roster in await self.roster_service.get_team_roster(team, season, session):
+            await self.roster_service.change_roster_status(roster, RosterStatus.PAST, reason=f"Team disbanded: {reason}", actor=actor, session=session, audit_context=audit_context)
+        # Change team status and update fields
+        disbanded_team = await self.change_team_status(
             team=team,
             new_status=TeamStatus.DISBANDED,
             reason=reason,
             actor=actor,
             session=session
         )
+        
+        disbanded_team.disbanded_at = datetime.now()
+        disbanded_team.disbanded_reason = reason
+        disbanded_team.disbanded_by = actor.id
+        
+        session.add(disbanded_team)
+        return disbanded_team
 
+    @AuditService.audited_transaction(
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
+        details_extractor=_team_audit_details
+    )
     async def suspend_team(
         self,
         team: Team,
         reason: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Team:
-        """Suspend a team"""
-        return await self.change_team_status(
+        """Suspend a team and temporarily mark captain roles"""
+        # Get and update all captains
+        captains = await self.get_team_captains_by_team_id(team.id, session)
+        await self._update_captain_roles(
+            team=team,
+            captains=captains,
+            new_captain_status=TeamCaptainStatus.TEMPORARY,
+            should_remove_role=False,  # Keep roles for reactivation
+            reason=f"Team suspended: {reason}",
+            actor=actor,
+            session=session,
+            audit_context=audit_context
+        )
+
+        # Change team status
+        team = await self.change_team_status(
             team=team,
             new_status=TeamStatus.SUSPENDED,
             reason=reason,
             actor=actor,
             session=session
         )
+        
+        return team
 
+    @AuditService.audited_transaction(
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
+        details_extractor=_team_audit_details
+    )
     async def reactivate_team(
         self,
         team: Team,
         reason: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Team:
-        """Reactivate a suspended team"""
-        return await self.change_team_status(
+        """Reactivate a suspended team and restore captain roles"""
+        # Get and update all temporary captains
+        captains = await self.get_team_captains_by_team_id(team.id, session)
+        await self._update_captain_roles(
+            team=team,
+            captains=captains,
+            new_captain_status=TeamCaptainStatus.ACTIVE,
+            should_remove_role=False,  # Roles were kept during suspension
+            reason=f"Team reactivated: {reason}",
+            actor=actor,
+            session=session,
+            audit_context=audit_context
+        )
+
+        # Change team status
+        team = await self.change_team_status(
             team=team,
             new_status=TeamStatus.ACTIVE,
             reason=reason,
             actor=actor,
             session=session
         )
+        
+        return team
 
+    @AuditService.audited_transaction(
+        action_type=AuditEventType.UPDATE,
+        entity_type="Team",
+        details_extractor=_team_audit_details
+    )
     async def archive_team(
         self,
         team: Team,
         reason: str,
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
     ) -> Team:
-        """Archive a team"""
-        return await self.change_team_status(
+        """Archive a team and remove captain roles"""
+        # Get and update all captains
+        captains = await self.get_team_captains_by_team_id(team.id, session)
+        await self._update_captain_roles(
+            team=team,
+            captains=captains,
+            new_captain_status=TeamCaptainStatus.DISBANDED,  # Use DISBANDED for archived teams
+            should_remove_role=True,  # Remove roles as archived teams have no captains
+            reason=f"Team archived: {reason}",
+            actor=actor,
+            session=session,
+            audit_context=audit_context
+        )
+
+        # Change team status
+        team = await self.change_team_status(
             team=team,
             new_status=TeamStatus.ARCHIVED,
             reason=reason,
             actor=actor,
             session=session
         )
-
+        
+        return team
     async def get_team_status_history(
         self,
         team_id: uuid.UUID,
@@ -513,7 +608,44 @@ class TeamService:
             entity_id=team_id,
             session=session
         )
+    
+    async def _update_captain_roles(
+        self,
+        team: Team,
+        captains: List[Player],
+        new_captain_status: TeamCaptainStatus,
+        should_remove_role: bool,
+        reason: str,
+        actor: Player,
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
+    ) -> None:
+        """Update captain roles and status for a team status change"""
+        for captain in captains:
+            # Update captain status
+            captain_entry = await self.captain_service.get_captain(team, captain, session)
+            await self.captain_service.change_captain_status(
+                captain=captain_entry,
+                new_status=new_captain_status,
+                reason=reason,
+                actor=actor,
+                session=session,
+                audit_context=audit_context
+            )
 
+            # Remove role if required
+            if should_remove_role:
+                return await self.captain_service.remove_captain(captain_entry, actor=actor, session=session, reason=reason, audit_context=audit_context)
+                # captain_role = await self.role_service.get_role_by_name("team_captain", session)
+                # if captain_role:
+                #     await self.role_service.remove_role_from_player(
+                #         player=captain,
+                #         role=captain_role,
+                #         scope_type=ScopeType.TEAM,
+                #         scope_id=team.id,
+                #         actor=actor,
+                #         session=session
+                #     )
 
     # RosterService Delegations
     async def get_active_roster_count(self, *args, **kwargs):
@@ -526,11 +658,20 @@ class TeamService:
         return await self.roster_service.get_teams_for_player_by_player_id(*args, **kwargs)
 
     # CaptainService Delegations
+    async def get_captain(self, *args, **kwargs):
+        return await self.captain_service.get_captain(*args, **kwargs)
+    
     async def get_team_captains_by_team_id(self, *args, **kwargs):
         return await self.captain_service.get_team_captains_by_team_id(*args, **kwargs)
+    
     async def player_is_team_captain(self, *args, **kwargs):
         return await self.captain_service.player_is_team_captain(*args, **kwargs)
 
+    async def create_captain(self, *args, **kwargs):
+        return await self.captain_service.create_captain(*args, **kwargs)
+    
+    async def remove_captain(self, *args, **kwargs):
+        return await self.captain_service.remove_captain(*args, **kwargs)
 # Factory method
 def create_team_service(audit_service: Optional[AuditService], 
                         roster_service: Optional[RosterService] = None,

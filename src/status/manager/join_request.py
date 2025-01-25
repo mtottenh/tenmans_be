@@ -1,4 +1,5 @@
 from typing import Dict, Any
+from audit.service import LOG
 from auth.models import Player
 from auth.schemas import ScopeType
 from status.transition_validator import (
@@ -14,7 +15,8 @@ from teams.join_request.models import TeamJoinRequest
 
 from teams.base_schemas import RosterStatus
 from sqlmodel import select
-
+import logging
+LOG = logging.getLogger('uvicorn.error')
 class HasValidReasonValidator(TransitionValidator):
     """Validates that a reason is provided for status changes"""
     async def validate(
@@ -41,13 +43,13 @@ class TeamCaptainValidator(TransitionValidator):
             
         actor = context.get('actor')
         session = context.get('session')
-        team = context.get('entity').team
+        join_request: TeamJoinRequest = context.get('entity')
         permission_service: PermissionService = context.get('permission_service')        
-
+        LOG.error(f"Team ID: {join_request.team_id}")
         is_captain = await permission_service.verify_permissions(
             actor,
             ["manage_team"],
-            PermissionScope(ScopeType.TEAM, team.id),
+            PermissionScope(ScopeType.TEAM, join_request.team_id),
             session
         )
         

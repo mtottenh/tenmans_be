@@ -111,7 +111,7 @@ class ScopedPermissionChecker:
         scope = None
         if self.scope_type:
             scope = PermissionScope(self.scope_type, scope_id)
-
+#        LOG.info(f"Checking that {player.id} has {self.required_permissions} permissions for {scope.scope_type}:{scope.scope_id}")
         has_permissions = await self.permission_service.verify_permissions(
             player,
             self.required_permissions,
@@ -124,6 +124,7 @@ class ScopedPermissionChecker:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions"
             )
+        LOG.info("SUCCESS!")
         return True
 
 class GlobalPermissionChecker(ScopedPermissionChecker):
@@ -168,11 +169,13 @@ require_verification = GlobalPermissionChecker(["verify_users"], permission_serv
 require_ban_management = GlobalPermissionChecker(["manage_bans"], permission_service)
 require_role_management = GlobalPermissionChecker(["manage_roles"], permission_service)
 require_fixture_admin = GlobalPermissionChecker(["manage_fixtures"], permission_service)
-
+require_map_management = GlobalPermissionChecker(["manage_maps"], permission_service)
+require_global_team_management = GlobalPermissionChecker(["manage_teams"], permission_service)
+require_global_tournament_management = GlobalPermissionChecker(["manage_tournaments"], permission_service)
 # Example team permission checkers
 dep_require_team_management = TeamPermissionChecker(["manage_teams"], permission_service)
 dep_require_team_roster = TeamPermissionChecker(["manage_roster"], permission_service)
-dep_require_team_captain = TeamPermissionChecker(["team_captain"], permission_service)
+dep_require_team_captain = TeamPermissionChecker(["manage_roster"], permission_service)
 
 
 # Example tournament permission checkers
@@ -182,10 +185,7 @@ dep_require_tournament_view = TournamentPermissionChecker(["view_tournament"], p
 dep_require_view_matches = TournamentPermissionChecker(["view_matches"],permission_service)
 dep_require_schedule_matches = TournamentPermissionChecker(["schedule_matches"], permission_service)
 dep_require_confirm_results = TournamentPermissionChecker(["confirm_results"], permission_service)
-# Permission checkers
 
-# Example Role based checkers (not advised..)
-require_admin = RoleChecker(['league_admin'], permission_service)
 
 
 async def require_team_management(
@@ -201,10 +201,12 @@ async def require_team_roster(
    return await checker(scope_id=team_id)
 
 async def require_team_captain(
-   team_id: uuid.UUID,
-   checker: TeamPermissionChecker = Depends(dep_require_team_captain)
+   team_id: str,
+        player: Player = Depends(get_current_player),
+        session: AsyncSession = Depends(get_session)
 ):
-   return await checker(scope_id=team_id)
+   LOG.info(f"TEAM ID: {team_id}")
+   return await dep_require_team_captain(scope_id=team_id, player=player, session=session)
 
 async def require_tournament_management(
    tournament_id: uuid.UUID,

@@ -132,8 +132,6 @@ class IdentityService:
         )
         
         session.add(player)
-        await session.commit()
-        await session.refresh(player)
         return player
 
     @AuditService.audited_transaction(
@@ -156,8 +154,6 @@ class IdentityService:
         )
         
         session.add(player)
-        await session.commit()
-        await session.refresh(player)
         return player
 
     async def _fetch_steam_player_name(self, steam_id: str) -> str:

@@ -71,7 +71,7 @@ class StatusTransitionService(Generic[T]):
         manager = self.transition_managers.get(entity_type)
         if not manager:
             raise ValueError(f"No transition manager registered for {entity_type}")
-            
+        await session.refresh(entity)
         current_status = entity.status
         new_status_enum = manager.status_enum(new_status)
         
@@ -96,20 +96,20 @@ class StatusTransitionService(Generic[T]):
         )
         
         # Create history entry
-        history_entry = AuditEvent(
-            entity_type=manager.entity_type,
-            entity_id=entity.id,
-            action_type=AuditEventType.STATUS_CHANGE,
-            actor_id=actor.id,
-            previous_status=str(current_status),
-            new_status=str(new_status_enum),
-            transition_reason=reason,
-            details={
-                "metadata": entity_metadata or {},
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-        session.add(history_entry)
+        # history_entry = AuditEvent(
+        #     entity_type=manager.entity_type,
+        #     entity_id=entity.id,
+        #     action_type=AuditEventType.STATUS_CHANGE,
+        #     actor_id=actor.id,
+        #     previous_status=str(current_status),
+        #     new_status=str(new_status_enum),
+        #     transition_reason=reason,
+        #     details={
+        #         "metadata": entity_metadata or {},
+        #         "timestamp": datetime.now().isoformat()
+        #     }
+        # )
+        # session.add(history_entry)
         
         # Update entity
         entity.status = new_status_enum

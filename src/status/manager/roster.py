@@ -127,7 +127,7 @@ def initialize_roster_status_manager() -> StatusTransitionManager:
     
    # PENDING -> ACTIVE (When captain accepts)
     manager.add_rule(StatusTransitionRule(
-        from_status={RosterStatus.PENDING},
+        from_status={RosterStatus.PENDING, RosterStatus.REMOVED},
         to_status={RosterStatus.ACTIVE},
         validators=[reason_validator, permission_validator],
     ))
@@ -138,6 +138,7 @@ def initialize_roster_status_manager() -> StatusTransitionManager:
         to_status={RosterStatus.REMOVED},
         validators=[reason_validator, permission_validator],
     ))
+    
     
     # ACTIVE -> SUSPENDED (Admin action)
     manager.add_rule(StatusTransitionRule(

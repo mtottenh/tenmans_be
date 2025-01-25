@@ -10,12 +10,13 @@ from auth.service.permission import PermissionService, create_permission_service
 from competitions.season.service import SeasonService, create_season_service
 from status.manager.join_request import initialize_join_request_manager
 from status.service import StatusTransitionService, create_status_transition_service
+from teams.base_schemas import RosterStatus
 from teams.service.captain import CaptainService, create_captain_service
 
 from .schemas import JoinRequestStatus
 
 from .models import TeamJoinRequest
-from teams.models import Team
+from teams.models import Roster, Team
 from auth.models import Player, Role
 from competitions.models.seasons import Season
 from audit.service import AuditService, create_audit_service
@@ -103,13 +104,12 @@ class TeamJoinRequestService:
         )
         
         return request
-
     async def approve_request(
         self,
         request: TeamJoinRequest,
         captain: Player,
         response_message: Optional[str],
-        actor: Player,
+        actor: Player, 
         session: AsyncSession
     ) -> TeamJoinRequest:
         """Approve a join request"""
@@ -122,14 +122,39 @@ class TeamJoinRequestService:
             session=session
         )
         
-        # Add player to team roster
-        await self.roster_service.add_player_to_roster(
-            team=request.team,
-            player=request.player,
-            season=request.season,
-            actor=actor,
-            session=session
+        team_to_join = await session.get(Team, request.team_id)
+        player_to_add = await session.get(Player, request.player_id)
+        roster_season = await session.get(Season, request.season_id)
+
+        # Check for existing roster entry
+        stmt = select(Roster).where(
+            Roster.team_id == team_to_join.id,
+            Roster.player_id == player_to_add.id,
+            Roster.season_id == roster_season.id
         )
+        result = await session.execute(stmt)
+        existing_roster = result.scalar_one_or_none()
+
+        if existing_roster:
+            # If there's an existing entry, transition its status back to ACTIVE
+            await self.roster_service.change_roster_status(
+                roster=existing_roster,
+                new_status=RosterStatus.ACTIVE,
+                reason="Rejoining team via approved join request",
+                actor=actor,
+                session=session,
+                metadata={"join_request_id": str(request.id)}
+            )
+        else:
+            # If no existing entry, create new roster entry
+            await self.roster_service.add_player_to_roster(
+                team=team_to_join,
+                player=player_to_add,
+                season=roster_season,
+                actor=actor,
+                session=session,
+                details={"join_request_id": str(request.id)}
+            )
         
         return request
 
@@ -174,7 +199,12 @@ class TeamJoinRequestService:
         session: AsyncSession
     ) -> Optional[TeamJoinRequest]:
         """Get a join request by ID"""
-        stmt = select(TeamJoinRequest).where(TeamJoinRequest.id == request_id)
+        stmt = select(TeamJoinRequest).where(TeamJoinRequest.id == request_id).options(
+            selectinload(TeamJoinRequest.team),
+            selectinload(TeamJoinRequest.player)
+            .selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
@@ -214,7 +244,11 @@ class TeamJoinRequestService:
         include_resolved: bool = False
     ) -> List[TeamJoinRequest]:
         """Get all join requests for a team"""
-        stmt = select(TeamJoinRequest).where(TeamJoinRequest.team_id == team.id)
+        stmt = select(TeamJoinRequest).where(TeamJoinRequest.team_id == team.id).options(
+            selectinload(TeamJoinRequest.player)
+            .selectinload(Player.roles)
+            .selectinload(Role.permissions)
+        )
         if not include_resolved:
             stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING)
         result = (await session.execute(stmt)).scalars()

@@ -12,7 +12,10 @@ class TournamentCreate(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
     season_id: UUID4
     type: TournamentType
-    # TODO - Revisit this...
+    registration_start: datetime
+    registration_end: datetime
+    scheduled_start: datetime
+    scheduled_end: datetime
     max_team_size: int = Field(..., ge=1, le=100)
     map_pool: List[UUID4]
     format_config: Dict[str, Any]  # Flexible tournament format configuration

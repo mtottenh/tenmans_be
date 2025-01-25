@@ -6,6 +6,7 @@ from db.main import get_session
 from state.service import StateType
 from services.auth import auth_service
 from services.state import state_service
+from config import Config
 
 auth_test_router = APIRouter(prefix="/auth/test")
 
@@ -31,7 +32,7 @@ async def register_test_user(
             metadata={"player_id": str(player.id)}
         )
         return RedirectResponse(
-            f"http://localhost:5173/auth/callback?state={state_id}",
+            f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
             status_code=status.HTTP_303_SEE_OTHER
         )
     except ValueError as e:
@@ -61,7 +62,7 @@ async def login_test_user(
             metadata={"player_id": str(player.id)}
         )
         return RedirectResponse(
-            f"http://localhost:5173/auth/callback?state={state_id}",
+            f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
             status_code=status.HTTP_303_SEE_OTHER
         )
     except ValueError as e:

@@ -114,12 +114,12 @@ class AuthService:
             session=session,
             audit_context=audit_context
         )
-        
+        LOG.info(f"Player: {player}")
         # Assign default role
         user_role = await self.get_default_role(session)
         if not user_role:
             raise ValueError("Default user role not found")
-            
+        LOG.info(f"Player: {player} user_role {user_role}")
         await self.assign_role(
             player=player,
             role=user_role,

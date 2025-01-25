@@ -8,6 +8,8 @@ from audit.models import AuditEventType
 from auth.models import Player, Role, Permission, PlayerRole, RolePermission
 from auth.schemas import ScopeType
 from audit.service import AuditService
+import logging
+LOG = logging.getLogger('uvicorn.error')
 
 class PermissionServiceError(Exception):
     """Base exception for permission operations"""
@@ -148,22 +150,26 @@ class PermissionService:
         
         for required_perm in required_permissions:
             has_permission = False
+            # LOG.info(f"Has Permission: {has_permission}")
             for perm_name, perm_scope_type, perm_scope_id in player_permissions:
+              #   LOG.info(f"Checking {required_perm} == {perm_name}")
                 if perm_name != required_perm:
                     continue
 
                 if perm_scope_type == ScopeType.GLOBAL:
                     has_permission = True
                     break
-
+               # LOG.info(f"Checking '{scope.scope_type}:{scope.scope_id}' vs '{perm_scope_type}:{perm_scope_id}'")
                 if scope and perm_scope_type == scope.scope_type:
-                    if scope.scope_id is None or perm_scope_id == scope.scope_id:
+                   #  LOG.info(f"Scoped permission")
+                    if (scope.scope_id is None) or (str(perm_scope_id) == str(scope.scope_id)):
+                        # LOG.info("Setting has permission!")
                         has_permission = True
                         break
 
             if not has_permission:
                 return False
-
+       # LOG.info(f"Has Permission: {has_permission}")
         return True
     
 def create_permission_service(audit_svc: Optional[AuditService] = None) -> PermissionService:

@@ -4,6 +4,12 @@ from pathlib import Path
 import json
 from auth.schemas import PermissionAuditResult
 
+class SetEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        return json.JSONEncoder.default(self, obj)
+
 class PermissionReporter:
     """Utility for generating permission audit reports"""
     
@@ -28,8 +34,8 @@ class PermissionReporter:
                     result.steam_id,
                     ','.join(result.roles),
                     ','.join(result.global_permissions),
-                    json.dumps(result.team_permissions),
-                    json.dumps(result.tournament_permissions),
+                    json.dumps(result.team_permissions, cls=SetEncoder),
+                    json.dumps(result.tournament_permissions, cls=SetEncoder),
                     ';'.join(result.issues)
                 ])
 

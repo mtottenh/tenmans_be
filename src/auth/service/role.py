@@ -211,8 +211,6 @@ class RoleService:
         )
         
         session.add(player_role)
-        await session.commit()
-        await session.refresh(player_role)
         return player_role
 
     @AuditService.audited_transaction(
@@ -222,7 +220,9 @@ class RoleService:
         id_extractor=_id_extractor_player_role
     )
     async def delete_player_role(self, player_role: PlayerRole, actor: Player, session: AsyncSession, audit_context: Optional[AuditContext] = None):
-               return await session.delete(player_role)
+            
+        return await session.delete(player_role)
+
 
     async def remove_role_from_player(
         self,
@@ -231,7 +231,9 @@ class RoleService:
         scope_type: ScopeType,
         scope_id: Optional[uuid.UUID],
         actor: Player,
-        session: AsyncSession):
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
+        ):
         """Remove a role assignment from a player"""
         if scope_type != ScopeType.GLOBAL and scope_id is None:
             raise ValueError("scope_id is required for non-global scopes")
@@ -249,7 +251,7 @@ class RoleService:
         if len(role_to_remove) > 1:
             raise RoleServiceError("Bulk removal of roles not supported yet")
 
-        return await self.delete_player_role(role_to_remove[0], actor=actor, session=session)
+        return await self.delete_player_role(role_to_remove[0], actor=actor, session=session, audit_context=audit_context)
     
     # Delegated methods
     async def get_permission_by_name(self, *args, **kwargs):

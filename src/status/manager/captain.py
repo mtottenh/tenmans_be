@@ -34,14 +34,14 @@ class TeamPermissionValidator(TransitionValidator):
         permission_service: PermissionService = context["permission_service"]
         actor = context["actor"]
         session = context["session"]
-        team = context["entity"].team
+        team_id = context["entity"].team_id
 
         # Special case: Initial captain creation
         if (current_status == TeamCaptainStatus.PENDING and 
             new_status == TeamCaptainStatus.ACTIVE and
             context.get("is_initial_captain")):
             return True
-
+        
         # Regular permission checks...
         has_admin = await permission_service.verify_permissions(
             actor,
@@ -55,7 +55,7 @@ class TeamPermissionValidator(TransitionValidator):
         is_captain = await permission_service.verify_permissions(
             actor,
             ["manage_team"],
-            PermissionScope(ScopeType.TEAM, team.id),
+            PermissionScope(ScopeType.TEAM, team_id),
             session
         )
         if not is_captain:
@@ -79,7 +79,7 @@ def initialize_captain_status_manager() -> StatusTransitionManager:
     
     # Active -> Removed (captain steps down or is removed)
     manager.add_rule(StatusTransitionRule(
-        from_status={TeamCaptainStatus.ACTIVE},
+        from_status={TeamCaptainStatus.ACTIVE, TeamCaptainStatus.PENDING, TeamCaptainStatus.DISBANDED},
         to_status={TeamCaptainStatus.REMOVED},
         validators=common_validators,
     ))

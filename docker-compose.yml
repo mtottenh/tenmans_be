@@ -22,7 +22,6 @@ services:
       - API_VERSION=${API_VERSION}
       - DB_ECHO=${DB_ECHO:-true}
       - STEAM_API_KEY=${STEAM_API_KEY}
-      - FRONTEND_URL=${FRONTEND_URL}
     
     depends_on:
       db:
