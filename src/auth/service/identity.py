@@ -1,5 +1,5 @@
 from typing import List, Optional
-from sqlmodel import select, desc
+from sqlmodel import select, desc, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload
 import httpx
@@ -8,9 +8,9 @@ from audit.context import AuditContext
 from audit.schemas import AuditEventType
 from audit.service import AuditService
 from auth.models import Player, Role
-from teams.models import Roster
-from teams.base_schemas import TeamBase
-from auth.schemas import PlayerEmailCreate, PlayerWithTeamBasic,  AuthType, PlayerStatus
+from teams.models import Roster, Team
+from teams.base_schemas import RosterStatus, TeamBase, TeamStatus
+from auth.schemas import PlayerEmailCreate, PlayerUpdate, PlayerWithTeamBasic,  AuthType, PlayerStatus
 from config import Config
 from passlib.context import CryptContext
 LOG = logging.getLogger('uvicorn.error')
@@ -36,15 +36,20 @@ class IdentityService:
         )
         result = (await session.execute(stmt)).scalars()
         return result.all()
+    
+    async def get_unranked_players(self, session: AsyncSession):
+        stmt = select(Player).where(or_(Player.current_elo == None, Player.highest_elo == None)).where(Player.name != "SYSTEM")
+        result = (await session.execute(stmt)).scalars()
+        return result.all()
 
     async def get_all_players_with_basic_team_info(
         self,
         current_season_id: str,
         session: AsyncSession
     ) -> List[PlayerWithTeamBasic]:
-        stmt = select(Player).order_by(desc(Player.created_at)).options(
+        stmt = select(Player).where(Player.status == PlayerStatus.ACTIVE).order_by(desc(Player.created_at)).options(
             selectinload(Player.roles).selectinload(Role.permissions),
-            selectinload(Player.team_rosters).selectinload(Roster.team)
+            selectinload(Player.team_rosters).selectinload(Roster.team).selectinload(Team.captains)
         )
         result = (await session.execute(stmt)).scalars()
         players = result.all()
@@ -60,11 +65,20 @@ class IdentityService:
         current_season_id: str
     ) -> PlayerWithTeamBasic:
         roster = next(
-            (r for r in player.team_rosters if r.season_id == current_season_id),
+            (r for r in player.team_rosters if r.season_id == current_season_id and r.status == RosterStatus.ACTIVE),
             None
         )
-        team = TeamBase.model_validate(roster.team) if roster and roster.team else None
-        
+        LOG.info(f"Building team information for player {player.name} roster {roster}")
+        team = TeamBase.model_validate(roster.team) if roster \
+        and roster.status == RosterStatus.ACTIVE \
+        and roster.team \
+        and roster.team.status == TeamStatus.ACTIVE else None
+        is_captain = False
+        if team:
+            for c in roster.team.captains:
+                if c.player_id == player.id:
+                    is_captain = True
+                    break
         return PlayerWithTeamBasic(
             id=player.id,
             name=player.name,
@@ -77,7 +91,8 @@ class IdentityService:
             created_at=player.created_at,
             updated_at=player.updated_at,
             roles=player.roles,
-            team=team
+            team=team,
+            is_captain = is_captain
         )
 
     async def get_player_by_name(self, name: str, session: AsyncSession) -> Optional[Player]:
@@ -134,6 +149,22 @@ class IdentityService:
         session.add(player)
         return player
 
+    @AuditService.audited_transaction(
+            action_type=AuditEventType.UPDATE,
+            entity_type='Player'
+    )
+    async def update_player(
+        self,
+        player: Player,
+        update_details: PlayerUpdate,
+        actor: Player,
+        session: AsyncSession,
+        audit_context: Optional[AuditContext] = None
+    ) -> Player:
+        player.name = update_details.name
+        session.add(player)
+        return player
+    
     @AuditService.audited_transaction(
             action_type=AuditEventType.CREATE,
             entity_type='Player'

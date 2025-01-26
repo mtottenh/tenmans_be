@@ -186,6 +186,11 @@ class AuthService:
     async def create_player_with_steam(self, *args, **kwargs):
         return await self.identity_service.create_player_with_steam(*args, **kwargs)
 
+    async def update_player(self, *args, **kwargs):
+        return await self.identity_service.update_player(*args, **kwargs)
+
+    async def get_unranked_players(self, *args, **kwargs):
+        return await self.identity_service.get_unranked_players(*args, **kwargs)
     # Token Service delegations  
     def create_token(self, *args, **kwargs):
         return self.token_service.create_token(*args, **kwargs)

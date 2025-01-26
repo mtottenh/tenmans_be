@@ -213,8 +213,9 @@ async def update_player(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Players can only edit their own profiles {player_id} != {str(player_details.id)} "
         )
+    
     updated_player = await auth_service.update_player(
-        player_id, player_data, session
+        player_details, player_data, actor=player_details, session=session
     )
     if updated_player:
         return updated_player

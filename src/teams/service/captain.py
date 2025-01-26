@@ -189,8 +189,7 @@ class CaptainService:
         """Removes a player as team captain"""
         team_captain_role = await self.role_service.get_role_by_name('team_captain', session)
         player = await session.get(Player, captain.player_id)
-        await self.role_service.remove_role_from_player(player, team_captain_role, ScopeType.TEAM, captain.team_id, actor=actor, session=session, audit_context=audit_context)
-        return await self.change_captain_status(
+        captain_obj = await self.change_captain_status(
             captain=captain,
             new_status=TeamCaptainStatus.REMOVED,
             reason=reason,
@@ -198,6 +197,9 @@ class CaptainService:
             session=session,
             audit_context=audit_context
         )
+
+        await self.role_service.remove_role_from_player(player, team_captain_role, ScopeType.TEAM, captain.team_id, actor=actor, session=session, audit_context=audit_context)
+        return captain_obj
 
     async def get_team_captains(
         self,

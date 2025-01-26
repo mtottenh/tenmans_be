@@ -32,7 +32,7 @@ async def register_test_user(
             metadata={"player_id": str(player.id)}
         )
         return RedirectResponse(
-            f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
+            f"{Config.FRONTEND_URL}auth/callback?state={state_id}",
             status_code=status.HTTP_303_SEE_OTHER
         )
     except ValueError as e:
@@ -62,7 +62,7 @@ async def login_test_user(
             metadata={"player_id": str(player.id)}
         )
         return RedirectResponse(
-            f"{Config.FRONTEND_URL}/auth/callback?state={state_id}",
+            f"{Config.FRONTEND_URL}auth/callback?state={state_id}",
             status_code=status.HTTP_303_SEE_OTHER
         )
     except ValueError as e:

@@ -16,7 +16,7 @@ from status.manager.team import initialize_team_status_manager
 from status.service import StatusTransitionService
 from teams.models import Team, TeamCaptain, Roster, TeamStatus
 from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
-from teams.base_schemas import RosterStatus, TeamCaptainStatus, TeamUpdate
+from teams.base_schemas import RecruitmentStatus, RosterStatus, TeamCaptainStatus, TeamUpdate
 from auth.models import Player, Role
 from audit.service import AuditService, AuditEventType
 from teams.service.captain import CaptainService
@@ -319,6 +319,7 @@ class TeamService:
                 updated_at=team.updated_at,
                 recruitment_status=team.recruitment_status,
                 rosters=roster,
+                status=team.status,
                 captains=captains
             ))
         
@@ -401,7 +402,12 @@ class TeamService:
         
         if logo_path:
             update_dict['logo'] = logo_path
-            
+        if update_dict["logo_token_id"]:
+            del update_dict['logo_token_id']
+        
+        update_dict['recruitment_status'] = RecruitmentStatus.ACTIVE if update_dict['recruitment_status'] else RecruitmentStatus.CLOSED
+
+
         for key, value in update_dict.items():
             setattr(team, key, value)
             
@@ -454,6 +460,19 @@ class TeamService:
     ) -> Team:
         """Disband a team and cleanup related data"""
         # Get and update all captains
+        disbanded_team = await self.change_team_status(
+            team=team,
+            new_status=TeamStatus.DISBANDED,
+            reason=reason,
+            actor=actor,
+            session=session
+        )
+        
+        disbanded_team.disbanded_at = datetime.now()
+        disbanded_team.disbanded_reason = reason
+        disbanded_team.disbanded_by = actor.id
+        
+        session.add(disbanded_team)
         captains = await self.get_team_captains_by_team_id(team.id, session)
         await self._update_captain_roles(
             team=team,
@@ -469,19 +488,7 @@ class TeamService:
         for roster in await self.roster_service.get_team_roster(team, season, session):
             await self.roster_service.change_roster_status(roster, RosterStatus.PAST, reason=f"Team disbanded: {reason}", actor=actor, session=session, audit_context=audit_context)
         # Change team status and update fields
-        disbanded_team = await self.change_team_status(
-            team=team,
-            new_status=TeamStatus.DISBANDED,
-            reason=reason,
-            actor=actor,
-            session=session
-        )
-        
-        disbanded_team.disbanded_at = datetime.now()
-        disbanded_team.disbanded_reason = reason
-        disbanded_team.disbanded_by = actor.id
-        
-        session.add(disbanded_team)
+
         return disbanded_team
 
     @AuditService.audited_transaction(

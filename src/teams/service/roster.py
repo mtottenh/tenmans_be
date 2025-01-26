@@ -20,7 +20,8 @@ from auth.models import Player, Role
 from competitions.models.seasons import Season
 from audit.service import AuditService, create_audit_service
 from teams.schemas import PlayerRosterHistory
-
+import logging
+LOG = logging.getLogger('uvicorn.error')
 
 class RosterServiceError(Exception):#
     """Base exception for roster operations"""
@@ -193,6 +194,7 @@ class RosterService:
             Roster.player_id == player_id
         ).join(Team).options(
             selectinload(Roster.team)
+            .selectinload(Team.captains)
         )
         result = (await session.execute(stmt)).scalars().all()
         
@@ -222,9 +224,17 @@ class RosterService:
         def roster_to_team_history(r: Roster) -> TeamHistory:
             if not r:
                 return None
+            is_captain=False
+            for captain in r.team.captains:
+                LOG.info(f"Checking { captain.player_id} == {player_id}")
+                if str(captain.player_id) == player_id:
+                    LOG.info(f"Player is captain")
+                    is_captain=True
+                    break
             return TeamHistory(
                 team_id=r.team_id,
                 name=r.team.name,
+                is_captain=is_captain,
                 season_id=r.season_id,
                 since=r.created_at,
                 status=r.team.status

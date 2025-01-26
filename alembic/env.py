@@ -4,22 +4,26 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
-from src.db.main import DB_URL
-from src.auth.models import *
-from src.audit.models import *
-from src.competitions.models.fixtures import *
-from src.competitions.models.rounds import *
-from src.competitions.models.seasons import *
-from src.competitions.models.tournaments import *
-from src.maps.models import *
-from src.matches.models import *
-from src.moderation.models import *
-from src.pugs.models import *
-from src.substitutes.models import *
-from src.teams.models import *
-from src.teams.join_request.models import *
-from src.upload.models import *
-from src.config import Config
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+
+from db.main import DB_URL
+from auth.models import *
+from audit.models import *
+from competitions.models.fixtures import *
+from competitions.models.rounds import *
+from competitions.models.seasons import *
+from competitions.models.tournaments import *
+from maps.models import *
+from matches.models import *
+from moderation.models import *
+from pugs.models import *
+from substitutes.models import *
+from teams.models import *
+from teams.join_request.models import *
+from upload.models import *
+from config import Config
 
 from alembic import context
 

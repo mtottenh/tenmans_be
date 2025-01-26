@@ -155,6 +155,7 @@ class PlayerPublic(PlayerBase):
 
 class PlayerWithTeamBasic(PlayerPublic):
     team: Optional[TeamBasic]
+    is_captain: bool
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -165,6 +166,8 @@ class TokenResponse(BaseModel):
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
+class PlayerUpdate(BaseModel):
+    name: str
 
 
 class PermissionTemplate:

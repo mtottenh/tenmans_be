@@ -1,6 +1,49 @@
+from typing import Any, Dict
+from audit.schemas import ScopeType
+from auth.models import Player
+from auth.service.permission import PermissionScope, PermissionService
 from status.transition_validator import StatusTransitionManager, StatusTransitionRule, TransitionValidator
 from teams.base_schemas import TeamStatus
+from teams.models import Team
 
+
+
+class TeamTransitionPermissionValidator(TransitionValidator):
+    """Validates permissions for roster status transitions based on actor role"""
+    
+    async def validate(
+        self,
+        current_status: TeamStatus,
+        new_status: TeamStatus,
+        context: Dict[str, Any]
+    ) -> bool:
+        actor: Player = context.get('actor')
+        session: AsyncSession = context.get('session')
+        entity: Team = context.get('entity')  # The Team entry
+        permission_service: PermissionService = context.get('permission_service')
+        
+        if not actor or not session or not entity or not permission_service:
+            raise ValueError("Missing required context for permission validation")
+
+        # Check if actor is admin - admins can do any transition
+        is_admin = await permission_service.verify_permissions(
+            actor,
+            ["manage_teams"],
+            None,  # Global scope
+            session
+        )
+        if is_admin:
+            return True
+
+        # Check if actor is team captain
+        is_captain = await permission_service.verify_permissions(
+            actor,
+            ["manage_team"],
+            PermissionScope(ScopeType.TEAM, entity.id),
+            session
+        )
+        return is_captain
+    
 def initialize_team_status_manager() -> StatusTransitionManager:
     """Initialize the team status transition manager with rules"""
     manager = StatusTransitionManager(
@@ -30,8 +73,8 @@ def initialize_team_status_manager() -> StatusTransitionManager:
     manager.add_rule(StatusTransitionRule(
         from_status={TeamStatus.ACTIVE},
         to_status={TeamStatus.DISBANDED},
-        validators=[TeamStatusReasonValidator(), NoActiveMatchesValidator()],
-        required_permissions=["manage_teams"]
+        validators=[TeamStatusReasonValidator(), NoActiveMatchesValidator(), TeamTransitionPermissionValidator()],
+
     ))
     
     # Active -> Suspended (admin action)

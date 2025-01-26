@@ -1,19 +1,19 @@
-"""Initial migration
+"""initial deployment
 
-Revision ID: aab9da6205e3
+Revision ID: 72714e929344
 Revises: 
-Create Date: 2025-01-12 16:07:48.969658
+Create Date: 2025-01-25 22:55:55.380387
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-import sqlmodel
 from sqlalchemy.dialects import postgresql
+import sqlmodel
 
 # revision identifiers, used by Alembic.
-revision: str = 'aab9da6205e3'
+revision: str = '72714e929344'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -39,7 +39,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('name')
     )
     op.create_table('players',
-    sa.Column('uid', sa.UUID(), nullable=False),
+    sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('steam_id', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('email', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
@@ -47,14 +47,11 @@ def upgrade() -> None:
     sa.Column('password_hash', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('current_elo', sa.Integer(), nullable=True),
     sa.Column('highest_elo', sa.Integer(), nullable=True),
-    sa.Column('verification_status', sa.Enum('PENDING', 'VERIFIED', 'REJECTED', name='verificationstatus'), nullable=False),
-    sa.Column('verified_by', sa.UUID(), nullable=True),
-    sa.Column('verification_notes', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('verification_date', sa.DateTime(), nullable=True),
+    sa.Column('verification_evidence', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'PENDING_VERIFICATION', 'VERIFICATION_REJECTED', 'INACTIVE', 'SUSPENDED', 'BANNED', 'DELETED', name='playerstatus'), nullable=False),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['verified_by'], ['players.uid'], ),
-    sa.PrimaryKeyConstraint('uid'),
+    sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email'),
     sa.UniqueConstraint('steam_id')
     )
@@ -73,57 +70,56 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name')
     )
-    op.create_table('teams',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('logo', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('name')
-    )
-    op.create_table('audit_logs',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('action_type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    op.create_table('audit_events',
+    sa.Column('id', sqlmodel.sql.sqltypes.GUID(), nullable=False),
     sa.Column('entity_type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('entity_id', sqlmodel.sql.sqltypes.GUID(), nullable=False),
-    sa.Column('actor_id', sa.UUID(), nullable=True),
-    sa.Column('details', postgresql.JSON(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['actor_id'], ['players.uid'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_table('bans',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=True),
-    sa.Column('team_id', sa.UUID(), nullable=True),
-    sa.Column('scope', sa.Enum('MATCH', 'TOURNAMENT', 'SEASON', 'PERMANENT', name='banscope'), nullable=False),
+    sa.Column('entity_id', sqlmodel.sql.sqltypes.GUID(), nullable=True),
+    sa.Column('action_type', sa.Enum('CREATE', 'UPDATE', 'DELETE', 'STATUS_CHANGE', 'PERMISSION_CHANGE', 'VERIFICATION', 'BAN', 'ROLE_CHANGE', 'BULK_OPERATION', 'CASCADE', name='auditeventtype'), nullable=False),
+    sa.Column('actor_id', sqlmodel.sql.sqltypes.GUID(), nullable=False),
+    sa.Column('timestamp', postgresql.TIMESTAMP(), nullable=True),
+    sa.Column('event_state', sa.Enum('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'ROLLED_BACK', name='auditeventstate'), nullable=False),
+    sa.Column('sequence_number', sa.Integer(), nullable=True),
+    sa.Column('previous_status', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('new_status', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('transition_reason', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('scope_type', sa.Enum('GLOBAL', 'TEAM', 'TOURNAMENT', 'SEASON', name='scopetype'), nullable=True),
     sa.Column('scope_id', sqlmodel.sql.sqltypes.GUID(), nullable=True),
-    sa.Column('reason', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('evidence', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('status', sa.Enum('ACTIVE', 'EXPIRED', 'APPEALED', 'REVOKED', name='banstatus'), nullable=False),
-    sa.Column('start_date', sa.DateTime(), nullable=False),
-    sa.Column('end_date', sa.DateTime(), nullable=True),
-    sa.Column('issued_by', sa.UUID(), nullable=True),
-    sa.Column('revoked_by', sa.UUID(), nullable=True),
-    sa.Column('revoke_reason', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['issued_by'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['revoked_by'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
+    sa.Column('error_message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('error_details', postgresql.JSON(astext_type=sa.Text()), nullable=True),
+    sa.Column('affected_entities', postgresql.ARRAY(sa.UUID()), nullable=True),
+    sa.Column('operation_count', sa.Integer(), nullable=True),
+    sa.Column('details', postgresql.JSON(astext_type=sa.Text()), nullable=True),
+    sa.Column('parent_event_id', sqlmodel.sql.sqltypes.GUID(), nullable=True),
+    sa.Column('root_event_id', sqlmodel.sql.sqltypes.GUID(), nullable=True),
+    sa.Column('grace_period_end', sa.DateTime(), nullable=True),
+    sa.CheckConstraint("(action_type != 'BULK_OPERATION') OR (action_type = 'BULK_OPERATION' AND affected_entities IS NOT NULL AND operation_count IS NOT NULL)", name='valid_bulk_operation'),
+    sa.CheckConstraint("entity_type IN ('Player', 'Team', 'Tournament', 'Fixture', 'Season', 'TeamJoinRequest', 'TeamCaptain', 'Roster', 'Result', 'MatchPlayer', 'TournamentRegistration','Ban', 'Ticket', 'Role', 'PlayerRole', 'Permission', 'status')", name='valid_entity_types'),
+    sa.CheckConstraint("scope_type = 'GLOBAL' OR (scope_type IS NOT NULL AND scope_id IS NOT NULL)", name='valid_scope_id'),
+    sa.CheckConstraint("scope_type IS NULL OR scope_type IN ('GLOBAL', 'TEAM', 'TOURNAMENT', 'SEASON')", name='valid_scope_types'),
+    sa.ForeignKeyConstraint(['actor_id'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['parent_event_id'], ['audit_events.id'], ),
+    sa.ForeignKeyConstraint(['root_event_id'], ['audit_events.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_index('ix_audit_action', 'audit_events', ['action_type'], unique=False)
+    op.create_index('ix_audit_actor', 'audit_events', ['actor_id'], unique=False)
+    op.create_index('ix_audit_cascade', 'audit_events', ['root_event_id', 'sequence_number'], unique=False, postgresql_where=sa.text('root_event_id IS NOT NULL'))
+    op.create_index('ix_audit_entity', 'audit_events', ['entity_type', 'entity_id'], unique=False)
+    op.create_index('ix_audit_grace_period', 'audit_events', ['grace_period_end'], unique=False, postgresql_where=sa.text('grace_period_end IS NOT NULL'))
+    op.create_index('ix_audit_root_event', 'audit_events', ['root_event_id'], unique=False)
+    op.create_index('ix_audit_scope', 'audit_events', ['scope_type', 'scope_id'], unique=False)
+    op.create_index('ix_audit_state', 'audit_events', ['event_state'], unique=False)
+    op.create_index('ix_audit_status_transition', 'audit_events', ['entity_type', 'entity_id', 'action_type'], unique=False, postgresql_where=sa.text("action_type = 'STATUS_CHANGE'"))
+    op.create_index('ix_audit_timestamp', 'audit_events', ['timestamp'], unique=False)
     op.create_table('player_roles',
-    sa.Column('player_uid', sa.UUID(), nullable=False),
+    sa.Column('player_id', sa.UUID(), nullable=False),
     sa.Column('role_id', sa.UUID(), nullable=False),
     sa.Column('scope_type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('scope_id', sqlmodel.sql.sqltypes.GUID(), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
     sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ),
-    sa.PrimaryKeyConstraint('player_uid', 'role_id')
+    sa.PrimaryKeyConstraint('player_id', 'role_id')
     )
     op.create_table('pugs',
     sa.Column('id', sa.UUID(), nullable=False),
@@ -135,7 +131,7 @@ def upgrade() -> None:
     sa.Column('created_by', sa.UUID(), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('completed_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['created_by'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['created_by'], ['players.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('role_permissions',
@@ -145,44 +141,20 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ),
     sa.PrimaryKeyConstraint('role_id', 'permission_id')
     )
-    op.create_table('rosters',
-    sa.Column('team_id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=False),
-    sa.Column('season_id', sa.UUID(), nullable=False),
-    sa.Column('pending', sa.Boolean(), nullable=False),
+    op.create_table('teams',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('status', sa.Enum('ACTIVE', 'DISBANDED', 'SUSPENDED', 'ARCHIVED', name='teamstatus'), nullable=False),
+    sa.Column('disbanded_at', sa.DateTime(), nullable=True),
+    sa.Column('disbanded_reason', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('disbanded_by', sa.UUID(), nullable=True),
+    sa.Column('logo', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['season_id'], ['seasons.id'], ),
-    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
-    sa.PrimaryKeyConstraint('team_id', 'player_uid', 'season_id')
-    )
-    op.create_table('team_captains',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('team_id', sa.UUID(), nullable=True),
-    sa.Column('player_uid', sa.UUID(), nullable=True),
-    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_table('team_join_requests',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=True),
-    sa.Column('team_id', sa.UUID(), nullable=True),
-    sa.Column('season_id', sa.UUID(), nullable=True),
-    sa.Column('message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('status', sa.Enum('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED', name='joinrequeststatus'), nullable=False),
-    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.Column('responded_at', sa.DateTime(), nullable=True),
-    sa.Column('response_message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('responded_by', sa.UUID(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['responded_by'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['season_id'], ['seasons.id'], ),
-    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.Column('recruitment_status', sa.Enum('ACTIVE', 'CLOSED', name='recruitmentstatus'), nullable=False),
+    sa.ForeignKeyConstraint(['disbanded_by'], ['players.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('name')
     )
     op.create_table('tournaments',
     sa.Column('id', sa.UUID(), nullable=False),
@@ -200,7 +172,6 @@ def upgrade() -> None:
     sa.Column('allow_late_registration', sa.Boolean(), nullable=False),
     sa.Column('format_config', sa.JSON(), nullable=True),
     sa.Column('seeding_config', sa.JSON(), nullable=True),
-    sa.Column('map_pool', sa.JSON(), nullable=True),
     sa.Column('scheduled_start_date', sa.DateTime(), nullable=False),
     sa.Column('scheduled_end_date', sa.DateTime(), nullable=False),
     sa.Column('actual_start_date', sa.DateTime(), nullable=True),
@@ -210,15 +181,26 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['season_id'], ['seasons.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_table('verification_requests',
+    op.create_table('bans',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=True),
-    sa.Column('admin_notes', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('submitted_evidence', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column('status', sa.Enum('PENDING', 'VERIFIED', 'REJECTED', name='verificationstatus'), nullable=False),
+    sa.Column('player_id', sa.UUID(), nullable=True),
+    sa.Column('team_id', sa.UUID(), nullable=True),
+    sa.Column('scope', sa.Enum('MATCH', 'TOURNAMENT', 'SEASON', 'PERMANENT', name='banscope'), nullable=False),
+    sa.Column('scope_id', sqlmodel.sql.sqltypes.GUID(), nullable=True),
+    sa.Column('reason', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('evidence', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'EXPIRED', 'APPEALED', 'REVOKED', name='banstatus'), nullable=False),
+    sa.Column('start_date', sa.DateTime(), nullable=False),
+    sa.Column('end_date', sa.DateTime(), nullable=True),
+    sa.Column('issued_by', sa.UUID(), nullable=True),
+    sa.Column('revoked_by', sa.UUID(), nullable=True),
+    sa.Column('revoke_reason', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['issued_by'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['revoked_by'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('pug_map_results',
@@ -237,12 +219,12 @@ def upgrade() -> None:
     )
     op.create_table('pug_players',
     sa.Column('pug_id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=False),
+    sa.Column('player_id', sa.UUID(), nullable=False),
     sa.Column('team_number', sa.Integer(), nullable=True),
     sa.Column('joined_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
     sa.ForeignKeyConstraint(['pug_id'], ['pugs.id'], ),
-    sa.PrimaryKeyConstraint('pug_id', 'player_uid')
+    sa.PrimaryKeyConstraint('pug_id', 'player_id')
     )
     op.create_table('pug_teams',
     sa.Column('pug_id', sa.UUID(), nullable=False),
@@ -250,15 +232,27 @@ def upgrade() -> None:
     sa.Column('team_name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('captain_id', sa.UUID(), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['captain_id'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['captain_id'], ['players.id'], ),
     sa.ForeignKeyConstraint(['pug_id'], ['pugs.id'], ),
     sa.PrimaryKeyConstraint('pug_id', 'team_number')
+    )
+    op.create_table('rosters',
+    sa.Column('team_id', sa.UUID(), nullable=False),
+    sa.Column('player_id', sa.UUID(), nullable=False),
+    sa.Column('season_id', sa.UUID(), nullable=False),
+    sa.Column('status', sa.Enum('ACTIVE', 'PENDING', 'REMOVED', 'PAST', 'SUSPENDED', name='rosterstatus'), nullable=False),
+    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['season_id'], ['seasons.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
+    sa.PrimaryKeyConstraint('team_id', 'player_id', 'season_id')
     )
     op.create_table('rounds',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('tournament_id', sa.UUID(), nullable=True),
     sa.Column('round_number', sa.Integer(), nullable=False),
-    sa.Column('type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('type', sa.Enum('GROUP_STAGE', 'KNOCKOUT', name='roundtype'), nullable=False),
     sa.Column('best_of', sa.Integer(), nullable=False),
     sa.Column('start_date', sa.DateTime(), nullable=False),
     sa.Column('end_date', sa.DateTime(), nullable=False),
@@ -270,17 +264,45 @@ def upgrade() -> None:
     )
     op.create_table('substitute_availability',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=True),
+    sa.Column('player_id', sa.UUID(), nullable=True),
     sa.Column('tournament_id', sa.UUID(), nullable=True),
     sa.Column('season_id', sa.UUID(), nullable=True),
-    sa.Column('is_available', sa.Boolean(), nullable=False),
+    sa.Column('status', sa.Enum('AVAILABLE', 'UNAVAILABLE', 'CONDITIONAL', 'USED', 'EXCLUDED', name='substituteavailabilitystatus'), nullable=False),
     sa.Column('availability_notes', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('last_substitute_date', sa.DateTime(), nullable=True),
     sa.Column('created_at', sa.TIMESTAMP(), nullable=True),
     sa.Column('updated_at', sa.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
     sa.ForeignKeyConstraint(['season_id'], ['seasons.id'], ),
     sa.ForeignKeyConstraint(['tournament_id'], ['tournaments.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('team_captains',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('team_id', sa.UUID(), nullable=True),
+    sa.Column('player_id', sa.UUID(), nullable=True),
+    sa.Column('status', sa.Enum('ACTIVE', 'PENDING', 'REMOVED', 'TEMPORARY', 'DISBANDED', name='teamcaptainstatus'), nullable=False),
+    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('team_join_requests',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('player_id', sa.UUID(), nullable=True),
+    sa.Column('team_id', sa.UUID(), nullable=True),
+    sa.Column('season_id', sa.UUID(), nullable=True),
+    sa.Column('message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('status', sa.Enum('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED', name='joinrequeststatus'), nullable=False),
+    sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
+    sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
+    sa.Column('responded_at', sa.DateTime(), nullable=True),
+    sa.Column('response_message', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column('responded_by', sa.UUID(), nullable=True),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['responded_by'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['season_id'], ['seasons.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('tournament_maps',
@@ -307,11 +329,11 @@ def upgrade() -> None:
     sa.Column('seed', sa.Integer(), nullable=True),
     sa.Column('group', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('final_position', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['requested_by'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['reviewed_by'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['requested_by'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['reviewed_by'], ['players.id'], ),
     sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
     sa.ForeignKeyConstraint(['tournament_id'], ['tournaments.id'], ),
-    sa.ForeignKeyConstraint(['withdrawn_by'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['withdrawn_by'], ['players.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('fixtures',
@@ -332,7 +354,7 @@ def upgrade() -> None:
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
     sa.ForeignKeyConstraint(['forfeit_winner'], ['teams.id'], ),
-    sa.ForeignKeyConstraint(['rescheduled_by'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['rescheduled_by'], ['players.id'], ),
     sa.ForeignKeyConstraint(['round_id'], ['rounds.id'], ),
     sa.ForeignKeyConstraint(['team_1'], ['teams.id'], ),
     sa.ForeignKeyConstraint(['team_2'], ['teams.id'], ),
@@ -341,14 +363,14 @@ def upgrade() -> None:
     )
     op.create_table('match_players',
     sa.Column('fixture_id', sa.UUID(), nullable=False),
-    sa.Column('player_uid', sa.UUID(), nullable=False),
+    sa.Column('player_id', sa.UUID(), nullable=False),
     sa.Column('team_id', sa.UUID(), nullable=True),
     sa.Column('is_substitute', sa.Boolean(), nullable=False),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.ForeignKeyConstraint(['fixture_id'], ['fixtures.id'], ),
-    sa.ForeignKeyConstraint(['player_uid'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
     sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
-    sa.PrimaryKeyConstraint('fixture_id', 'player_uid')
+    sa.PrimaryKeyConstraint('fixture_id', 'player_id')
     )
     op.create_table('results',
     sa.Column('id', sa.UUID(), nullable=False),
@@ -368,11 +390,11 @@ def upgrade() -> None:
     sa.Column('screenshot_urls', postgresql.JSON(astext_type=sa.Text()), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('updated_at', postgresql.TIMESTAMP(), nullable=True),
-    sa.ForeignKeyConstraint(['admin_override_by'], ['players.uid'], ),
-    sa.ForeignKeyConstraint(['confirmed_by'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['admin_override_by'], ['players.id'], ),
+    sa.ForeignKeyConstraint(['confirmed_by'], ['players.id'], ),
     sa.ForeignKeyConstraint(['fixture_id'], ['fixtures.id'], ),
     sa.ForeignKeyConstraint(['map_id'], ['maps.id'], ),
-    sa.ForeignKeyConstraint(['submitted_by'], ['players.uid'], ),
+    sa.ForeignKeyConstraint(['submitted_by'], ['players.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###
@@ -385,22 +407,31 @@ def downgrade() -> None:
     op.drop_table('fixtures')
     op.drop_table('tournament_registrations')
     op.drop_table('tournament_maps')
+    op.drop_table('team_join_requests')
+    op.drop_table('team_captains')
     op.drop_table('substitute_availability')
     op.drop_table('rounds')
+    op.drop_table('rosters')
     op.drop_table('pug_teams')
     op.drop_table('pug_players')
     op.drop_table('pug_map_results')
-    op.drop_table('verification_requests')
+    op.drop_table('bans')
     op.drop_table('tournaments')
-    op.drop_table('team_join_requests')
-    op.drop_table('team_captains')
-    op.drop_table('rosters')
+    op.drop_table('teams')
     op.drop_table('role_permissions')
     op.drop_table('pugs')
     op.drop_table('player_roles')
-    op.drop_table('bans')
-    op.drop_table('audit_logs')
-    op.drop_table('teams')
+    op.drop_index('ix_audit_timestamp', table_name='audit_events')
+    op.drop_index('ix_audit_status_transition', table_name='audit_events', postgresql_where=sa.text("action_type = 'STATUS_CHANGE'"))
+    op.drop_index('ix_audit_state', table_name='audit_events')
+    op.drop_index('ix_audit_scope', table_name='audit_events')
+    op.drop_index('ix_audit_root_event', table_name='audit_events')
+    op.drop_index('ix_audit_grace_period', table_name='audit_events', postgresql_where=sa.text('grace_period_end IS NOT NULL'))
+    op.drop_index('ix_audit_entity', table_name='audit_events')
+    op.drop_index('ix_audit_cascade', table_name='audit_events', postgresql_where=sa.text('root_event_id IS NOT NULL'))
+    op.drop_index('ix_audit_actor', table_name='audit_events')
+    op.drop_index('ix_audit_action', table_name='audit_events')
+    op.drop_table('audit_events')
     op.drop_table('seasons')
     op.drop_table('roles')
     op.drop_table('players')

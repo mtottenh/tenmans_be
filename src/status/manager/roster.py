@@ -12,6 +12,8 @@ from typing import Dict, Any
 from sqlmodel import select
 from auth.schemas import ScopeType
 from teams.models import Roster, TeamCaptain
+import logging
+LOG = logging.getLogger('uvicorn.error')
 
 class RosterTransitionPermissionValidator(TransitionValidator):
     """Validates permissions for roster status transitions based on actor role"""
@@ -47,9 +49,16 @@ class RosterTransitionPermissionValidator(TransitionValidator):
             PermissionScope(ScopeType.TEAM, entity.team_id),
             session
         )
-        
+        LOG.info(f"Is captain: {is_captain} actorID {actor.id} entity pid = {entity.player_id}")
+        LOG.info(f"Current status {current_status} => {new_status}")
         # Define allowed transitions based on role
-        if actor.id == entity.player_id:
+        if is_captain:
+            # Team captain permissions
+            return await self._validate_captain_transition(
+                current_status,
+                new_status
+            )
+        elif actor.id == entity.player_id:
             # Player can remove themselves from roster
             return await self._validate_player_transition(
                 actor.id,
@@ -57,12 +66,7 @@ class RosterTransitionPermissionValidator(TransitionValidator):
                 new_status,
                 entity
             )
-        elif is_captain:
-            # Team captain permissions
-            return await self._validate_captain_transition(
-                current_status,
-                new_status
-            )
+
         
         return False
 
@@ -75,7 +79,7 @@ class RosterTransitionPermissionValidator(TransitionValidator):
     ) -> bool:
         """Validate transitions allowed for players"""
         # Players can only remove themselves from roster
-        if current_status == RosterStatus.ACTIVE and new_status == RosterStatus.REMOVED:
+        if current_status == RosterStatus.ACTIVE and new_status in [RosterStatus.REMOVED, RosterStatus.PAST]:
             return roster.player_id == player_id
         return False
 

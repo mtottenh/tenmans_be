@@ -294,4 +294,17 @@ async def update_team_settings(
     current_player: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session)
 ):
-    pass
+    team = await team_service.get_team_by_id(team_id, session)
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No team with id {team_id}")
+    final_path=None
+    if team_update_details.logo_token_id:
+        upload_result = await upload_service.get_upload_result(team_update_details.logo_token_id)
+        if not upload_result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired logo upload token"
+            )
+        name = team_update_details.name if team_update_details.name else team.name
+        final_path = await upload_service.move_upload_if_temp(upload_result, name)
+    await team_service.update_team(team, team_update_details, actor=current_player, logo_path=final_path, session=session)

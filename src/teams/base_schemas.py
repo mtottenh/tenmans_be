@@ -38,9 +38,9 @@ class TeamCreateRequest(BaseModel):
 
 class TeamUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=3, max_length=50)
-    logo: Optional[str] = None
-    max_roster_size: int
-    recruiting: bool
+    logo_token_id: Optional[str] = None
+    #max_roster_size: int
+    recruitment_status: bool
 
 class RosterAddPlayer(BaseModel):
     player_id: UUID4
@@ -67,6 +67,7 @@ class TeamBase(BaseModel):
     name: str
     logo: Optional[str]
     recruitment_status: RecruitmentStatus
+    status: TeamStatus
     created_at: datetime
     updated_at: datetime
 
@@ -111,4 +112,5 @@ class TeamHistory(BaseModel):
     season_id: UUID4
     since: datetime
     status: TeamStatus
+    is_captain: bool
 
