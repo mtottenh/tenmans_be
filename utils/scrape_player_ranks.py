@@ -33,38 +33,50 @@ async def get_player_rank(player_id: str):
     data={}
     data['url'] = f"https://csstats.gg/player/{player_id}"
     data['cmd'] = "request.get"
-   # data['maxTimeout'] = 60000,
+    #data['maxTimeout'] = "120000",
     # We need to spawn the Flaresolverr docker container
     # And have an SSH reverse tunnel to a 'trusted' IP
     # e.g. some desktop machine somewhere.
     #
     # ssh -R 1080 $user@$host
     # 
-    data['proxy'] = { 'url' : 'socks5://localhost:1080' }
+    # data['proxy'] = { 'url' : 'socks5://host.docker.internal:1080' }
 
     try:
         # 'http://localhost:8191/v1'
-        response = httpx.post("http://host.docker.internal:8191/v1", headers={'Content-Type' : 'application/json'}, json=data)
+        response = httpx.post("http://flaresolverr:8191/v1", headers={'Content-Type' : 'application/json'}, json=data, timeout=60)
         data = (response.json())
-        print(data)
+#        print(data)
         soup = BeautifulSoup(data['solution']['response'], "html.parser")
+        # Find the Premier section (excluding Premier Season 2)
+        premier_section = None
+        ranks_sections = soup.find_all("div", class_="ranks")
+        for section in ranks_sections:
+            img = section.select_one("div.icon img")
+            if img and img.get('alt') == "Premier" and "Season" not in img.get('alt'):
+                premier_section = section
+                break
 
-        # Scrape the best Premier rank (update this selector based on the actual HTML structure)
-        # Example: Assuming the rank is in an element like <div class="rank">Premier Rank: Gold</div>
-        rank_elements = soup.select("div.rank > .cs2rating, div.best > .cs2rating")  # Adjust selector as per the actual HTML structure
+        if premier_section:
+            # Get current rank from the 'rank' div
+            current_rank = premier_section.select_one("div.rank > .cs2rating span")
+            # Get best rank from the 'best' div
+            best_rank = premier_section.select_one("div.best > .cs2rating span")
 
-        if rank_elements:
-            print(f"RANK: {rank_elements}")
-            ranks = []
-            for rank_element in rank_elements:
-                ranks.append(rank_element.get_text(strip=True).replace(',',''))
-            ranks = sorted(ranks,key=int)
-            best_rank = ranks[1] if len(ranks) == 2 else ranks[0]
-            return {"player_id": player_id, "current_elo": ranks[0], "highest_elo": best_rank}
-        else:
-            with open (f"{player_id}.response.html", "w", encoding='utf-8') as f:
-                f.write(response.text)
-            raise ParseException(f"Rank information not found")
+            if current_rank and best_rank:
+                # Clean and parse the rank numbers
+                current_elo = current_rank.get_text(strip=True).replace(',', '').replace('-','0')
+                best_elo = best_rank.get_text(strip=True).replace(',', '').replace('-','0')
+                return {
+                    "player_id": player_id,
+                    "current_elo": current_elo,
+                    "highest_elo": best_elo
+                }
+        with open (f"{player_id}.response.html", "w", encoding='utf-8') as f:
+            f.write(response.text)
+            print(f"{player_id}: Unable to scrape rank")
+        return None
+        #raise ParseException(f"Rank information not found")
     except Exception as e:
         raise ScrapeException(f"An error occurred while fetching player data {e}")
 
@@ -79,6 +91,8 @@ async def main(args):
                 player_rank = None
                 try:
                     player_rank = await get_player_rank(p.steam_id)
+                    if player_rank is None:
+                        continue
                     for elo_type in ['current_elo', 'highest_elo']:
                         if elo_type in player_rank and int(player_rank[elo_type]) != getattr(p,elo_type):
                             setattr(p,elo_type,int(player_rank[elo_type]))
