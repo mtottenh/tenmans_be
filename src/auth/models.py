@@ -61,14 +61,14 @@ class Permission(SQLModel, AsyncAttrs, table=True):
     )
 
 
+
 class Player(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "players"
 
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True),  primary_key=True,  nullable=False, default=uuid.uuid4))
+        sa_column=Column(UUID(as_uuid=True), primary_key=True, nullable=False, default=uuid.uuid4))
     name: str
     steam_id: str = Field(unique=True)  # Required for all users
-    # discord_info: 
     email: Optional[str] = Field(unique=True, nullable=True)  # Optional for Steam users
     auth_type: AuthType
     password_hash: Optional[str] = Field(nullable=True)  # Optional for Steam users
@@ -86,7 +86,8 @@ class Player(SQLModel, AsyncAttrs, table=True):
     
     # Special AuditService Relation
     audit_events: List[AuditEvent] = Relationship(back_populates="actor")
-    # Relations
+    
+    # Existing Relations
     roles: List["Role"] = Relationship(
         back_populates="players", 
         link_model=PlayerRole
@@ -105,21 +106,43 @@ class Player(SQLModel, AsyncAttrs, table=True):
     substitute_availability: List["SubstituteAvailability"] = Relationship(
         back_populates="player"
     )
-
     pug_participations: List["PugPlayer"] = Relationship(back_populates="player")
     pug_captain_of: List["PugTeam"] = Relationship(back_populates="captain")
     created_pugs: List["Pug"] = Relationship(back_populates="creator")
-
-    tournament_registration_requests: List["TournamentRegistration"] = Relationship(back_populates="requester",  sa_relationship_kwargs={"primaryjoin": "Player.id == TournamentRegistration.requested_by"})
-    tournament_registration_reviews: List["TournamentRegistration"] = Relationship(back_populates="reviewer",  sa_relationship_kwargs={"primaryjoin": "Player.id == TournamentRegistration.reviewed_by"})
-    submitted_results: List["Result"] = Relationship(back_populates="submitter", sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.id"})
-    confirmed_results: List["Result"] = Relationship(back_populates="confirmer", sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.id"})
-    admin_overridden_results: List["Result"] = Relationship(back_populates="admin_overrider",  sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.id"})
-
-    bans: List[Ban] = Relationship(back_populates="player",  sa_relationship_kwargs={"primaryjoin": "Ban.player_id == Player.id"})
+    tournament_registration_requests: List["TournamentRegistration"] = Relationship(
+        back_populates="requester", 
+        sa_relationship_kwargs={"primaryjoin": "Player.id == TournamentRegistration.requested_by"}
+    )
+    tournament_registration_reviews: List["TournamentRegistration"] = Relationship(
+        back_populates="reviewer", 
+        sa_relationship_kwargs={"primaryjoin": "Player.id == TournamentRegistration.reviewed_by"}
+    )
+    submitted_results: List["Result"] = Relationship(
+        back_populates="submitter", 
+        sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.id"}
+    )
+    confirmed_results: List["Result"] = Relationship(
+        back_populates="confirmer", 
+        sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.id"}
+    )
+    admin_overridden_results: List["Result"] = Relationship(
+        back_populates="admin_overrider", 
+        sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.id"}
+    )
+    bans: List[Ban] = Relationship(
+        back_populates="player", 
+        sa_relationship_kwargs={"primaryjoin": "Ban.player_id == Player.id"}
+    )
     issued_bans: List[Ban] = Relationship(
         back_populates="admin",
         sa_relationship=relationship(Ban, back_populates="admin", foreign_keys="Ban.issued_by")
     )
-    revoked_bans: List[Ban] = Relationship(back_populates="revoking_admin",
-                     sa_relationship=relationship(Ban, back_populates="revoking_admin", foreign_keys="Ban.revoked_by"))
+    revoked_bans: List[Ban] = Relationship(
+        back_populates="revoking_admin",
+        sa_relationship=relationship(Ban, back_populates="revoking_admin", foreign_keys="Ban.revoked_by")
+    )
+    
+    # New relationships for enhanced features
+    availability: List["PlayerAvailability"] = Relationship(back_populates="player")
+    submitted_evidence: List["MatchEvidence"] = Relationship(back_populates="submitter")
+    evidence_confirmations: List["EvidenceConfirmation"] = Relationship(back_populates="confirmer")

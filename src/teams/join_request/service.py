@@ -278,14 +278,15 @@ class TeamJoinRequestService:
             TeamJoinRequest.status == JoinRequestStatus.PENDING,
             TeamJoinRequest.created_at < expiry_date
         )
+        from services.auth import auth_service
         expired_requests = (await session.execute(stmt)).scalars().all()
-        
+        system_user = await auth_service.get_player_by_name("SYSTEM", session)
         for request in expired_requests:
             await self.change_request_status(
                 request=request,
                 new_status=JoinRequestStatus.EXPIRED,
                 reason=f"Request expired after {expiry_days} days",
-                actor=None,  # System action
+                actor=system_user,  # System action
                 session=session
             )
             

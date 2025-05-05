@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 
 from matches.models import MatchFormat, Result
 from matches.schemas import ConfirmationStatus
+
 class FixtureStatus(StrEnum):
     SCHEDULED = "scheduled"
     IN_PROGRESS = "in_progress"
@@ -38,6 +39,7 @@ class Fixture(SQLModel, AsyncAttrs, table=True):
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     
+    # Existing relationships
     tournament: "Tournament" = Relationship(back_populates="fixtures")
     round: "Round" = Relationship(back_populates="fixtures")
     team_1_rel: "Team" = Relationship(
@@ -50,9 +52,13 @@ class Fixture(SQLModel, AsyncAttrs, table=True):
     )
     results: List["Result"] = Relationship(back_populates="fixture")
     match_players: List["MatchPlayer"] = Relationship(back_populates="fixture")
-    #team_elo_changes: List["TeamELOHistory"] = Relationship(back_populates="fixture")
-
-
+    
+    # New relationships for enhanced features
+    schedule_suggestions: List["ScheduleSuggestion"] = Relationship(back_populates="fixture")
+    schedule_conflicts: List["ScheduleConflict"] = Relationship(back_populates="fixture")
+    evidence: List["MatchEvidence"] = Relationship(back_populates="fixture")
+    veto_session: Optional["MapVetoSession"] = Relationship(back_populates="fixture")
+    
     @property
     def maps_completed(self) -> int:
         """Number of completed maps"""

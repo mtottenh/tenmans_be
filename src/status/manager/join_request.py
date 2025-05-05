@@ -45,7 +45,7 @@ class TeamCaptainValidator(TransitionValidator):
         session = context.get('session')
         join_request: TeamJoinRequest = context.get('entity')
         permission_service: PermissionService = context.get('permission_service')        
-        LOG.error(f"Team ID: {join_request.team_id}")
+        LOG.error(f"Can {actor} mangage req for Team ID: {join_request.team_id}")
         is_captain = await permission_service.verify_permissions(
             actor,
             ["manage_team"],

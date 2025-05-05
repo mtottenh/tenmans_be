@@ -38,6 +38,38 @@ class TournamentState(StrEnum):
 
 
 
+class GameMode(StrEnum):
+    """CS2 game modes supported by the platform"""
+    COMPETITIVE_5V5 = "competitive_5v5"
+    WINGMAN_2V2 = "wingman_2v2"
+    RETAKE = "retake"
+    DEATHMATCH = "deathmatch"
+
+
+class MapCategory(StrEnum):
+    """Categories for maps"""
+    COMPETITIVE = "competitive"
+    WINGMAN = "wingman"
+    HOSTAGE = "hostage"
+    CUSTOM = "custom"
+
+
+class LeagueFormat(StrEnum):
+    """Tournament league format types"""
+    HOME_AWAY = "home_away"
+    SINGLE_ROUND_ROBIN = "single_round_robin"
+    DOUBLE_ROUND_ROBIN = "double_round_robin"
+    SWISS = "swiss"
+    
+class MapSelectionMethod(StrEnum):
+    """How maps are selected for matches"""
+    ADMIN_ASSIGNED = "admin_assigned"
+    TEAM_PICK = "team_pick"
+    MAP_VETO = "map_veto"
+    RANDOM = "random"
+    
+
+
 # Response Schemas
 class SeasonBase(BaseModel):
     id: UUID4

@@ -2,9 +2,10 @@
 from typing import List, Dict, Any
 from datetime import datetime
 
-from competitions.models.tournaments import Tournament, TournamentType
+from competitions.models.tournaments import Tournament, TournamentType, TournamentState
 from competitions.models.rounds import Round
 from teams.models import Team
+from competitions.base_schemas import LeagueFormat
 
 class ValidationError(Exception):
     """Base exception for tournament validation errors"""
@@ -20,39 +21,35 @@ class TournamentValidator:
             raise ValidationError("Tournament format configuration is required")
             
         if tournament.type == TournamentType.REGULAR:
-            TournamentValidator._validate_regular_config(tournament.format_config)
+            TournamentValidator._validate_regular_config(tournament)
         elif tournament.type == TournamentType.KNOCKOUT:
-            TournamentValidator._validate_knockout_config(tournament.format_config)
+            TournamentValidator._validate_knockout_config(tournament)
             
     @staticmethod
-    def _validate_regular_config(config: Dict[str, Any]):
-        """Validate regular (group stage) tournament configuration"""
-        # 'group_size', - this was one of the required fields
-        # I don't remember what it's actually for..
-        required_fields = { 'teams_per_group', 'match_format'}
+    def _validate_regular_config(tournament: Tournament):
+        """Validate regular (league) tournament configuration"""
+        config = tournament.format_config
+        required_fields = {'match_format'}
         missing = required_fields - set(config.keys())
         if missing:
             raise ValidationError(f"Missing required configuration fields: {missing}")
-        
-        # Yea.. not sure what that's about..
-        # if not isinstance(config['group_size'], int) or config['group_size'] < 1:
-        #     raise ValidationError("Invalid group size")
-            
-        if not isinstance(config['teams_per_group'], int) or config['teams_per_group'] < 2:
-            raise ValidationError("Teams per group must be at least 2")
             
         if config['match_format'] not in {'bo1', 'bo2', 'bo3', 'bo5'}:
             raise ValidationError("Invalid match format")
             
+        # Note: Removed 'teams_per_group' as most tournaments have single group
+        # If needed, this can be part of the format_config for specific strategies
+            
     @staticmethod
-    def _validate_knockout_config(config: Dict[str, Any]):
+    def _validate_knockout_config(tournament: Tournament):
         """Validate knockout tournament configuration"""
+        config = tournament.format_config
         required_fields = {'seeding_type', 'match_format'}
         missing = required_fields - set(config.keys())
         if missing:
             raise ValidationError(f"Missing required configuration fields: {missing}")
             
-        valid_seeding = {'random', 'group_position', 'elo'}
+        valid_seeding = {'random', 'manual', 'elo', 'standings'}
         if config['seeding_type'] not in valid_seeding:
             raise ValidationError(f"Invalid seeding type. Must be one of: {valid_seeding}")
             
@@ -73,10 +70,7 @@ class TournamentValidator:
         if tournament.registration_end >= tournament.scheduled_start_date:
             raise ValidationError("Registration must end before tournament starts")
             
-        # If late registration is allowed, validate those dates
-        if tournament.allow_late_registration:
-            if not tournament.late_registration_end:
-                raise ValidationError("Late registration end date required")
+        if tournament.allow_late_registration and tournament.late_registration_end:
             if tournament.late_registration_end >= tournament.scheduled_start_date:
                 raise ValidationError("Late registration must end before tournament starts")
                 
@@ -95,7 +89,8 @@ class TournamentValidator:
             
         # Validate team sizes
         for team in teams:
-            if len(team.rosters) < tournament.min_team_size:
+            active_roster_count = sum(1 for roster in team.rosters if roster.status == 'ACTIVE')
+            if active_roster_count < tournament.min_team_size:
                 raise ValidationError(
                     f"Team {team.name} does not meet minimum roster size "
                     f"of {tournament.min_team_size}"

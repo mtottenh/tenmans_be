@@ -1,4 +1,7 @@
+from typing import List
 from datetime import datetime
+
+from competitions.base_schemas import GameMode, MapCategory
 from .schemas import MapCreate
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, desc
@@ -28,7 +31,30 @@ class MapService:
         if map is None:
             raise MapNotFoundException(f"Map {name} not found")
         return map
+    
+    async def get_maps_by_mode(
+        self,
+        game_mode: GameMode,
+        session: AsyncSession
+    ) -> List[Map]:
+        """Get all maps that support a specific game mode"""
+        stmt = select(Map).where(
+            Map.supported_modes.contains([game_mode])
+        ).order_by(Map.name)
+        result = await session.execute(stmt)
+        return result.scalars().all()
 
+    async def get_maps_by_category(
+        self,
+        category: MapCategory,
+        session: AsyncSession
+    ) -> List[Map]:
+        """Get all maps in a specific category"""
+        stmt = select(Map).where(
+            Map.category == category
+        ).order_by(Map.name)
+        result = await session.execute(stmt)
+        return result.scalars().all()
     async def create_map(self, map: MapCreate, session: AsyncSession) -> Map:
 
         new_map = Map(name=map.name,

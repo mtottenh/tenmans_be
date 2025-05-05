@@ -17,9 +17,14 @@ from auth.dependencies import (
 )
 from .service import TournamentServiceError
 from .schemas import (
+    LinkedTournamentRequest,
+    LinkedTournamentResponse,
     RegistrationReviewRequest,
     RegistrationStatus,
     RegistrationWithdrawRequest,
+    TournamentBasicUpdate,
+    TournamentConfigResponse,
+    TournamentConfigUpdate,
     TournamentCreate,
     TournamentPage,
     TournamentPageStats,
@@ -27,7 +32,6 @@ from .schemas import (
     TournamentRegistrationDetail,
     TournamentRegistrationList,
     TournamentRegistrationRequest,
-    TournamentUpdate,
     TournamentBase,
     TournamentWithStats,
     TournamentStandings
@@ -128,9 +132,9 @@ async def get_tournament(
     response_model=TournamentBase,
     dependencies=[Depends(require_tournament_manage)]
 )
-async def update_tournament(
+async def update_tournament_basics(
     tournament_id: uuid.UUID,
-    update_data: TournamentUpdate,
+    update_data: TournamentBasicUpdate,
     session: AsyncSession = Depends(get_session),
     current_player: Player = Depends(get_current_player)
 ):
@@ -143,7 +147,7 @@ async def update_tournament(
                 detail="Tournament not found"
             )
 
-        return await tournament_service.update_tournament(
+        return await tournament_service.update_tournament_basics(
             tournament,
             update_data,
             current_player,
@@ -523,4 +527,81 @@ async def get_fixtures_for_round(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{str(e)}"
+        )
+
+@tournament_router.get(
+    "/id/{tournament_id}/config",
+    response_model=TournamentConfigResponse,
+    dependencies=[Depends(require_tournament_view)]
+)
+async def get_tournament_config(
+    tournament_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    current_player: Player = Depends(get_current_player)
+):
+    """Get tournament configuration details"""
+    tournament = await tournament_service.get_tournament(tournament_id, session)
+    if not tournament:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tournament not found"
+        )
+    return tournament
+
+@tournament_router.patch(
+    "/id/{tournament_id}/config",
+    response_model=TournamentConfigResponse,
+    dependencies=[Depends(require_tournament_manage)]
+)
+async def update_tournament_config(
+    tournament_id: uuid.UUID,
+    config_update: TournamentConfigUpdate,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Update tournament configuration settings"""
+    try:
+        tournament = await tournament_service.get_tournament(tournament_id, session)
+        if not tournament:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tournament not found"
+            )
+
+        return await tournament_service.update_tournament_config(
+            tournament=tournament,
+            config_update=config_update,
+            actor=current_player,
+            session=session
+        )
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@tournament_router.post(
+    "/id/{tournament_id}/link",
+    response_model=LinkedTournamentResponse,
+    dependencies=[Depends(require_tournament_manage)]
+)
+async def link_tournament(
+    tournament_id: uuid.UUID,
+    link_request: LinkedTournamentRequest,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Link league to knockout tournament for automatic qualification"""
+    try:
+        return await tournament_service.link_tournaments(
+            source_tournament_id=tournament_id,
+            target_tournament_id=link_request.target_tournament_id,
+            qualification_rules=link_request.qualification_rules,
+            actor=current_player,
+            session=session
+        )
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )

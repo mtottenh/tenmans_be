@@ -3,11 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from admin.routes import admin_router
 from auth.routes import auth_router
 from auth.test.routes import auth_test_router
+from availability.routes import availability_router
 from teams.routes import team_router
 from teams.join_request.routes import team_join_request_router, global_join_request_router
 from competitions.tournament.routes import tournament_router
 from competitions.season.routes import season_router
 from competitions.fixtures.routes import fixture_router, global_fixture_router
+from competitions.map_pool.routes import map_pool_router
 from upload.routes import upload_router
 from maps.routes import map_router
 from contextlib import asynccontextmanager
@@ -103,10 +105,9 @@ app.include_router(team_router, prefix=f"/api/{version}" )
 app.include_router(season_router, prefix=f"/api/{version}")
 tournament_router.include_router(fixture_router)
 tournament_router.include_router(global_fixture_router)
+tournament_router.include_router(map_pool_router)
 app.include_router(tournament_router, prefix=f"/api/{version}")
 app.include_router(upload_router, prefix=f"/api/{version}")
 app.include_router(auth_test_router,  prefix=f"/api/{version}")
-# TODO - Fixture router and map router currently missing.
-# app.include_router(fixture_router, prefix=f"/api/{version}")
 app.include_router(map_router, prefix=f"/api/{version}")
-
+app.include_router(availability_router, prefix=f"/api/{version}")

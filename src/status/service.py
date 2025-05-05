@@ -1,24 +1,30 @@
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Tuple
 from datetime import datetime
 import uuid
+import logging
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select
+from sqlalchemy.orm import selectinload
 from audit.context import AuditContext
 from audit.models import AuditEvent, AuditEventType
 from audit.service import AuditService, create_audit_service
 from auth.models import Player
 from auth.service.permission import PermissionScope, PermissionService, create_permission_service
-from .transition_validator import StatusTransitionManager
-from sqlalchemy.orm import selectinload
-from sqlmodel import select
+from status.pipeline_integration import extend_status_transition_service
+from status.transition_validator import StatusTransitionManager, TransitionError
+from status.pipeline import TransitionPipeline
+
+LOG = logging.getLogger('uvicorn.error')
 T = TypeVar('T')
 
 class StatusTransitionService(Generic[T]):
-    """Service for handling status transitions with audit logging"""
+    """Service for handling status transitions with audit logging and cascading effects"""
     
     def __init__(self, audit_service: Optional[AuditService] = None, permission_service: Optional[PermissionService] = None):
         self.audit_service = audit_service or AuditService()
         self.permission_service = permission_service or PermissionService()
         self.transition_managers: Dict[str, StatusTransitionManager] = {}
+        self.transition_pipelines: Dict[str, Dict[str, TransitionPipeline]] = {}
         
     def register_transition_manager(
         self,
@@ -27,6 +33,19 @@ class StatusTransitionService(Generic[T]):
     ):
         """Register a transition manager for an entity type"""
         self.transition_managers[entity_type] = manager
+
+    def register_transition_pipeline(
+        self,
+        entity_type: str,
+        new_status: str,
+        pipeline: TransitionPipeline
+    ):
+        """Register a transition pipeline for a specific entity type and target status"""
+        if entity_type not in self.transition_pipelines:
+            self.transition_pipelines[entity_type] = {}
+        
+        self.transition_pipelines[entity_type][new_status] = pipeline
+        LOG.info(f"Registered transition pipeline for {entity_type} -> {new_status}")
 
     def _transition_audit_details(self, entity: Any, context: Dict) -> dict:
         """Extract audit details for status transitions"""
@@ -57,30 +76,33 @@ class StatusTransitionService(Generic[T]):
         audit_context: Optional[AuditContext] = None
     ) -> T:
         """
-        Transition an entity's status with validation and history tracking
+        Transition an entity's status with validation, pipeline execution, and history tracking
         
         Args:
             entity: Entity to update
             new_status: New status value
             reason: Reason for the change
             actor: User making the change
+            scope: Permission scope for validation
             entity_metadata: Additional metadata to store
             session: Database session
+            audit_context: Audit context for transaction
         """
         entity_type = type(entity).__name__
         manager = self.transition_managers.get(entity_type)
         if not manager:
             raise ValueError(f"No transition manager registered for {entity_type}")
+            
         await session.refresh(entity)
         current_status = entity.status
         new_status_enum = manager.status_enum(new_status)
         
-        # Build context for validation
+        # Build context for validation and pipeline
         context = {
             'actor': actor,
             'reason': reason,
             'entity': entity,
-            'scope' : scope,
+            'scope': scope,
             'session': session,
             'permission_service': self.permission_service,
             'entity_metadata': entity_metadata,
@@ -95,27 +117,34 @@ class StatusTransitionService(Generic[T]):
             context
         )
         
-        # Create history entry
-        # history_entry = AuditEvent(
-        #     entity_type=manager.entity_type,
-        #     entity_id=entity.id,
-        #     action_type=AuditEventType.STATUS_CHANGE,
-        #     actor_id=actor.id,
-        #     previous_status=str(current_status),
-        #     new_status=str(new_status_enum),
-        #     transition_reason=reason,
-        #     details={
-        #         "metadata": entity_metadata or {},
-        #         "timestamp": datetime.now().isoformat()
-        #     }
-        # )
-        # session.add(history_entry)
+        # Execute pre-transition pipeline if available
+        pipeline = self._get_pipeline(entity_type, str(new_status_enum))
+        if pipeline:
+            LOG.info(f"Executing transition pipeline for {entity_type} -> {new_status_enum}")
+            try:
+                await pipeline.execute(
+                    entity=entity,
+                    old_status=str(current_status),
+                    new_status=str(new_status_enum),
+                    actor=actor,
+                    session=session,
+                    audit_context=audit_context,
+                    **context
+                )
+            except Exception as e:
+                LOG.error(f"Pipeline execution failed: {str(e)}")
+                raise TransitionError(f"Pipeline execution failed: {str(e)}")
         
-        # Update entity
+        # Update entity status
         entity.status = new_status_enum
-        
         session.add(entity)
+        
         return entity
+
+    def _get_pipeline(self, entity_type: str, new_status: str) -> Optional[TransitionPipeline]:
+        """Get a transition pipeline for a specific entity type and target status"""
+        entity_pipelines = self.transition_pipelines.get(entity_type, {})
+        return entity_pipelines.get(new_status)
 
     async def get_status_history(
         self,
@@ -145,6 +174,7 @@ class StatusTransitionService(Generic[T]):
             }
             for entry in history
         ]
+
 
     async def get_entity_status_changes(
         self,
@@ -178,8 +208,35 @@ class StatusTransitionService(Generic[T]):
 def create_status_transition_service(
         audit_service: Optional[AuditService] = None,
         permission_service: Optional[PermissionService] = None
-
 ) -> StatusTransitionService:
+    """Factory function for status transition service"""
+    audit_service = audit_service or AuditService()
+    permission_service = permission_service or PermissionService(audit_service)
+    return StatusTransitionService(audit_service, permission_service)
+
+def create_enhanced_status_transition_service(
+    audit_service: Optional[AuditService] = None,
+    permission_service: Optional[PermissionService] = None
+) -> StatusTransitionService:
+    """
+    Create and configure an enhanced StatusTransitionService with pipeline support
+    
+    This factory function should be used instead of the basic create_status_transition_service
+    to ensure pipeline functionality is included.
+    
+    Args:
+        audit_service: Optional audit service instance
+        permission_service: Optional permission service instance
+        
+    Returns:
+        Fully configured StatusTransitionService with pipeline support
+    """
+    # Create the base service
     audit_service = audit_service or create_audit_service()
     permission_service = permission_service or create_permission_service(audit_service)
-    return StatusTransitionService(audit_service, permission_service)
+    service = create_status_transition_service(audit_service, permission_service)
+    
+    # Extend with pipeline functionality
+    enhanced_service = extend_status_transition_service(service)
+    
+    return enhanced_service

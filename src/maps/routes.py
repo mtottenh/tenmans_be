@@ -5,9 +5,10 @@ from fastapi.exceptions import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from auth.dependencies import get_current_player, require_map_management
 from auth.models import Player
+from competitions.base_schemas import GameMode, MapCategory
 from db.main import get_session
 from .models import Map
-from .schemas import MapBase, MapCreate, MapCreateRequest
+from .schemas import MapBase, MapCreate, MapCreateRequest, MapDetailed
 from typing import List
 from services.map import map_service
 from services.upload import upload_service
@@ -87,3 +88,28 @@ async def get_map_by_name(
             detail=f"Map with name '{name}' not found",
         )
     return await get_map_img(map)
+
+@map_router.get(
+    "/by-mode/{game_mode}",
+    response_model=List[MapDetailed]
+)
+async def get_maps_by_mode(
+    game_mode: GameMode,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Get maps for specific game mode"""
+    return await map_service.get_maps_by_mode(game_mode, session)
+
+
+@map_router.get(
+    "/by-category/{category}",
+    response_model=List[MapDetailed]
+)
+async def get_maps_by_category(
+    category: MapCategory,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Get maps by category"""
+    return await map_service.get_maps_by_category(category, session)

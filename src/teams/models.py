@@ -22,9 +22,10 @@ class Team(SQLModel, AsyncAttrs, table=True):
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     recruitment_status: RecruitmentStatus = Field(default=RecruitmentStatus.ACTIVE)
+    
+    # Existing relationships
     rosters: List["Roster"] = Relationship(back_populates="team")
     captains: List["TeamCaptain"] = Relationship(back_populates="team")
-    #elo_history: List["TeamELOHistory"] = Relationship(back_populates="team")
     home_fixtures: List["Fixture"] = Relationship(
         back_populates="team_1_rel",
         sa_relationship_kwargs={"foreign_keys": "Fixture.team_1"}
@@ -37,7 +38,14 @@ class Team(SQLModel, AsyncAttrs, table=True):
     join_requests: List["TeamJoinRequest"] = Relationship(back_populates="team")
     tournament_registrations: List["TournamentRegistration"] = Relationship(back_populates="team")
     match_players: List["MatchPlayer"] = Relationship(back_populates="team")
-
+    
+    # New relationships for the enhanced features
+    map_votes: List["MapPoolVote"] = Relationship(back_populates="team")
+    availability: List["TeamAvailability"] = Relationship(back_populates="team")
+    evidence_confirmations: List["EvidenceConfirmation"] = Relationship(back_populates="team")
+    veto_sessions: List["MapVetoSession"] = Relationship(back_populates="current_team")
+    veto_actions: List["MapVetoAction"] = Relationship(back_populates="team")
+    
     
 class Roster(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "rosters"
@@ -65,8 +73,6 @@ class TeamCaptain(SQLModel, AsyncAttrs, table=True):
     
     team: Team = Relationship(back_populates="captains")
     player: "Player" = Relationship(back_populates="captain_of")
-
-
 
 # class TeamELOHistory(SQLModel, table=True):
 #     __tablename__ = "team_elo_history"

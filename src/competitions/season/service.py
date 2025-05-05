@@ -8,6 +8,7 @@ import uuid
 class SeasonStateError(Exception):
     pass
 
+# TODO - Add state transition and audited transactions...
 class SeasonService:
     async def create_season(
         self,

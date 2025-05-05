@@ -473,20 +473,20 @@ class TeamService:
         disbanded_team.disbanded_by = actor.id
         
         session.add(disbanded_team)
-        captains = await self.get_team_captains_by_team_id(team.id, session)
-        await self._update_captain_roles(
-            team=team,
-            captains=captains,
-            new_captain_status=TeamCaptainStatus.DISBANDED,
-            should_remove_role=True,
-            reason=f"Team disbanded: {reason}",
-            actor=actor,
-            session=session,
-            audit_context=audit_context
-        )
-        season = await self.season_service.get_active_season(session)
-        for roster in await self.roster_service.get_team_roster(team, season, session):
-            await self.roster_service.change_roster_status(roster, RosterStatus.PAST, reason=f"Team disbanded: {reason}", actor=actor, session=session, audit_context=audit_context)
+        # captains = await self.get_team_captains_by_team_id(team.id, session)
+        # await self._update_captain_roles(
+        #     team=team,
+        #     captains=captains,
+        #     new_captain_status=TeamCaptainStatus.DISBANDED,
+        #     should_remove_role=True,
+        #     reason=f"Team disbanded: {reason}",
+        #     actor=actor,
+        #     session=session,
+        #     audit_context=audit_context
+        # )
+        # season = await self.season_service.get_active_season(session)
+        # for roster in await self.roster_service.get_team_roster(team, season, session):
+        #     await self.roster_service.change_roster_status(roster, RosterStatus.PAST, reason=f"Team disbanded: {reason}", actor=actor, session=session, audit_context=audit_context)
         # Change team status and update fields
 
         return disbanded_team
@@ -506,17 +506,17 @@ class TeamService:
     ) -> Team:
         """Suspend a team and temporarily mark captain roles"""
         # Get and update all captains
-        captains = await self.get_team_captains_by_team_id(team.id, session)
-        await self._update_captain_roles(
-            team=team,
-            captains=captains,
-            new_captain_status=TeamCaptainStatus.TEMPORARY,
-            should_remove_role=False,  # Keep roles for reactivation
-            reason=f"Team suspended: {reason}",
-            actor=actor,
-            session=session,
-            audit_context=audit_context
-        )
+        # captains = await self.get_team_captains_by_team_id(team.id, session)
+        # await self._update_captain_roles(
+        #     team=team,
+        #     captains=captains,
+        #     new_captain_status=TeamCaptainStatus.TEMPORARY,
+        #     should_remove_role=False,  # Keep roles for reactivation
+        #     reason=f"Team suspended: {reason}",
+        #     actor=actor,
+        #     session=session,
+        #     audit_context=audit_context
+        # )
 
         # Change team status
         team = await self.change_team_status(
@@ -543,18 +543,18 @@ class TeamService:
         audit_context: Optional[AuditContext] = None
     ) -> Team:
         """Reactivate a suspended team and restore captain roles"""
-        # Get and update all temporary captains
-        captains = await self.get_team_captains_by_team_id(team.id, session)
-        await self._update_captain_roles(
-            team=team,
-            captains=captains,
-            new_captain_status=TeamCaptainStatus.ACTIVE,
-            should_remove_role=False,  # Roles were kept during suspension
-            reason=f"Team reactivated: {reason}",
-            actor=actor,
-            session=session,
-            audit_context=audit_context
-        )
+        # # Get and update all temporary captains
+        # captains = await self.get_team_captains_by_team_id(team.id, session)
+        # await self._update_captain_roles(
+        #     team=team,
+        #     captains=captains,
+        #     new_captain_status=TeamCaptainStatus.ACTIVE,
+        #     should_remove_role=False,  # Roles were kept during suspension
+        #     reason=f"Team reactivated: {reason}",
+        #     actor=actor,
+        #     session=session,
+        #     audit_context=audit_context
+        # )
 
         # Change team status
         team = await self.change_team_status(
@@ -663,7 +663,8 @@ class TeamService:
     
     async def get_teams_for_player_by_player_id(self, *args, **kwargs):
         return await self.roster_service.get_teams_for_player_by_player_id(*args, **kwargs)
-
+    async def add_player_to_roster(self, *args, **kwargs):
+        return await self.roster_service.add_player_to_roster(*args, **kwargs)
     # CaptainService Delegations
     async def get_captain(self, *args, **kwargs):
         return await self.captain_service.get_captain(*args, **kwargs)

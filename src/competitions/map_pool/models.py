@@ -26,25 +26,26 @@ class MapPoolMap(SQLModel, table=True):
     vote_count: Optional[int] = Field(default=0)  # For voting pools
     added_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
 
-class TournamentMapPool(SQLModel,AsyncAttrs, table=True):
+
+class TournamentMapPool(SQLModel, AsyncAttrs, table=True):
     """Represents a tournament's map pool configuration"""
     __tablename__ = "tournament_map_pools"
     
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     tournament_id: uuid.UUID = Field(sa_column=Column(ForeignKey("tournaments.id")))
     selection_type: MapPoolSelectionType
     status: MapPoolStatus
     
-    # Voting configuration (if selection_type is TEAM_VOTING)
-    voting_start: Optional[datetime]
-    voting_end: Optional[datetime]
-    maps_to_select: Optional[int]    # Number of maps to include in final pool
-    votes_per_team: Optional[int]    # Number of votes each team gets
+    # Voting configuration (if selection_type is TEAM_VOTING or PLAYER_VOTING)
+    voting_start: Optional[datetime] = None
+    voting_end: Optional[datetime] = None
+    maps_to_select: Optional[int] = None    # Number of maps to include in final pool
+    votes_per_team: Optional[int] = None    # Number of votes each team gets
     
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    finalized_at: Optional[datetime]
+    finalized_at: Optional[datetime] = None
     
     # Relationships
     tournament: "Tournament" = Relationship(back_populates="map_pool")
@@ -57,7 +58,7 @@ class MapPoolVote(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "map_pool_votes"
     
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True)), nullable=False, primary_key=True, default=uuid.uuid4
+        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
     )
     pool_id: uuid.UUID = Field(sa_column=Column(ForeignKey("tournament_map_pools.id")))
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))

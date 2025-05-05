@@ -1,7 +1,7 @@
 from sqlmodel import SQLModel, Field, Column, Relationship
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from datetime import datetime
 from enum import StrEnum
@@ -11,6 +11,7 @@ import uuid
 from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round
 from competitions.models.seasons import Season
+from competitions.base_schemas import GameMode, LeagueFormat, MapSelectionMethod
 from maps.models import Map, TournamentMap
 
 
@@ -37,6 +38,20 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     type: TournamentType = Field(sa_column=sa.Column(sa.Enum(TournamentType)))
     state: TournamentState = Field(sa_column=sa.Column(sa.Enum(TournamentState)))
     
+    # Game mode and league format
+    game_mode: GameMode = Field(
+        sa_column=sa.Column(sa.Enum(GameMode)),
+        default=GameMode.COMPETITIVE_5V5
+    )
+    league_format: LeagueFormat = Field(
+        sa_column=sa.Column(sa.Enum(LeagueFormat)),
+        default=LeagueFormat.SINGLE_ROUND_ROBIN
+    )
+    map_selection_method: MapSelectionMethod = Field(
+        sa_column=sa.Column(sa.Enum(MapSelectionMethod)),
+        default=MapSelectionMethod.MAP_VETO
+    )
+    
     # Team limits
     min_teams: int = Field(ge=2, default=2)
     max_teams: int = Field(ge=2, default=16)
@@ -52,6 +67,7 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     # Tournament configuration
     format_config: dict = Field(default={}, sa_column=Column(sa.JSON))
     seeding_config: dict = Field(default={}, sa_column=Column(sa.JSON))
+    scheduling_config: dict = Field(default={}, sa_column=Column(sa.JSON))  # For scheduling preferences
     
     # Dates
     scheduled_start_date: datetime
@@ -72,6 +88,7 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     )
     registrations: List["TournamentRegistration"] = Relationship(back_populates="tournament")
     substitutes: List["SubstituteAvailability"] = Relationship(back_populates="tournament")
+    map_pool: Optional["TournamentMapPool"] = Relationship(back_populates="tournament")
 
 class RegistrationStatus(StrEnum):
     PENDING = "pending"
