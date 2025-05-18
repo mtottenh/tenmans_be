@@ -33,18 +33,18 @@
 
 ## Teams
 * [ ] Should we restrict team creation?
-* [ ] Add: Team Logo upload to 'register a team' dialog
+* [x] Add: Team Logo upload to 'register a team' dialog
     * [x] Add: Logo to Model
     * [x] Add: Logo to POST /teams/
     * [x] Add: Path for GET /teams/$id/logo
-* [ ] Add: Average ELO of roster to Team information page
-* [ ] Captains: Ability to make other team members as a captain
-* [ ] Captain: Ability to remove a player from the roster.
-* [ ] Captain: Ability to reject join request
+* [x] Add: Average ELO of roster to Team information page
+* [x] Captains: Ability to make other team members as a captain
+* [x] Captain: Ability to remove a player from the roster.
+* [x] Captain: Ability to reject join request
 * [ ] Captain: Ability to invite player
-* [ ] Player: Ability to cancle join request
+* [x] Player: Ability to cancle join request
 * [ ] Captain: Not allowed to join another team
-* [ ] Player/Captain: Can't request to join more than one team
+* [x] Player/Captain: Can't request to join more than one team
 * [ ] Add: Past seasons results
 * [ ] Add: Current season results.
 
@@ -52,15 +52,15 @@
 * [ ] Maximum active roster size?
 
 ## Players
-* [ ] Add Current/Best ELO to Player model
-* [ ] Add ability to scrape ELOs in the background
-* [ ] Add: Team/Roster & Team Logo to player page.
+* [x] Add Current/Best ELO to Player model
+* [x] Add ability to scrape ELOs in the background
+* [x] Add: Team/Roster & Team Logo to player page.
 * [ ] Add: Roster history to player page.
-* [ ] Integrate: login/sign up via Steam
+* [x] Integrate: login/sign up via Steam
 * [ ] Integrate:'link discord'
-* [ ] Add: Players dashboard to see all players in the league
-* [ ] Add: Search on players dashboard (captains get invite link to un-rostered players)
-* [ ] Add: Filter to players not on a roster.
+* [x] Add: Players dashboard to see all players in the league
+* [x] Add: Search on players dashboard (captains get invite link to un-rostered players)
+* [x] Add: Filter to players not on a roster.
 
 
 
@@ -74,8 +74,8 @@
 * Go back and integrate the Audit module in all Services for actions that must be audited.
 * Go back across all Routes and implement RBAC where nessecary
 * Utils - Non Web based
-    * [ ] Creating an admin user (done sorta, not tested)
-    * [ ] Updating and displaying a users permissions/roles (done sorta, not tested)
+    * [x] Creating an admin user (done sorta, not tested)
+    * [x] Updating and displaying a users permissions/roles (done sorta, not tested)
     * [ ] Seeding a season
 * Backups
 * Migrations
@@ -110,34 +110,8 @@
 * Need a separate web service that allows TLS Mutual Auth
     * Requires a valid client cert
     * 
+* [ ] Add Tournament registration process mangement to the tournament sevice/routes
 
-
-* [x] Go through each model to make them use 'AsyncAttrs:
-```
-from sqlalchemy.ext.asyncio import AsyncAttrs
-
-class Team(SQLModel, AsyncAttrs, table=True): # <-- AsyncAttrs
-    ...
-    heroes: List["Hero"] = Relationship(back_populates="team")
-
-async def select_heroes():
-    async with AsyncSession(engine) as session:
-        ...
-        heroes = await team_preventers.awaitable_attrs.heroes # <-- awaitable_attrs
-        print(f"Preventers heroes: {heroes}")
-```\
-    * [ ] Check all model field accesses to ensure foo.field -> await foo.awaitable_attr.field
-
-* [ ] Add Tournament registration process maangement to the tournament sevice/routes
-
-* [ ] Team service - 'get_active_roster_size'
-
-
-
-# TODO
-
-# Player name editing
-* Name editing is now done
 
 # 'Admin View'
 * Requires Roles to be send to Front end
@@ -168,3 +142,12 @@ async def select_heroes():
     * Seasons
     * Fixtures
     
+
+
+
+
+# TODO
+    * Team Service Migrate archive_team to new status transition pipeline.
+* Implement link_tournaments
+    * This should probably be an audited transaction.
+* Tournament Service should refactor complete round to use the existing generate_round_fixtures function and pipeline stpes?

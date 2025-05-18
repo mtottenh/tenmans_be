@@ -216,6 +216,25 @@ def initialize_map_pool_pipelines(status_transition_service) -> None:
     
     LOG.info("Map pool status transition pipelines initialized")
 
+def initialize_round_status_pipelines(status_transition_service) -> None:
+    """Initialize all round status transition pipelines"""
+    LOG.info("Initializing round status transition pipelines")
+    
+    from status.transition_steps.round import RoundCompleteStep
+    
+    # Round completion pipeline
+    round_complete_pipeline = TransitionPipeline([
+        RoundCompleteStep()
+    ])
+    
+    # Register the pipeline
+    status_transition_service.register_transition_pipeline(
+        entity_type="Round",
+        new_status="completed",
+        pipeline=round_complete_pipeline
+    )
+    
+    LOG.info("Round status transition pipelines initialized")
 def initialize_all_pipelines(status_transition_service) -> None:
     """Initialize all status transition pipelines"""
     LOG.info("Initializing all status transition pipelines")
@@ -233,6 +252,7 @@ def initialize_all_pipelines(status_transition_service) -> None:
     initialize_map_pool_pipelines(status_transition_service)
     # TODO: Initialize other entity type pipelines here
     # initialize_fixture_status_pipelines(status_transition_service)
-    
+    # Initialize round pipelines
+    initialize_round_status_pipelines(status_transition_service)
     initialize_tournament_generation_pipelines(status_transition_service)
     LOG.info("All status transition pipelines initialized")

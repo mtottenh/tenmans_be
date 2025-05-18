@@ -244,14 +244,6 @@ class TournamentStandings(BaseModel):
     last_updated: datetime
 
     model_config = ConfigDict(from_attributes=True)
-# TODO - I don't know if we need this.
-# class TournamentDetailed(TournamentBase):
-#     season: SeasonBase
-#     rounds: List[RoundBase]
-#     participating_teams: int
-#     matches_completed: int
-#     matches_remaining: int
-
 
 class TournamentRegistrationList(BaseModel):
     """List of tournament registrations with summary stats"""

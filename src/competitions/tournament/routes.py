@@ -389,7 +389,28 @@ async def withdraw_from_tournament(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-
+@tournament_router.post(
+    "/id/{tournament_id}/registration/close",
+    response_model=TournamentBase,
+    dependencies=[Depends(require_tournament_manage)]
+)
+async def close_tournament_registration(
+    tournament_id: uuid.UUID,
+    current_player: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session)
+):
+    """Close tournament registration"""
+    try:
+        return await tournament_service.close_registration(
+            tournament_id=tournament_id,
+            actor=current_player,
+            session=session
+        )
+    except TournamentServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 # Tournament Management Routes
 @tournament_router.post(
     "/id/{tournament_id}/generate",

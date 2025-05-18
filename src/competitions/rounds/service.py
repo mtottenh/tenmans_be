@@ -12,14 +12,20 @@ from competitions.models.tournaments import Tournament, TournamentState
 from competitions.models.fixtures import Fixture
 from auth.models import Player
 from audit.service import AuditService
-
+from status.manager.round import initialize_round_status_manager
+from status.service import StatusTransitionService, create_status_transition_service
+from services.tournament import tournament_service
 class RoundServiceError(Exception):
     """Base exception for round service errors"""
     pass
 
 class RoundService:
-    def __init__(self, audit_service: Optional[AuditService] = None):
+    def __init__(self, audit_service: Optional[AuditService] = None,
+                 status_transition_service: Optional[StatusTransitionService] = None):
         self.audit_service = audit_service or  AuditService()
+        self.status_transition_service = status_transition_service or create_status_transition_service()
+        round_manager = initialize_round_status_manager()
+        self.status_transition_service.register_transition_manager("Round", round_manager)
 
     def _round_audit_details(self, round: Round,  context: Dict) -> dict:
         """Extract audit details from a round operation"""
@@ -35,7 +41,25 @@ class RoundService:
             "created_at": round.created_at.isoformat() if round.created_at else None,
             "updated_at": round.updated_at.isoformat() if round.updated_at else None
         }
-
+    
+    async def change_round_status(
+        self,
+        round: Round,
+        new_status: str,
+        reason: str,
+        actor: Player,
+        session: AsyncSession,
+        entity_metadata: Optional[Dict] = None
+    ) -> Round:
+        """Change a round's status with validation and history tracking"""
+        return await self.status_transition_service.transition_status(
+            entity=round,
+            new_status=new_status,
+            reason=reason,
+            actor=actor,
+            entity_metadata=entity_metadata,
+            session=session
+        )
     async def get_round(
         self,
         round_id: uuid.UUID,
@@ -137,6 +161,7 @@ class RoundService:
         session.add(round)
         return round
 
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
@@ -149,20 +174,18 @@ class RoundService:
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None
     ) -> Round:
-        """Complete a tournament round"""
-        # Validate round can be completed
-        if round.status != "active":
-            raise RoundServiceError("Round is not active")
-
-        # Validate all fixtures are completed
-        fixtures = await self.get_round_fixtures(round.id, session)
-        if not all(f.status == "completed" for f in fixtures):
-            raise RoundServiceError("All fixtures must be completed")
-
-        round.status = "completed"
-        round.updated_at = datetime.now()
-        session.add(round)
-        return round
+        """Complete a tournament round using status transition service"""
+        return await self.change_round_status(
+            round=round,
+            new_status="completed",
+            reason="Round completed - all fixtures finished",
+            actor=actor,
+            session=session,
+            entity_metadata={
+                "tournament_service": tournament_service  # Pass for pipeline
+            },
+            audit_context=audit_context
+        )
 
     async def get_round_by_number(
         self,
