@@ -13,7 +13,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from competitions.models.fixtures import Fixture, FixtureStatus
 from competitions.models.rounds import Round
-
+from enum import StrEnum
 class RoundStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"

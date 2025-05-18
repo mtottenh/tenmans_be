@@ -11,7 +11,8 @@ from faker import Faker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from auth.models import Player, AuthType, VerificationStatus
+from auth.models import Player, AuthType
+from auth.schemas import PlayerStatus
 from teams.models import Team, TeamCaptain, Roster
 from competitions.models.seasons import Season, SeasonState
 from competitions.models.tournaments import Tournament, TournamentType, TournamentState
@@ -102,7 +103,7 @@ class TestDataBuilder:
                     TestDataConfig.MIN_ELO,
                     TestDataConfig.MAX_ELO
                 ),
-                verification_status=random.choice(list(VerificationStatus)),
+                status=random.choice(list(PlayerStatus)),
                 created_at=fake.date_time_between(
                     start_date='-1y',
                     end_date='now'
@@ -146,7 +147,7 @@ class TestDataBuilder:
             captain = available_players.pop()
             team_captain = TeamCaptain(
                 team_id=team.id,
-                player_uid=captain.uid
+                player_id=captain.id
             )
             self.session.add(team_captain)
             
@@ -163,7 +164,7 @@ class TestDataBuilder:
                 for player in team_players:
                     roster = Roster(
                         team_id=team.id,
-                        player_uid=player.uid,
+                        player_id=player.id,
                         season_id=self.season.id,
                         pending=False
                     )
@@ -378,7 +379,7 @@ class TestDataBuilder:
             team_1_score=team_1_score,
             team_2_score=team_2_score,
             team_1_side_first=random.choice(['CT', 'T']),
-            submitted_by=submitting_player.uid if submitting_player else None,
+            submitted_by=submitting_player.id if submitting_player else None,
             confirmation_status=status,
             created_at=datetime.now(),
             updated_at=datetime.now()

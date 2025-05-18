@@ -20,6 +20,22 @@ from services.permission import permission_service
 from services.season import season_service
 from teams.models import Team
 
+# Import all models to ensure they're registered with SQLModel metadata
+# This is necessary for create_all to work properly
+from competitions.models.tournaments import Tournament, TournamentRegistration
+from competitions.models.rounds import Round
+from competitions.models.fixtures import Fixture
+from competitions.models.linked_tournaments import LinkedTournament
+from competitions.map_pool.models import TournamentMapPool, MapPoolMap, MapPoolVote 
+from matches.models import MatchPlayer, Result
+from matches.evidence.models import MatchEvidence, EvidenceConfirmation
+from teams.join_request.models import TeamJoinRequest
+from maps.models import Map
+from audit.models import AuditEvent
+from substitutes.models import SubstituteAvailability
+from pugs.models import PugPlayer, Pug
+from moderation.models import Ban
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

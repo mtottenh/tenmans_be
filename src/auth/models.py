@@ -8,6 +8,7 @@ import uuid
 from typing import List, Optional
 from audit.models import AuditEvent
 from auth.schemas import AuthType, PlayerStatus
+from competitions.models.scheduling import PlayerAvailability
 from moderation.models import Ban
 from substitutes.models import SubstituteAvailability
 from teams.join_request.models import TeamJoinRequest

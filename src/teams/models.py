@@ -6,9 +6,10 @@ from datetime import datetime
 import uuid
 from typing import List, Optional
 from competitions.models.seasons import Season
+from competitions.models.scheduling import TeamAvailability
 from teams.base_schemas import RosterStatus, TeamCaptainStatus, TeamStatus, RecruitmentStatus
-
-
+from matches.evidence.models import EvidenceConfirmation
+from competitions.models.lobby import MapVetoAction, MapVetoSession
 class Team(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "teams"
     id: uuid.UUID = Field(
@@ -42,9 +43,12 @@ class Team(SQLModel, AsyncAttrs, table=True):
     # New relationships for the enhanced features
     map_votes: List["MapPoolVote"] = Relationship(back_populates="team")
     availability: List["TeamAvailability"] = Relationship(back_populates="team")
-    evidence_confirmations: List["EvidenceConfirmation"] = Relationship(back_populates="team")
-    veto_sessions: List["MapVetoSession"] = Relationship(back_populates="current_team")
-    veto_actions: List["MapVetoAction"] = Relationship(back_populates="team")
+    evidence_confirmations: List[EvidenceConfirmation] = Relationship(back_populates="team")
+    veto_sessions: List[MapVetoSession] = Relationship(
+        back_populates="current_team",
+        sa_relationship_kwargs={"foreign_keys": "[MapVetoSession.current_team_id]"}
+    )
+    veto_actions: List[MapVetoAction] = Relationship(back_populates="team")
     
     
 class Roster(SQLModel, AsyncAttrs, table=True):

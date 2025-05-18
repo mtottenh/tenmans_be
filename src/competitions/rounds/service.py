@@ -14,7 +14,6 @@ from auth.models import Player
 from audit.service import AuditService
 from status.manager.round import initialize_round_status_manager
 from status.service import StatusTransitionService, create_status_transition_service
-from services.tournament import tournament_service
 class RoundServiceError(Exception):
     """Base exception for round service errors"""
     pass
@@ -175,6 +174,9 @@ class RoundService:
         audit_context: Optional[AuditContext] = None
     ) -> Round:
         """Complete a tournament round using status transition service"""
+        # Lazy import to avoid circular dependency
+        from services.tournament import tournament_service
+        
         return await self.change_round_status(
             round=round,
             new_status="completed",

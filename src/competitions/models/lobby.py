@@ -28,7 +28,7 @@ class MapVetoSession(SQLModel, table=True):
     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
     format: str  # "bo1", "bo3", "bo5"
     status: str  # "pending", "in_progress", "completed"
-    current_team_id: Optional[uuid.UUID] = Field(default=None)
+    current_team_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("teams.id"), default=None))
     current_action: Optional[VetoActionType] = Field(default=None)
     deadline: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -37,6 +37,9 @@ class MapVetoSession(SQLModel, table=True):
     # Relationships
     fixture: "Fixture" = Relationship(back_populates="veto_session")
     actions: List["MapVetoAction"] = Relationship(back_populates="session")
+    current_team: Optional["Team"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[MapVetoSession.current_team_id]"}
+    )
 
 class MapVetoAction(SQLModel, table=True):
     """Individual veto actions taken during a session"""
@@ -54,5 +57,5 @@ class MapVetoAction(SQLModel, table=True):
     
     # Relationships
     session: "MapVetoSession" = Relationship(back_populates="actions")
-    team: "Team" = Relationship()
+    team: "Team" = Relationship(back_populates="veto_actions")
     map: Optional["Map"] = Relationship()

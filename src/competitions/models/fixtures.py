@@ -9,6 +9,7 @@ import uuid
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import AsyncAttrs
 
+from competitions.models.scheduling import ScheduleSuggestion, ScheduleConflict
 from matches.models import MatchFormat, Result
 from matches.schemas import ConfirmationStatus
 

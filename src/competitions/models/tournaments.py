@@ -12,6 +12,7 @@ from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round
 from competitions.models.seasons import Season
 from competitions.base_schemas import GameMode, LeagueFormat, MapSelectionMethod
+from competitions.models.scheduling import PlayerAvailability, TeamAvailability
 from maps.models import Map, TournamentMap
 
 
@@ -89,6 +90,8 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     registrations: List["TournamentRegistration"] = Relationship(back_populates="tournament")
     substitutes: List["SubstituteAvailability"] = Relationship(back_populates="tournament")
     map_pool: Optional["TournamentMapPool"] = Relationship(back_populates="tournament")
+    player_availability: List["PlayerAvailability"] = Relationship(back_populates="tournament")
+    team_availability: List["TeamAvailability"] = Relationship(back_populates="tournament")
 
 class RegistrationStatus(StrEnum):
     PENDING = "pending"
