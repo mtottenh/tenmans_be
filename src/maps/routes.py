@@ -1,29 +1,33 @@
-import os
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
+from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
+
 from auth.dependencies import get_current_player, require_map_management
 from auth.models import Player
 from competitions.base_schemas import GameMode, MapCategory
 from db.main import get_session
-from .models import Map
-from .schemas import MapBase, MapCreate, MapCreateRequest, MapDetailed
-from typing import List
 from services.map import map_service
 from services.upload import upload_service
+
+from .models import Map
+from .schemas import MapBase, MapCreate, MapCreateRequest, MapDetailed
 
 
 map_router = APIRouter(prefix="/maps")
 
-@map_router.post("/", 
-                 dependencies=[Depends(require_map_management)], 
-                 status_code=status.HTTP_201_CREATED,
-                 response_model=MapBase
-                 )
+
+@map_router.post(
+    "/",
+    dependencies=[Depends(require_map_management)],
+    status_code=status.HTTP_201_CREATED,
+    response_model=MapBase,
+)
 async def create_map(
     map_create_model: MapCreateRequest,
-    current_player: Player = Depends(get_current_player),
+    _: Player = Depends(get_current_player),
     session: AsyncSession = Depends(get_session),
 ):
     name = map_create_model.name
@@ -39,30 +43,35 @@ async def create_map(
     if not upload_result:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid or expired map upload token",
+            detail="Invalid or expired map upload token",
         )
     final_path = await upload_service.move_upload_if_temp(upload_result, name)
-    
-    new_map = await map_service.create_map(MapCreate(name=name, img=final_path), session)
+
+    new_map = await map_service.create_map(
+        MapCreate(name=name, img=final_path), session
+    )
     return new_map
 
 
 async def get_map_img(map: Map):
-    if os.path.exists(map.img):
+    if Path(map.img).exists():
         return FileResponse(map.img)
 
 
-@map_router.get('/', response_model=List[MapBase])
+@map_router.get("/", response_model=list[MapBase])
 async def get_all_maps(
     session: AsyncSession = Depends(get_session),
 ):
     db_maps = await map_service.get_all_maps(session)
 
-    maps = [MapBase(name=m.name, id=str(m.id), img=map_service.get_map_img_path(m)) for m in db_maps]
+    maps = [
+        MapBase(name=m.name, id=str(m.id), img=map_service.get_map_img_path(m))
+        for m in db_maps
+    ]
     return maps
 
 
-@map_router.get('/id/{id}/img')
+@map_router.get("/id/{id}/img")
 async def get_map_by_id(
     id: str,
     session: AsyncSession = Depends(get_session),
@@ -76,7 +85,7 @@ async def get_map_by_id(
     return await get_map_img(map)
 
 
-@map_router.get('/name/{name}/img')
+@map_router.get("/name/{name}/img")
 async def get_map_by_name(
     name: str,
     session: AsyncSession = Depends(get_session),
@@ -89,27 +98,22 @@ async def get_map_by_name(
         )
     return await get_map_img(map)
 
-@map_router.get(
-    "/by-mode/{game_mode}",
-    response_model=List[MapDetailed]
-)
+
+@map_router.get("/by-mode/{game_mode}", response_model=list[MapDetailed])
 async def get_maps_by_mode(
     game_mode: GameMode,
-    current_player: Player = Depends(get_current_player),
-    session: AsyncSession = Depends(get_session)
+    _: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session),
 ):
     """Get maps for specific game mode"""
     return await map_service.get_maps_by_mode(game_mode, session)
 
 
-@map_router.get(
-    "/by-category/{category}",
-    response_model=List[MapDetailed]
-)
+@map_router.get("/by-category/{category}", response_model=list[MapDetailed])
 async def get_maps_by_category(
     category: MapCategory,
-    current_player: Player = Depends(get_current_player),
-    session: AsyncSession = Depends(get_session)
+    _: Player = Depends(get_current_player),
+    session: AsyncSession = Depends(get_session),
 ):
     """Get maps by category"""
     return await map_service.get_maps_by_category(category, session)

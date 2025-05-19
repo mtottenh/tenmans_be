@@ -1,12 +1,15 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field, HttpUrl, model_validator
-from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
+from typing import Optional, Self
+
+from pydantic import UUID4, BaseModel, ConfigDict, Field, HttpUrl, model_validator
+
 
 class ConfirmationStatus(StrEnum):
     PENDING = "pending"
     CONFIRMED = "confirmed"
     DISPUTED = "disputed"
+
 
 # Request Schemas
 class ResultCreate(BaseModel):
@@ -17,22 +20,27 @@ class ResultCreate(BaseModel):
     team_2_score: int = Field(..., ge=0)
     team_1_side_first: str = Field(..., pattern="^(CT|T)$")
     demo_url: Optional[HttpUrl]
-    screenshot_urls: Optional[List[HttpUrl]]
+    screenshot_urls: Optional[list[HttpUrl]]
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_scores(self) -> Self:
-        if self.team_1_score > 100 or self.team_2_score > 100:  # TODO: Max rounds in regulation - set to 100 for now as we haven't got OT sorted
-            raise ValueError('Score exceeds maximum possible rounds')
+        if (
+            self.team_1_score > 100 or self.team_2_score > 100
+        ):  # TODO: Max rounds in regulation - set to 100 for now as we haven't got OT sorted
+            raise ValueError("Score exceeds maximum possible rounds")
         return self
+
 
 class ResultConfirm(BaseModel):
     result_id: UUID4
     confirming_captain_id: UUID4
 
+
 class ResultDispute(BaseModel):
     result_id: UUID4
     reason: str
-    evidence_urls: Optional[List[HttpUrl]]
+    evidence_urls: Optional[list[HttpUrl]]
+
 
 class AdminResultOverride(BaseModel):
     result_id: UUID4
@@ -40,11 +48,13 @@ class AdminResultOverride(BaseModel):
     team_2_score: int
     reason: str
 
+
 class MatchPlayerAdd(BaseModel):
     fixture_id: UUID4
     player_id: UUID4
     team_id: UUID4
     is_substitute: bool = False
+
 
 # Response Schemas
 class ResultBase(BaseModel):
@@ -61,6 +71,7 @@ class ResultBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class ResultDetailed(ResultBase):
     submitted_by: UUID4
     confirmed_by: Optional[UUID4]
@@ -68,7 +79,8 @@ class ResultDetailed(ResultBase):
     admin_override_by: Optional[UUID4]
     admin_override_reason: Optional[str]
     demo_url: Optional[HttpUrl]
-    screenshot_urls: List[HttpUrl]
+    screenshot_urls: list[HttpUrl]
+
 
 class MatchPlayerDetail(BaseModel):
     fixture_id: UUID4
@@ -78,6 +90,7 @@ class MatchPlayerDetail(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class MatchStatsBase(BaseModel):
     kills: int
@@ -92,12 +105,14 @@ class MatchStatsBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class MatchPlayerStats(MatchStatsBase):
     player_id: UUID4
     match_id: UUID4
     team_id: UUID4
     map_id: UUID4
     created_at: datetime
+
 
 class MatchSummary(BaseModel):
     fixture_id: UUID4

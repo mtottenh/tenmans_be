@@ -1,20 +1,16 @@
 """Test suite for UploadService business logic"""
 
-import pytest
-import pytest_asyncio
-from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch, mock_open
-from fastapi import UploadFile
 import uuid
-import os
-import tempfile
-import aiofiles
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, Mock, mock_open, patch
 
-from upload.service import UploadService, UploadConfig
-from upload.models import UploadRequest, UploadResult, UploadToken, UploadType
-from state.service import StateService
+import pytest
+from fastapi import UploadFile
+
 from auth.models import Player
+from state.service import StateService
+from upload.models import UploadRequest, UploadToken, UploadType
+from upload.service import UploadService
 
 
 @pytest.fixture
@@ -40,7 +36,7 @@ def test_player():
         id=str(uuid.uuid4()),
         steam_id="76561198000000000",
         steam_name="TestPlayer",
-        email="test@example.com"
+        email="test@example.com",
     )
 
 
@@ -66,7 +62,7 @@ def test_upload_request():
         filename="team_logo.png",
         content_type="image/png",
         size=5000,
-        metadata={"team_id": str(uuid.uuid4())}
+        metadata={"team_id": str(uuid.uuid4())},
     )
 
 
@@ -77,7 +73,7 @@ def test_upload_token():
         token=str(uuid.uuid4()),
         upload_id=str(uuid.uuid4()),
         upload_type=UploadType.TEAM_LOGO,
-        expires_at=datetime.now() + timedelta(minutes=15)
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
     )
 
 
@@ -94,9 +90,9 @@ def test_validate_upload_request_invalid_type(upload_service):
         upload_type="invalid_type",  # Invalid type
         filename="test.png",
         content_type="image/png",
-        size=1000
+        size=1000,
     )
-    
+
     # Execute and assert
     with pytest.raises(ValueError, match="Invalid upload type"):
         upload_service.validate_upload_request(invalid_request)
@@ -109,9 +105,9 @@ def test_validate_upload_request_invalid_content_type(upload_service):
         upload_type=UploadType.TEAM_LOGO,
         filename="test.exe",
         content_type="application/exe",  # Not allowed
-        size=1000
+        size=1000,
     )
-    
+
     # Execute and assert
     with pytest.raises(ValueError, match="Invalid content type"):
         upload_service.validate_upload_request(invalid_request)
@@ -124,9 +120,9 @@ def test_validate_upload_request_file_too_large(upload_service):
         upload_type=UploadType.TEAM_LOGO,
         filename="test.png",
         content_type="image/png",
-        size=10_000_000  # 10MB, exceeds 5MB limit
+        size=10_000_000,  # 10MB, exceeds 5MB limit
     )
-    
+
     # Execute and assert
     with pytest.raises(ValueError, match="exceeds maximum"):
         upload_service.validate_upload_request(invalid_request)
@@ -138,20 +134,19 @@ async def test_initiate_upload(upload_service, test_upload_request, test_player)
     # Setup
     upload_id = str(uuid.uuid4())
     token = str(uuid.uuid4())
-    
-    with patch('uuid.uuid4', side_effect=[upload_id, token]):
+
+    with patch("uuid.uuid4", side_effect=[upload_id, token]):
         # Execute
         upload_token = await upload_service.initiate_upload(
-            request=test_upload_request,
-            player=test_player
+            request=test_upload_request, player=test_player
         )
-    
+
     # Assert
     assert upload_token.token == token
     assert upload_token.upload_id == upload_id
     assert upload_token.upload_type == test_upload_request.upload_type
     assert upload_token.player_id == test_player.id
-    
+
     # Verify state was saved
     upload_service.state_service.set_state.assert_called_once()
 
@@ -164,13 +159,13 @@ async def test_validate_upload_token_valid(upload_service, test_upload_token):
         "upload_id": test_upload_token.upload_id,
         "upload_type": test_upload_token.upload_type.value,
         "expires_at": test_upload_token.expires_at.isoformat(),
-        "used": False
+        "used": False,
     }
     upload_service.state_service.get_state.return_value = upload_state
-    
+
     # Execute
     is_valid = await upload_service.validate_upload_token(test_upload_token.token)
-    
+
     # Assert
     assert is_valid is True
 
@@ -179,18 +174,18 @@ async def test_validate_upload_token_valid(upload_service, test_upload_token):
 async def test_validate_upload_token_expired(upload_service, test_upload_token):
     """Test validation fails for expired token"""
     # Setup
-    test_upload_token.expires_at = datetime.now() - timedelta(hours=1)
+    test_upload_token.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
     upload_state = {
         "upload_id": test_upload_token.upload_id,
         "upload_type": test_upload_token.upload_type.value,
         "expires_at": test_upload_token.expires_at.isoformat(),
-        "used": False
+        "used": False,
     }
     upload_service.state_service.get_state.return_value = upload_state
-    
+
     # Execute
     is_valid = await upload_service.validate_upload_token(test_upload_token.token)
-    
+
     # Assert
     assert is_valid is False
 
@@ -203,13 +198,13 @@ async def test_validate_upload_token_already_used(upload_service, test_upload_to
         "upload_id": test_upload_token.upload_id,
         "upload_type": test_upload_token.upload_type.value,
         "expires_at": test_upload_token.expires_at.isoformat(),
-        "used": True  # Already used
+        "used": True,  # Already used
     }
     upload_service.state_service.get_state.return_value = upload_state
-    
+
     # Execute
     is_valid = await upload_service.validate_upload_token(test_upload_token.token)
-    
+
     # Assert
     assert is_valid is False
 
@@ -223,28 +218,29 @@ async def test_process_upload(upload_service, test_upload_file, test_upload_toke
         "upload_type": test_upload_token.upload_type.value,
         "expires_at": test_upload_token.expires_at.isoformat(),
         "used": False,
-        "metadata": {"team_id": str(uuid.uuid4())}
+        "metadata": {"team_id": str(uuid.uuid4())},
     }
     upload_service.state_service.get_state.return_value = upload_state
-    
+
     # Mock file operations
-    with patch('aiofiles.open', mock_open()) as mock_file:
-        with patch('os.makedirs'):
-            with patch('werkzeug.utils.secure_filename', return_value="test_logo.png"):
+    with patch("aiofiles.open", mock_open()):
+        with patch("os.makedirs"):
+            with patch("werkzeug.utils.secure_filename", return_value="test_logo.png"):
                 # Execute
                 result = await upload_service.process_upload(
-                    file=test_upload_file,
-                    token=test_upload_token.token
+                    file=test_upload_file, token=test_upload_token.token
                 )
-    
+
     # Assert
     assert result.upload_id == test_upload_token.upload_id
     assert result.success is True
     assert result.filename == "test_logo.png"
     assert result.storage_path.startswith("/app/logo_store")
-    
+
     # Verify state was updated
-    assert upload_service.state_service.set_state.call_count == 2  # Token marked as used + result saved
+    assert (
+        upload_service.state_service.set_state.call_count == 2
+    )  # Token marked as used + result saved
 
 
 @pytest.mark.asyncio
@@ -252,12 +248,11 @@ async def test_process_upload_invalid_token(upload_service, test_upload_file):
     """Test error when processing upload with invalid token"""
     # Setup
     upload_service.state_service.get_state.return_value = None
-    
+
     # Execute and assert
     with pytest.raises(ValueError, match="Invalid upload token"):
         await upload_service.process_upload(
-            file=test_upload_file,
-            token="invalid-token"
+            file=test_upload_file, token="invalid-token"
         )
 
 
@@ -272,13 +267,13 @@ async def test_get_upload_result(upload_service, test_upload_token):
         "storage_path": "/app/logo_store/test_logo.png",
         "content_type": "image/png",
         "size": 5000,
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     upload_service.state_service.get_state.return_value = result_state
-    
+
     # Execute
     result = await upload_service.get_upload_result(test_upload_token.upload_id)
-    
+
     # Assert
     assert result.upload_id == test_upload_token.upload_id
     assert result.success is True
@@ -289,29 +284,28 @@ async def test_get_upload_result(upload_service, test_upload_token):
 async def test_cleanup_expired_tokens(upload_service):
     """Test cleaning up expired upload tokens"""
     # Setup
-    expired_tokens = [
-        f"upload:token:{uuid.uuid4()}",
-        f"upload:token:{uuid.uuid4()}"
-    ]
-    
+    expired_tokens = [f"upload:token:{uuid.uuid4()}", f"upload:token:{uuid.uuid4()}"]
+
     # Mock state service to return expired tokens
-    with patch.object(upload_service.state_service, 'scan_keys', return_value=expired_tokens):
-        with patch.object(upload_service.state_service, 'get_state') as mock_get_state:
+    with patch.object(
+        upload_service.state_service, "scan_keys", return_value=expired_tokens
+    ):
+        with patch.object(upload_service.state_service, "get_state") as mock_get_state:
             # Set up expired token states
             mock_get_state.side_effect = [
                 {
-                    "expires_at": (datetime.now() - timedelta(hours=1)).isoformat(),
-                    "used": False
+                    "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                    "used": False,
                 },
                 {
-                    "expires_at": (datetime.now() - timedelta(hours=2)).isoformat(),
-                    "used": False
-                }
+                    "expires_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+                    "used": False,
+                },
             ]
-            
+
             # Execute
             deleted_count = await upload_service.cleanup_expired_tokens()
-    
+
     # Assert
     assert deleted_count == 2
     assert upload_service.state_service.delete_state.call_count == 2
@@ -322,19 +316,18 @@ async def test_save_file(upload_service, test_upload_file):
     """Test saving file to disk"""
     # Setup
     save_path = "/tmp/test_logo.png"
-    
+
     # Mock file operations
-    with patch('aiofiles.open', mock_open()) as mock_file:
-        with patch('os.makedirs'):
+    with patch("aiofiles.open", mock_open()) as mock_file:
+        with patch("os.makedirs"):
             # Execute
             saved_path = await upload_service.save_file(
-                file=test_upload_file,
-                save_path=save_path
+                file=test_upload_file, save_path=save_path
             )
-    
+
     # Assert
     assert saved_path == save_path
-    mock_file.assert_called_once_with(save_path, 'wb')
+    mock_file.assert_called_once_with(save_path, "wb")
 
 
 @pytest.mark.asyncio
@@ -342,13 +335,13 @@ async def test_delete_file(upload_service):
     """Test deleting a file"""
     # Setup
     file_path = "/app/logo_store/old_logo.png"
-    
+
     # Mock file operations
-    with patch('os.path.exists', return_value=True):
-        with patch('os.remove') as mock_remove:
+    with patch("os.path.exists", return_value=True):
+        with patch("os.remove") as mock_remove:
             # Execute
             success = await upload_service.delete_file(file_path)
-    
+
     # Assert
     assert success is True
     mock_remove.assert_called_once_with(file_path)
@@ -359,12 +352,12 @@ async def test_delete_file_not_exists(upload_service):
     """Test deleting a non-existent file"""
     # Setup
     file_path = "/app/logo_store/non_existent.png"
-    
+
     # Mock file operations
-    with patch('os.path.exists', return_value=False):
+    with patch("os.path.exists", return_value=False):
         # Execute
         success = await upload_service.delete_file(file_path)
-    
+
     # Assert
     assert success is False
 
@@ -374,15 +367,14 @@ async def test_generate_unique_filename(upload_service):
     """Test generating unique filename"""
     # Setup
     original_filename = "team_logo.png"
-    
+
     # Mock existing file check
-    with patch('os.path.exists', side_effect=[True, True, False]):
+    with patch("os.path.exists", side_effect=[True, True, False]):
         # Execute
         unique_filename = await upload_service.generate_unique_filename(
-            directory="/app/logo_store",
-            filename=original_filename
+            directory="/app/logo_store", filename=original_filename
         )
-    
+
     # Assert
     assert unique_filename != original_filename
     assert unique_filename.endswith(".png")
@@ -395,20 +387,18 @@ async def test_validate_image_dimensions(upload_service, test_upload_file):
     # Setup
     max_width = 1920
     max_height = 1080
-    
+
     # Mock PIL Image
-    with patch('PIL.Image.open') as mock_image_open:
+    with patch("PIL.Image.open") as mock_image_open:
         mock_image = Mock()
         mock_image.size = (1280, 720)  # Valid dimensions
         mock_image_open.return_value = mock_image
-        
+
         # Execute
         is_valid = await upload_service.validate_image_dimensions(
-            file=test_upload_file,
-            max_width=max_width,
-            max_height=max_height
+            file=test_upload_file, max_width=max_width, max_height=max_height
         )
-    
+
     # Assert
     assert is_valid is True
 
@@ -419,20 +409,18 @@ async def test_validate_image_dimensions_too_large(upload_service, test_upload_f
     # Setup
     max_width = 1920
     max_height = 1080
-    
+
     # Mock PIL Image
-    with patch('PIL.Image.open') as mock_image_open:
+    with patch("PIL.Image.open") as mock_image_open:
         mock_image = Mock()
         mock_image.size = (3840, 2160)  # Too large
         mock_image_open.return_value = mock_image
-        
+
         # Execute
         is_valid = await upload_service.validate_image_dimensions(
-            file=test_upload_file,
-            max_width=max_width,
-            max_height=max_height
+            file=test_upload_file, max_width=max_width, max_height=max_height
         )
-    
+
     # Assert
     assert is_valid is False
 
@@ -441,24 +429,22 @@ async def test_validate_image_dimensions_too_large(upload_service, test_upload_f
 async def test_resize_image(upload_service, test_upload_file):
     """Test resizing an image"""
     # Mock PIL operations
-    with patch('PIL.Image.open') as mock_image_open:
+    with patch("PIL.Image.open") as mock_image_open:
         mock_image = Mock()
         mock_resized = Mock()
         mock_image.resize.return_value = mock_resized
         mock_image_open.return_value = mock_image
-        
-        with patch('io.BytesIO') as mock_bytes_io:
+
+        with patch("io.BytesIO") as mock_bytes_io:
             mock_buffer = Mock()
             mock_bytes_io.return_value = mock_buffer
             mock_buffer.getvalue.return_value = b"resized image data"
-            
+
             # Execute
             resized_data = await upload_service.resize_image(
-                file=test_upload_file,
-                max_width=512,
-                max_height=512
+                file=test_upload_file, max_width=512, max_height=512
             )
-    
+
     # Assert
     assert resized_data == b"resized image data"
     mock_image.resize.assert_called_once()

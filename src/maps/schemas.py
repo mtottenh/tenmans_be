@@ -1,19 +1,23 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field, HttpUrl
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+
+from pydantic import UUID4, BaseModel, ConfigDict, Field
+
 
 # Map Schemas
 class MapCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
     img: str
 
+
 class MapCreateRequest(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
     map_img_token_id: str
 
+
 # class MapUpdate(BaseModel):
 #     name: Optional[str] = Field(None, min_length=2, max_length=50)
 #     img_url: Optional[HttpUrl]
+
 
 class MapBase(BaseModel):
     id: UUID4
@@ -24,6 +28,7 @@ class MapBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class MapDetailed(MapBase):
     times_played: int
     t_side_win_percentage: float
@@ -31,12 +36,14 @@ class MapDetailed(MapBase):
     average_round_time: float  # in seconds
     most_recent_match: datetime
 
+
 class TournamentMapPool(BaseModel):
     tournament_id: UUID4
-    maps: List[MapBase]
+    maps: list[MapBase]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 # Map Statistics Schemas
 class MapStatistics(BaseModel):
@@ -52,10 +59,9 @@ class MapStatistics(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class MapTournamentStatistics(MapStatistics):
     tournament_id: UUID4
     tournament_name: str
     matches_in_tournament: int
     percentage_of_tournament_matches: float
-
-        

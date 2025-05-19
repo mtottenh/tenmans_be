@@ -1,23 +1,38 @@
-from sqlmodel import SQLModel, Field, Column, Relationship
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional
+
 import sqlalchemy.dialects.sqlite as sl
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from datetime import datetime
-from typing import List, Optional
-import uuid
+from sqlmodel import Column, Field, Relationship, SQLModel
 
 from substitutes.schemas import SubstituteAvailabilityStatus
+
+
+if TYPE_CHECKING:
+    from auth.models import Player
+    from competitions.models.seasons import Season
+    from competitions.models.tournaments import Tournament
+
 
 
 class SubstituteAvailability(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "substitute_availability"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
+        sa_column=Column(
+            UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
+        )
+    )
     player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    tournament_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("tournaments.id")))
+    tournament_id: Optional[uuid.UUID] = Field(
+        sa_column=Column(ForeignKey("tournaments.id"))
+    )
     season_id: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("seasons.id")))
-    status: SubstituteAvailabilityStatus = Field(default=SubstituteAvailabilityStatus.AVAILABLE) 
+    status: SubstituteAvailabilityStatus = Field(
+        default=SubstituteAvailabilityStatus.AVAILABLE
+    )
     availability_notes: Optional[str]  # e.g., "Only available weekends"
     last_substitute_date: Optional[datetime]  # Track last time used as substitute
     created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))

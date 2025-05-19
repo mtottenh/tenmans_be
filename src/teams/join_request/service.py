@@ -1,49 +1,56 @@
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from typing import List, Optional, Dict
-from datetime import datetime, timedelta
-import uuid
-from sqlalchemy.orm import joinedload, selectinload
 
-from audit.models import AuditEventType
+from audit.service import AuditService, create_audit_service
+from auth.models import Player, Role
 from auth.service.permission import PermissionService, create_permission_service
+from competitions.models.seasons import Season
 from competitions.season.service import SeasonService, create_season_service
 from status.manager.join_request import initialize_join_request_manager
 from status.service import StatusTransitionService, create_status_transition_service
 from teams.base_schemas import RosterStatus
-from teams.service.captain import CaptainService, create_captain_service
-
-from .schemas import JoinRequestStatus
-
-from .models import TeamJoinRequest
 from teams.models import Roster, Team
-from auth.models import Player, Role
-from competitions.models.seasons import Season
-from audit.service import AuditService, create_audit_service
+from teams.service.captain import CaptainService, create_captain_service
 from teams.service.roster import RosterService, create_roster_service
 from teams.service.team import TeamService, create_team_service
 
+from .models import TeamJoinRequest
+from .schemas import JoinRequestStatus
+
+
 class JoinRequestError(Exception):
     """Base exception for join request operations"""
+
     pass
+
 
 class TeamJoinRequestService:
     def __init__(
         self,
         roster_service: RosterService,
         team_service: TeamService,
-        status_transition_service: Optional[StatusTransitionService] = None
+        status_transition_service: Optional[StatusTransitionService] = None,
     ):
         self.roster_service = roster_service
         self.team_service = team_service
-        self.status_transition_service = status_transition_service or create_status_transition_service()
-        
+        self.status_transition_service = (
+            status_transition_service or create_status_transition_service()
+        )
+
         # Register join request status manager
         join_request_manager = initialize_join_request_manager()
-        self.status_transition_service.register_transition_manager("TeamJoinRequest", join_request_manager)
+        self.status_transition_service.register_transition_manager(
+            "TeamJoinRequest", join_request_manager
+        )
 
-
-    def _join_request_audit_details(self, request: TeamJoinRequest,  context: Dict) -> Dict:
+    def _join_request_audit_details(
+        self, request: TeamJoinRequest, context: dict  # noqa: ARG002
+    ) -> dict:
         """Extract audit details from a join request operation"""
         return {
             "request_id": str(request.id),
@@ -51,8 +58,8 @@ class TeamJoinRequestService:
             "player_id": str(request.player_id),
             "season_id": str(request.season_id),
             "status": request.status,
-            "timestamp": datetime.now().isoformat(),
-            "message": request.message
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message": request.message,
         }
 
     async def change_request_status(
@@ -62,7 +69,7 @@ class TeamJoinRequestService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        entity_metadata: Optional[Dict] = None
+        entity_metadata: Optional[dict] = None,
     ) -> TeamJoinRequest:
         """Change a join request's status with validation"""
         return await self.status_transition_service.transition_status(
@@ -71,7 +78,7 @@ class TeamJoinRequestService:
             reason=reason,
             actor=actor,
             entity_metadata=entity_metadata,
-            session=session
+            session=session,
         )
 
     async def create_request(
@@ -81,7 +88,7 @@ class TeamJoinRequestService:
         season: Season,
         message: Optional[str],
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
     ) -> TeamJoinRequest:
         """Create a new join request"""
         request = TeamJoinRequest(
@@ -89,28 +96,29 @@ class TeamJoinRequestService:
             team_id=team.id,
             season_id=season.id,
             message=message,
-            created_at=datetime.now()
+            created_at=datetime.now(timezone.utc),
         )
         session.add(request)
         await session.flush()
-        
+
         # Use status transition service to set initial status
         await self.change_request_status(
             request=request,
             new_status=JoinRequestStatus.PENDING,
             reason="Initial join request",
             actor=actor,
-            session=session
+            session=session,
         )
-        
+
         return request
+
     async def approve_request(
         self,
         request: TeamJoinRequest,
-        captain: Player,
+        captain: Player,  # noqa: ARG002
         response_message: Optional[str],
-        actor: Player, 
-        session: AsyncSession
+        actor: Player,
+        session: AsyncSession,
     ) -> TeamJoinRequest:
         """Approve a join request"""
         await self.change_request_status(
@@ -119,9 +127,9 @@ class TeamJoinRequestService:
             reason=response_message or "Request approved",
             actor=actor,
             entity_metadata={"response_message": response_message},
-            session=session
+            session=session,
         )
-        
+
         team_to_join = await session.get(Team, request.team_id)
         player_to_add = await session.get(Player, request.player_id)
         roster_season = await session.get(Season, request.season_id)
@@ -130,7 +138,7 @@ class TeamJoinRequestService:
         stmt = select(Roster).where(
             Roster.team_id == team_to_join.id,
             Roster.player_id == player_to_add.id,
-            Roster.season_id == roster_season.id
+            Roster.season_id == roster_season.id,
         )
         result = await session.execute(stmt)
         existing_roster = result.scalar_one_or_none()
@@ -143,7 +151,7 @@ class TeamJoinRequestService:
                 reason="Rejoining team via approved join request",
                 actor=actor,
                 session=session,
-                metadata={"join_request_id": str(request.id)}
+                metadata={"join_request_id": str(request.id)},
             )
         else:
             # If no existing entry, create new roster entry
@@ -153,18 +161,18 @@ class TeamJoinRequestService:
                 season=roster_season,
                 actor=actor,
                 session=session,
-                details={"join_request_id": str(request.id)}
+                details={"join_request_id": str(request.id)},
             )
-        
+
         return request
 
     async def reject_request(
         self,
         request: TeamJoinRequest,
-        captain: Player,
+        captain: Player,  # noqa: ARG002
         response_message: Optional[str],
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
     ) -> TeamJoinRequest:
         """Reject a join request"""
         return await self.change_request_status(
@@ -173,15 +181,15 @@ class TeamJoinRequestService:
             reason=response_message or "Request rejected",
             actor=actor,
             entity_metadata={"response_message": response_message},
-            session=session
+            session=session,
         )
 
     async def cancel_request(
         self,
         request: TeamJoinRequest,
-        player: Player,
+        player: Player,  # noqa: ARG002
         actor: Player,
-        session: AsyncSession
+        session: AsyncSession,
     ) -> TeamJoinRequest:
         """Cancel a join request"""
         return await self.change_request_status(
@@ -189,65 +197,60 @@ class TeamJoinRequestService:
             new_status=JoinRequestStatus.CANCELLED,
             reason="Request cancelled by player",
             actor=actor,
-            session=session
+            session=session,
         )
 
-        
     async def get_request_by_id(
-        self,
-        request_id: uuid.UUID,
-        session: AsyncSession
+        self, request_id: uuid.UUID, session: AsyncSession
     ) -> Optional[TeamJoinRequest]:
         """Get a join request by ID"""
-        stmt = select(TeamJoinRequest).where(TeamJoinRequest.id == request_id).options(
-            selectinload(TeamJoinRequest.team),
-            selectinload(TeamJoinRequest.player)
-            .selectinload(Player.roles)
-            .selectinload(Role.permissions)
+        stmt = (
+            select(TeamJoinRequest)
+            .where(TeamJoinRequest.id == request_id)
+            .options(
+                selectinload(TeamJoinRequest.team),
+                selectinload(TeamJoinRequest.player)
+                .selectinload(Player.roles)
+                .selectinload(Role.permissions),
+            )
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_team_req_with_req_id(
-        self,
-        team_id: uuid.UUID,
-        request_id: uuid.UUID,
-        session: AsyncSession
+        self, team_id: uuid.UUID, request_id: uuid.UUID, session: AsyncSession
     ) -> Optional[TeamJoinRequest]:
         """Get a specific join request for a team"""
         stmt = select(TeamJoinRequest).where(
-            TeamJoinRequest.team_id == team_id,
-            TeamJoinRequest.id == request_id
+            TeamJoinRequest.team_id == team_id, TeamJoinRequest.id == request_id
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()
-        
+
     async def get_pending_team_request_by_id(
-        self,
-        team_id: uuid.UUID,
-        request_id: uuid.UUID,
-        session: AsyncSession
+        self, team_id: uuid.UUID, request_id: uuid.UUID, session: AsyncSession
     ) -> Optional[TeamJoinRequest]:
         """Get a pending join request by ID"""
         stmt = select(TeamJoinRequest).where(
             TeamJoinRequest.team_id == team_id,
             TeamJoinRequest.id == request_id,
-            TeamJoinRequest.status == JoinRequestStatus.PENDING
+            TeamJoinRequest.status == JoinRequestStatus.PENDING,
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_team_requests(
-        self,
-        team: Team,
-        session: AsyncSession,
-        include_resolved: bool = False
-    ) -> List[TeamJoinRequest]:
+        self, team: Team, session: AsyncSession, include_resolved: bool = False
+    ) -> list[TeamJoinRequest]:
         """Get all join requests for a team"""
-        stmt = select(TeamJoinRequest).where(TeamJoinRequest.team_id == team.id).options(
-            selectinload(TeamJoinRequest.player)
-            .selectinload(Player.roles)
-            .selectinload(Role.permissions)
+        stmt = (
+            select(TeamJoinRequest)
+            .where(TeamJoinRequest.team_id == team.id)
+            .options(
+                selectinload(TeamJoinRequest.player)
+                .selectinload(Player.roles)
+                .selectinload(Role.permissions)
+            )
         )
         if not include_resolved:
             stmt = stmt.where(TeamJoinRequest.status == JoinRequestStatus.PENDING)
@@ -255,11 +258,8 @@ class TeamJoinRequestService:
         return result.all()
 
     async def get_player_requests(
-        self,
-        player: Player,
-        session: AsyncSession,
-        include_resolved: bool = False
-    ) -> List[TeamJoinRequest]:
+        self, player: Player, session: AsyncSession, include_resolved: bool = False
+    ) -> list[TeamJoinRequest]:
         """Get all join requests made by a player"""
         stmt = select(TeamJoinRequest).where(TeamJoinRequest.player_id == player.id)
         if not include_resolved:
@@ -268,17 +268,16 @@ class TeamJoinRequestService:
         return result.all()
 
     async def cleanup_expired_requests(
-        self,
-        session: AsyncSession,
-        expiry_days: int = 7
+        self, session: AsyncSession, expiry_days: int = 7
     ) -> int:
         """Mark old pending requests as expired"""
-        expiry_date = datetime.now() - timedelta(days=expiry_days)
+        expiry_date = datetime.now(timezone.utc) - timedelta(days=expiry_days)
         stmt = select(TeamJoinRequest).where(
             TeamJoinRequest.status == JoinRequestStatus.PENDING,
-            TeamJoinRequest.created_at < expiry_date
+            TeamJoinRequest.created_at < expiry_date,
         )
         from services.auth import auth_service
+
         expired_requests = (await session.execute(stmt)).scalars().all()
         system_user = await auth_service.get_player_by_name("SYSTEM", session)
         for request in expired_requests:
@@ -287,12 +286,10 @@ class TeamJoinRequestService:
                 new_status=JoinRequestStatus.EXPIRED,
                 reason=f"Request expired after {expiry_days} days",
                 actor=system_user,  # System action
-                session=session
+                session=session,
             )
-            
+
         return len(expired_requests)
-
-
 
 
 def create_team_join_request_service(
@@ -302,13 +299,30 @@ def create_team_join_request_service(
     permission_service: Optional[PermissionService] = None,
     status_transition_service: Optional[StatusTransitionService] = None,
     captain_service: Optional[CaptainService] = None,
-    season_service: Optional[SeasonService] = None
+    season_service: Optional[SeasonService] = None,
 ) -> TeamJoinRequestService:
     audit_service = audit_service or create_audit_service()
     permission_service = permission_service or create_permission_service(audit_service)
     season_service = season_service or create_season_service()
-    status_transition_service = status_transition_service or create_status_transition_service(audit_service, permission_service)
-    captain_service = captain_service or create_captain_service(audit_service, permission_service, status_transition_service)
-    roster_service = roster_service or create_roster_service(audit_service, season_service, permission_service, status_transition_service)
-    team_service = team_service or create_team_service(audit_service, roster_service, season_service, captain_service, permission_service, status_transition_service)
-    return TeamJoinRequestService(roster_service, team_service, status_transition_service)
+    status_transition_service = (
+        status_transition_service
+        or create_status_transition_service(audit_service, permission_service)
+    )
+    captain_service = captain_service or create_captain_service(
+        audit_service, permission_service, status_transition_service
+    )
+    roster_service = roster_service or create_roster_service(
+        audit_service, season_service, permission_service, status_transition_service
+    )
+    team_service = team_service or create_team_service(
+        audit_service,
+        roster_service,
+        season_service,
+        captain_service,
+        permission_service,
+        status_transition_service,
+    )
+    return TeamJoinRequestService(
+        roster_service, team_service, status_transition_service
+    )
+

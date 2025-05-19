@@ -1,36 +1,50 @@
-from typing import List, Optional, Dict
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, desc
-from datetime import datetime, timedelta
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from audit.context import AuditContext
 from audit.models import AuditEventType
+from audit.service import AuditService
+from auth.models import Player
 from competitions.base_schemas import FixtureStatus
+from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round, RoundType
 from competitions.models.tournaments import Tournament, TournamentState
-from competitions.models.fixtures import Fixture
-from auth.models import Player
-from audit.service import AuditService
-from status.manager.round import initialize_round_status_manager
-from status.service import StatusTransitionService, create_enhanced_status_transition_service
 from competitions.rounds.round_winner_service import RoundWinnerService
+from status.manager.round import initialize_round_status_manager
+from status.service import (
+    StatusTransitionService,
+    create_enhanced_status_transition_service,
+)
+
+
 class RoundServiceError(Exception):
     """Base exception for round service errors"""
+
     pass
 
+
 class RoundService:
-    def __init__(self, 
-                 audit_service: Optional[AuditService] = None,
-                 status_transition_service: Optional[StatusTransitionService] = None,
-                 round_winner_service: Optional[RoundWinnerService] = None):
+    def __init__(
+        self,
+        audit_service: Optional[AuditService] = None,
+        status_transition_service: Optional[StatusTransitionService] = None,
+        round_winner_service: Optional[RoundWinnerService] = None,
+    ):
         self.audit_service = audit_service or AuditService()
-        self.status_transition_service = status_transition_service or create_enhanced_status_transition_service()
+        self.status_transition_service = (
+            status_transition_service or create_enhanced_status_transition_service()
+        )
         self.round_winner_service = round_winner_service or RoundWinnerService()
         round_manager = initialize_round_status_manager()
-        self.status_transition_service.register_transition_manager("Round", round_manager)
+        self.status_transition_service.register_transition_manager(
+            "Round", round_manager
+        )
 
-    def _round_audit_details(self, round: Round,  context: Dict) -> dict:
+    def _round_audit_details(self, round: Round, context: dict) -> dict:  # noqa: ARG002
         """Extract audit details from a round operation"""
         return {
             "round_id": str(round.id),
@@ -42,9 +56,9 @@ class RoundService:
             "end_date": round.end_date.isoformat() if round.end_date else None,
             "status": round.status,
             "created_at": round.created_at.isoformat() if round.created_at else None,
-            "updated_at": round.updated_at.isoformat() if round.updated_at else None
+            "updated_at": round.updated_at.isoformat() if round.updated_at else None,
         }
-    
+
     async def change_round_status(
         self,
         round: Round,
@@ -52,7 +66,7 @@ class RoundService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        entity_metadata: Optional[Dict] = None,
+        entity_metadata: Optional[dict] = None,
         audit_context: Optional[AuditContext] = None,
     ) -> Round:
         """Change a round's status with validation and history tracking"""
@@ -63,12 +77,11 @@ class RoundService:
             actor=actor,
             entity_metadata=entity_metadata,
             session=session,
-            audit_context=audit_context
+            audit_context=audit_context,
         )
+
     async def get_round(
-        self,
-        round_id: uuid.UUID,
-        session: AsyncSession
+        self, round_id: uuid.UUID, session: AsyncSession
     ) -> Optional[Round]:
         """Get a round by ID"""
         stmt = select(Round).where(Round.id == round_id)
@@ -79,8 +92,8 @@ class RoundService:
         self,
         tournament_id: uuid.UUID,
         session: AsyncSession,
-        round_type: Optional[RoundType] = None
-    ) -> List[Round]:
+        round_type: Optional[RoundType] = None,
+    ) -> list[Round]:
         """Get all rounds for a tournament"""
         stmt = select(Round).where(Round.tournament_id == tournament_id)
         if round_type:
@@ -92,7 +105,7 @@ class RoundService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.CREATE,
         entity_type="Round",
-        details_extractor=_round_audit_details
+        details_extractor=_round_audit_details,
     )
     async def create_round(
         self,
@@ -102,16 +115,19 @@ class RoundService:
         best_of: int,
         start_date: datetime,
         end_date: datetime,
-        actor: Player,
+        actor: Player,  # noqa: ARG002
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
     ) -> Round:
         """Create a new tournament round"""
         # Validate tournament exists and is in proper state
         tournament = await session.get(Tournament, tournament_id)
         if not tournament:
             raise RoundServiceError("Tournament not found")
-        if tournament.status not in [TournamentState.NOT_STARTED, TournamentState.IN_PROGRESS]:
+        if tournament.status not in [
+            TournamentState.NOT_STARTED,
+            TournamentState.IN_PROGRESS,
+        ]:
             raise RoundServiceError("Cannot create rounds for completed tournaments")
 
         # Validate round number is sequential
@@ -128,8 +144,8 @@ class RoundService:
             start_date=start_date,
             end_date=end_date,
             status="pending",
-            created_at=datetime.now(),
-            updated_at=datetime.now()
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         session.add(round)
         return round
@@ -142,9 +158,9 @@ class RoundService:
     async def start_round(
         self,
         round: Round,
-        actor: Player,
+        actor: Player,  # noqa: ARG002
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
     ) -> Round:
         """Start a tournament round"""
         # Validate round can be started
@@ -154,30 +170,27 @@ class RoundService:
         # Validate previous round is complete (if not first round)
         if round.round_number > 1:
             prev_round = await self.get_round_by_number(
-                round.tournament_id,
-                round.round_number - 1,
-                session
+                round.tournament_id, round.round_number - 1, session
             )
             if prev_round and prev_round.status != "completed":
                 raise RoundServiceError("Previous round must be completed first")
 
         round.status = "active"
-        round.updated_at = datetime.now()
+        round.updated_at = datetime.now(timezone.utc)
         session.add(round)
         return round
-
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
-        details_extractor=_round_audit_details
+        details_extractor=_round_audit_details,
     )
     async def complete_round(
         self,
         round: Round,
         actor: Player,
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,
     ) -> Round:
         """Complete a tournament round using status transition service"""
         return await self.change_round_status(
@@ -189,41 +202,32 @@ class RoundService:
             entity_metadata={
                 "round_winner_service": self.round_winner_service  # Pass the service instance
             },
-            audit_context=audit_context
+            audit_context=audit_context,
         )
 
     async def get_round_by_number(
-        self,
-        tournament_id: uuid.UUID,
-        round_number: int,
-        session: AsyncSession
+        self, tournament_id: uuid.UUID, round_number: int, session: AsyncSession
     ) -> Optional[Round]:
         """Get a specific round by number"""
         stmt = select(Round).where(
-            Round.tournament_id == tournament_id,
-            Round.round_number == round_number
+            Round.tournament_id == tournament_id, Round.round_number == round_number
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_active_round(
-        self,
-        tournament_id: uuid.UUID,
-        session: AsyncSession
+        self, tournament_id: uuid.UUID, session: AsyncSession
     ) -> Optional[Round]:
         """Get the currently active round for a tournament"""
         stmt = select(Round).where(
-            Round.tournament_id == tournament_id,
-            Round.status == "active"
+            Round.tournament_id == tournament_id, Round.status == "active"
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_round_fixtures(
-        self,
-        round_id: uuid.UUID,
-        session: AsyncSession
-    ) -> List[Fixture]:
+        self, round_id: uuid.UUID, session: AsyncSession
+    ) -> list[Fixture]:
         """Get all fixtures for a round"""
         stmt = select(Fixture).where(Fixture.round_id == round_id)
         result = (await session.execute(stmt)).scalars()
@@ -234,7 +238,7 @@ class RoundService:
         tournament_id: uuid.UUID,
         start_date: datetime,
         end_date: datetime,
-        session: AsyncSession
+        session: AsyncSession,
     ) -> bool:
         """Validate round dates against tournament schedule"""
         tournament = await session.get(Tournament, tournament_id)
@@ -243,16 +247,11 @@ class RoundService:
 
         if start_date < tournament.registration_end:
             return False
-        if end_date > tournament.scheduled_end_date:
-            return False
-
-        return True
+        return not end_date > tournament.scheduled_end_date
 
     async def get_round_summary(
-        self,
-        round_id: uuid.UUID,
-        session: AsyncSession
-    ) -> Dict:
+        self, round_id: uuid.UUID, session: AsyncSession
+    ) -> dict:
         """Get summary statistics for a round"""
         fixtures = await self.get_round_fixtures(round_id, session)
         total_fixtures = len(fixtures)
@@ -265,14 +264,15 @@ class RoundService:
             "completed_fixtures": completed_fixtures,
             "scheduled_fixtures": scheduled_fixtures,
             "cancelled_fixtures": cancelled_fixtures,
-            "completion_percentage": (completed_fixtures / total_fixtures * 100) if total_fixtures > 0 else 0
+            "completion_percentage": (completed_fixtures / total_fixtures * 100)
+            if total_fixtures > 0
+            else 0,
         }
-    
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
-        details_extractor=_round_audit_details
+        details_extractor=_round_audit_details,
     )
     async def extend_round_deadline(
         self,
@@ -281,12 +281,12 @@ class RoundService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
     ) -> Round:
         """Extend a round's deadline"""
         if round.status == "completed":
             raise RoundServiceError("Cannot extend completed round")
-            
+
         if new_end_date <= round.end_date:
             raise RoundServiceError("New deadline must be after current deadline")
 
@@ -299,28 +299,32 @@ class RoundService:
 
         # Update round end date
         round.end_date = new_end_date
-        round.admin_notes = f"{round.admin_notes}\nDeadline extended by {actor.name}: {reason}" if round.admin_notes else f"Deadline extended by {actor.name}: {reason}"
-        
+        round.admin_notes = (
+            f"{round.admin_notes}\nDeadline extended by {actor.name}: {reason}"
+            if round.admin_notes
+            else f"Deadline extended by {actor.name}: {reason}"
+        )
+
         session.add(round)
         return round
 
     # TODO - Move logic for this into fixture service
-    # Should be: 
+    # Should be:
     # fixture_service.get_unplayed_fixtures()
     # fixture_service.forefit_fixture()
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
-        details_extractor=_round_audit_details
+        details_extractor=_round_audit_details,
     )
     async def forfeit_unplayed_fixtures(
         self,
         round: Round,
         forfeit_notes: str,
-        actor: Player,
+        actor: Player,  # noqa: ARG002
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
-    ) -> List[Fixture]:
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
+    ) -> list[Fixture]:
         """Forfeit all unplayed fixtures in a round after deadline"""
         if round.status == "completed":
             raise RoundServiceError("Round already completed")
@@ -328,7 +332,7 @@ class RoundService:
         # Get all unplayed fixtures
         stmt = select(Fixture).where(
             Fixture.round_id == round.id,
-            Fixture.status.in_([FixtureStatus.SCHEDULED, FixtureStatus.IN_PROGRESS])
+            Fixture.status.in_([FixtureStatus.SCHEDULED, FixtureStatus.IN_PROGRESS]),
         )
         result = (await session.execute(stmt)).scalars()
         unplayed_fixtures = result.all()
@@ -336,7 +340,9 @@ class RoundService:
         for fixture in unplayed_fixtures:
             fixture.status = FixtureStatus.FORFEITED
             # In case of mutual forfeit, no winner is set
-            fixture.admin_notes = f"Auto-forfeited due to round deadline: {forfeit_notes}"
+            fixture.admin_notes = (
+                f"Auto-forfeited due to round deadline: {forfeit_notes}"
+            )
             session.add(fixture)
 
         # Update round status
@@ -348,7 +354,7 @@ class RoundService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
-        details_extractor=_round_audit_details
+        details_extractor=_round_audit_details,
     )
     async def reopen_round(
         self,
@@ -357,14 +363,14 @@ class RoundService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
     ) -> Round:
         """Reopen a completed round"""
         if round.status != "completed":
             raise RoundServiceError("Can only reopen completed rounds")
 
         # Validate new end date
-        if new_end_date <= datetime.now():
+        if new_end_date <= datetime.now(timezone.utc):
             raise RoundServiceError("New end date must be in the future")
 
         # Get tournament to check if reopening is possible
@@ -375,7 +381,11 @@ class RoundService:
         # Update round status and dates
         round.status = "active"
         round.end_date = new_end_date
-        round.admin_notes = f"{round.admin_notes}\nRound reopened by {actor.name}: {reason}" if round.admin_notes else f"Round reopened by {actor.name}: {reason}"
+        round.admin_notes = (
+            f"{round.admin_notes}\nRound reopened by {actor.name}: {reason}"
+            if round.admin_notes
+            else f"Round reopened by {actor.name}: {reason}"
+        )
 
         # Handle next round if it exists
         next_round = await self._get_next_round(round, session)
@@ -388,23 +398,18 @@ class RoundService:
         return round
 
     async def _get_next_round(
-        self,
-        round: Round,
-        session: AsyncSession
+        self, round: Round, session: AsyncSession
     ) -> Optional[Round]:
         """Get the next round in the tournament"""
         stmt = select(Round).where(
             Round.tournament_id == round.tournament_id,
-            Round.round_number == round.round_number + 1
+            Round.round_number == round.round_number + 1,
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def _cascade_round_dates(
-        self,
-        start_round: Round,
-        time_diff: timedelta,
-        session: AsyncSession
+        self, start_round: Round, time_diff: timedelta, session: AsyncSession
     ):
         """Cascade date changes through subsequent rounds"""
         current_round = start_round
@@ -416,6 +421,8 @@ class RoundService:
             # Get next round
             current_round = await self._get_next_round(current_round, session)
 
+
 def create_round_service(audit_svc: Optional[AuditService] = None) -> RoundService:
     audit_service = audit_svc or AuditService()
     return RoundService(audit_service)
+

@@ -1,93 +1,132 @@
-from sqlmodel import SQLModel, Field, Column, Relationship
-from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
-from sqlalchemy.ext.asyncio import AsyncAttrs
-from datetime import datetime
 import uuid
-from typing import List, Optional
-from competitions.models.seasons import Season
-from competitions.models.scheduling import TeamAvailability
-from teams.base_schemas import RosterStatus, TeamCaptainStatus, TeamStatus, RecruitmentStatus
-from matches.evidence.models import EvidenceConfirmation
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import ForeignKey
+from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlmodel import Column, Field, Relationship, SQLModel
+
 from competitions.models.lobby import MapVetoAction, MapVetoSession
+from competitions.models.scheduling import TeamAvailability
+from competitions.models.seasons import Season
+from matches.evidence.models import EvidenceConfirmation
+from teams.base_schemas import (
+    RecruitmentStatus,
+    RosterStatus,
+    TeamCaptainStatus,
+    TeamStatus,
+)
+
+
+if TYPE_CHECKING:
+    from auth.models import Player
+    from competitions.map_pool.models import MapPoolVote
+    from competitions.models.fixtures import Fixture
+    from competitions.models.tournaments import TournamentRegistration
+    from matches.models import MatchPlayer
+    from moderation.models import Ban
+    from teams.join_request.models import TeamJoinRequest
+
+
 class Team(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "teams"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
+        sa_column=Column(
+            UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
+        )
+    )
     name: str = Field(unique=True)
     status: TeamStatus = Field(default=TeamStatus.ACTIVE)
     disbanded_at: Optional[datetime] = None
     disbanded_reason: Optional[str] = None
-    disbanded_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
+    disbanded_by: Optional[uuid.UUID] = Field(
+        sa_column=Column(ForeignKey("players.id"))
+    )
     logo: Optional[str]
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     recruitment_status: RecruitmentStatus = Field(default=RecruitmentStatus.ACTIVE)
-    
+
     # Existing relationships
-    rosters: List["Roster"] = Relationship(back_populates="team")
-    captains: List["TeamCaptain"] = Relationship(back_populates="team")
-    home_fixtures: List["Fixture"] = Relationship(
+    rosters: list["Roster"] = Relationship(back_populates="team")
+    captains: list["TeamCaptain"] = Relationship(back_populates="team")
+    home_fixtures: list["Fixture"] = Relationship(
         back_populates="team_1_rel",
-        sa_relationship_kwargs={"foreign_keys": "Fixture.team_1"}
+        sa_relationship_kwargs={"foreign_keys": "Fixture.team_1"},
     )
-    away_fixtures: List["Fixture"] = Relationship(
+    away_fixtures: list["Fixture"] = Relationship(
         back_populates="team_2_rel",
-        sa_relationship_kwargs={"foreign_keys": "Fixture.team_2"}
+        sa_relationship_kwargs={"foreign_keys": "Fixture.team_2"},
     )
-    bans: List["Ban"] = Relationship(back_populates="team")
-    join_requests: List["TeamJoinRequest"] = Relationship(back_populates="team")
-    tournament_registrations: List["TournamentRegistration"] = Relationship(back_populates="team")
-    match_players: List["MatchPlayer"] = Relationship(back_populates="team")
-    
+    bans: list["Ban"] = Relationship(back_populates="team")
+    join_requests: list["TeamJoinRequest"] = Relationship(back_populates="team")
+    tournament_registrations: list["TournamentRegistration"] = Relationship(
+        back_populates="team"
+    )
+    match_players: list["MatchPlayer"] = Relationship(back_populates="team")
+
     # New relationships for the enhanced features
-    map_votes: List["MapPoolVote"] = Relationship(back_populates="team")
-    availability: List["TeamAvailability"] = Relationship(back_populates="team")
-    evidence_confirmations: List[EvidenceConfirmation] = Relationship(back_populates="team")
-    veto_sessions: List[MapVetoSession] = Relationship(
-        back_populates="current_team",
-        sa_relationship_kwargs={"foreign_keys": "[MapVetoSession.current_team_id]"}
+    map_votes: list["MapPoolVote"] = Relationship(back_populates="team")
+    availability: list["TeamAvailability"] = Relationship(back_populates="team")
+    evidence_confirmations: list[EvidenceConfirmation] = Relationship(
+        back_populates="team"
     )
-    veto_actions: List[MapVetoAction] = Relationship(back_populates="team")
-    
-    
+    veto_sessions: list[MapVetoSession] = Relationship(
+        back_populates="current_team",
+        sa_relationship_kwargs={"foreign_keys": "[MapVetoSession.current_team_id]"},
+    )
+    veto_actions: list[MapVetoAction] = Relationship(back_populates="team")
+
+
 class Roster(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "rosters"
-    team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id"), primary_key=True))
-    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id"), primary_key=True))
-    season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id"), primary_key=True))
+    team_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("teams.id"), primary_key=True)
+    )
+    player_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("players.id"), primary_key=True)
+    )
+    season_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("seasons.id"), primary_key=True)
+    )
     status: RosterStatus = Field(default=RosterStatus.PENDING)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    
+
     team: Team = Relationship(back_populates="rosters")
     player: "Player" = Relationship(back_populates="team_rosters")
     season: Season = Relationship(back_populates="rosters")
 
+
 class TeamCaptain(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "team_captains"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
-    
+        sa_column=Column(
+            UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
+        )
+    )
+
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
 
-    status: TeamCaptainStatus = Field(default=TeamCaptainStatus.ACTIVE) 
+    status: TeamCaptainStatus = Field(default=TeamCaptainStatus.ACTIVE)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    
+
     team: Team = Relationship(back_populates="captains")
     player: "Player" = Relationship(back_populates="captain_of")
+
 
 # class TeamELOHistory(SQLModel, table=True):
 #     __tablename__ = "team_elo_history"
 #     id: uuid.UUID = Field(
 #         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
-    
+
 #     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
 #     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
 #     elo_rating: int
 #     player_composition: List[uuid.UUID] = Field(sa_column=Column(JSON))
 #     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    
+
 #     team: Team = Relationship(back_populates="elo_history")
 #     fixture: "Fixture" = Relationship(back_populates="team_elo_changes")

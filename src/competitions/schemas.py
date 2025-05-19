@@ -1,7 +1,8 @@
-from pydantic import BaseModel, UUID4, Field
-from typing import List
 from datetime import datetime
-from .base_schemas import TournamentBase, RoundBase, SeasonBase, FixtureBase
+
+from pydantic import UUID4, BaseModel, Field
+
+from .base_schemas import FixtureBase, RoundBase, SeasonBase, TournamentBase
 
 
 # Request Schemas
@@ -9,6 +10,7 @@ class SeasonCreate(BaseModel):
     name: str = Field(..., min_length=3, max_length=50)
     # start_date: datetime
     # end_date: datetime
+
 
 class RoundCreate(BaseModel):
     tournament_id: UUID4
@@ -21,12 +23,11 @@ class RoundCreate(BaseModel):
 
 # Detailed Response Schemas
 class SeasonDetailed(SeasonBase):
-    tournaments: List[TournamentBase]
+    tournaments: list[TournamentBase]
     total_teams: int
     total_matches: int
 
 
 class RoundDetailed(RoundBase):
     tournament: TournamentBase
-    fixtures: List[FixtureBase]
-
+    fixtures: list[FixtureBase]

@@ -1,7 +1,9 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field, model_validator
-from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
+from typing import Optional, Self
+
+from pydantic import UUID4, BaseModel, ConfigDict, Field, model_validator
+
 
 class PugStatus(StrEnum):
     CREATING = "creating"
@@ -9,12 +11,14 @@ class PugStatus(StrEnum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
+
 # Request Schemas
 class PugCreate(BaseModel):
     match_format: str = Field(..., pattern="^(bo1|bo3)$")
     max_players_per_team: int = Field(..., ge=1, le=5)
     require_full_teams: bool = True
-    map_pool: List[UUID4]
+    map_pool: list[UUID4]
+
 
 class PugTeamCreate(BaseModel):
     pug_id: UUID4
@@ -22,15 +26,17 @@ class PugTeamCreate(BaseModel):
     team_name: str
     captain_id: UUID4
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_team_number(self) -> Self:
         if self.team_number not in [1, 2]:
-            raise ValueError('team_number must be 1 or 2')
+            raise ValueError("team_number must be 1 or 2")
         return self
+
 
 class PugPlayerJoin(BaseModel):
     pug_id: UUID4
     team_number: Optional[int] = Field(None, ge=1, le=2)
+
 
 class PugMapResult(BaseModel):
     pug_id: UUID4
@@ -40,6 +46,7 @@ class PugMapResult(BaseModel):
     team_2_score: int
     team_1_side_first: str = Field(..., pattern="^(CT|T)$")
     demo_url: Optional[str]
+
 
 # Response Schemas
 class PugBase(BaseModel):
@@ -54,6 +61,7 @@ class PugBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class PugTeamBase(BaseModel):
     pug_id: UUID4
     team_number: int
@@ -63,6 +71,7 @@ class PugTeamBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class PugPlayerBase(BaseModel):
     pug_id: UUID4
     player_id: UUID4
@@ -70,6 +79,7 @@ class PugPlayerBase(BaseModel):
     joined_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class PugMapResultBase(BaseModel):
     id: UUID4
@@ -84,17 +94,20 @@ class PugMapResultBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 # Detailed Response Schemas
 class PugTeamDetailed(PugTeamBase):
-    players: List[PugPlayerBase]
+    players: list[PugPlayerBase]
     total_players: int
 
+
 class PugDetailed(PugBase):
-    teams: List[PugTeamDetailed]
-    map_results: List[PugMapResultBase]
-    available_maps: List[UUID4]
+    teams: list[PugTeamDetailed]
+    map_results: list[PugMapResultBase]
+    available_maps: list[UUID4]
     player_count: int
     is_ready_to_start: bool
+
 
 class PugSummary(BaseModel):
     pug_id: UUID4

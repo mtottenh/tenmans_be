@@ -1,84 +1,99 @@
 # status/transition_steps/round.py
-from datetime import datetime
 import logging
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Optional
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from audit.context import AuditContext
 from auth.models import Player
-from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round
 from competitions.models.tournaments import Tournament, TournamentType
 from status.pipeline import TransitionStep
 
-LOG = logging.getLogger('uvicorn.error')
+
+LOG = logging.getLogger("uvicorn.error")
+
 
 class RoundCompleteStep(TransitionStep):
     """Pipeline step to handle round completion and potential tournament progression"""
-    
+
     async def execute(
         self,
         entity: Round,
-        old_status: str,
+        old_status: str,  # noqa: ARG002
         new_status: str,
-        actor: Player,
+        actor: Player,  # noqa: ARG002
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None,
-        **context
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
+        **context,
     ) -> None:
         if new_status != "completed":
             return
-        
+
         # Get tournament
         tournament = await session.get(Tournament, entity.tournament_id)
         if not tournament:
-            LOG.error(f"Tournament {entity.tournament_id} not found for round {entity.id}")
+            LOG.error(
+                f"Tournament {entity.tournament_id} not found for round {entity.id}"
+            )
             return
-        
+
         # Get next round
         stmt = select(Round).where(
             Round.tournament_id == entity.tournament_id,
-            Round.round_number == entity.round_number + 1
+            Round.round_number == entity.round_number + 1,
         )
         result = await session.execute(stmt)
         next_round = result.scalar_one_or_none()
-        
+
         if next_round:
             # Activate next round
-            LOG.info(f"Activating next round {next_round.round_number} for tournament {tournament.id}")
+            LOG.info(
+                f"Activating next round {next_round.round_number} for tournament {tournament.id}"
+            )
             next_round.status = "active"
-            next_round.updated_at = datetime.now()
+            next_round.updated_at = datetime.now(timezone.utc)
             session.add(next_round)
-            
+
             # Generate fixtures for knockout tournaments
             if tournament.type == TournamentType.KNOCKOUT:
-                entity_metadata = context.get('entity_metadata', {})
-                round_winner_service = entity_metadata.get('round_winner_service')
-                
+                entity_metadata = context.get("entity_metadata", {})
+                round_winner_service = entity_metadata.get("round_winner_service")
+
                 if not round_winner_service:
                     # Fallback to creating instance if not provided
-                    from competitions.rounds.round_winner_service import RoundWinnerService
+                    from competitions.rounds.round_winner_service import (
+                        RoundWinnerService,
+                    )
+
                     round_winner_service = RoundWinnerService()
-                
+
                 # Get winners from completed round
-                winning_teams = await round_winner_service.get_round_winners(entity, session)
-                
+                winning_teams = await round_winner_service.get_round_winners(
+                    entity, session
+                )
+
                 if len(winning_teams) >= 2:
                     # Generate fixtures for next round
-                    from competitions.tournament.generation.strategies import get_generation_strategy
+                    from competitions.tournament.generation.strategies import (
+                        get_generation_strategy,
+                    )
+
                     strategy = get_generation_strategy(tournament)
                     fixtures = await strategy.generate_fixtures(
-                        tournament,
-                        next_round,
-                        winning_teams,
-                        session
+                        tournament, next_round, winning_teams, session
                     )
                     session.add_all(fixtures)
                 else:
                     # Tournament should be completed - just log it
-                    LOG.info(f"Tournament {tournament.id} should be completed - final round")
+                    LOG.info(
+                        f"Tournament {tournament.id} should be completed - final round"
+                    )
         else:
             # No more rounds - tournament might need completion
-            LOG.info(f"No more rounds for tournament {tournament.id} after round {entity.round_number}")
+            LOG.info(
+                f"No more rounds for tournament {tournament.id} after round {entity.round_number}"
+            )
+

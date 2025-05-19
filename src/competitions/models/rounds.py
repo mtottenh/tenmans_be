@@ -1,21 +1,32 @@
-from sqlmodel import SQLModel, Field, Column, Relationship
-import sqlalchemy as sa
-from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
-from sqlalchemy.ext.asyncio import AsyncAttrs
+import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import List
-import uuid
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey
+from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlmodel import Column, Field, Relationship, SQLModel
+
+
+if TYPE_CHECKING:
+    from competitions.models.fixtures import Fixture
+    from competitions.models.tournaments import Tournament
+
+
 
 class RoundType(StrEnum):
     GROUP_STAGE = "group"
     KNOCKOUT = "knockout"
 
-class Round(SQLModel,AsyncAttrs, table=True):
+
+class Round(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "rounds"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
+        sa_column=Column(
+            UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
+        )
+    )
     tournament_id: uuid.UUID = Field(sa_column=Column(ForeignKey("tournaments.id")))
     round_number: int
     type: RoundType  # group_stage, knockout, etc.
@@ -25,6 +36,6 @@ class Round(SQLModel,AsyncAttrs, table=True):
     status: str = Field(default="pending")  # pending, active, completed
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    
+
     tournament: "Tournament" = Relationship(back_populates="rounds")
-    fixtures: List["Fixture"] = Relationship(back_populates="round")
+    fixtures: list["Fixture"] = Relationship(back_populates="round")

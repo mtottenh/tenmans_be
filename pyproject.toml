@@ -142,6 +142,7 @@ dev = [
     "coverage>=7.2.3",
     
     # Linting & Formatting
+    "ruff>=0.5.0",
     "black>=23.3.0",
     "isort>=5.12.0",
     "mypy>=1.2.0",
@@ -184,3 +185,165 @@ check_untyped_defs = true
 # Install the CLI tools
 [project.scripts]
 cs2-perms = "utils.permissions.cli:cli"
+
+# Ruff linter configuration
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+indent-width = 4
+src = ["src", "utils", "test"]
+exclude = [
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    ".eggs",
+    "venv",
+    "env",
+    "alembic/versions",  # Exclude migrations
+]
+
+[tool.ruff.lint]
+# Enable specific rule sets
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "DTZ",    # flake8-datetimez
+    "T10",    # flake8-debugger
+    "PL",     # pylint
+    "PERF",   # perflint
+    "RUF",    # ruff-specific rules
+    "SIM",    # flake8-simplify
+    "ARG",    # flake8-unused-arguments
+    "PTH",    # flake8-use-pathlib
+    "ASYNC",  # flake8-async
+]
+
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value comparison
+    "PLR0915", # too many statements
+    "PLR0916", # too many branches
+    "PLR0911", # too many return statements
+    "PLR0912", # too many branches
+    "PLR0914", # too many locals
+    "PLW0603", # global statement
+    "N805",    # first argument of a method should be named self
+    "UP007",   # use | for union types
+    "B008",    # function calls in argument defaults
+    "B006",    # mutable default arguments (common in SQLModel)
+    "PLC0415", # import outside top-level
+    "PLW2901", # outer loop variable overwritten by inner loop
+    "PLR5501", # else-if-return
+    "N802",    # function name should be lowercase
+    "PERF401", # list comprehension to join - not always better
+]
+
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+known-first-party = ["auth", "teams", "competitions", "maps", "matches", "audit", "status", "src"]
+combine-as-imports = true
+lines-after-imports = 2
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore certain rules in specific files
+"test/**/*.py" = [
+    "ARG001",  # unused arguments (common in test fixtures)
+    "ARG002",  # unused arguments
+    "PLR2004", # magic values (common in tests)
+    "PLR0914", # too many locals (tests can be complex)
+    "SIM117",  # multiple contexts (fine in tests)
+]
+"alembic/**/*.py" = [
+    "UP",      # don't upgrade alembic scripts
+    "N999",    # invalid module name
+]
+"src/**/schemas.py" = [
+    "N805",    # first argument of a method should be named self (validators)
+]
+"src/**/routes.py" = [
+    "ARG001",  # unused arguments (common in FastAPI dependency injection)
+]
+"src/main.py" = [
+    "ARG001",  # unused arguments (FastAPI lifecycle handlers)
+]
+"utils/**/*.py" = [
+    "T10",     # allow print/debugger in utility scripts
+    "ARG001",  # unused arguments in utility scripts
+    "ARG002",  # unused method arguments in utility scripts
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+# MyPy type checking configuration
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_redundant_casts = true
+warn_unused_ignores = false
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+disallow_untyped_decorators = false
+plugins = [
+    "pydantic.mypy",
+    "sqlalchemy.ext.mypy.plugin"
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "alembic.*"
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "redis.*",
+    "aiofiles.*",
+    "faker.*",
+    "pytest.*"
+]
+ignore_missing_imports = true

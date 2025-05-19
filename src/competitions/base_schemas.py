@@ -1,7 +1,9 @@
-from pydantic import BaseModel, UUID4, ConfigDict
-from typing import List, Optional
 from datetime import datetime
 from enum import StrEnum
+from typing import Optional
+
+from pydantic import UUID4, BaseModel, ConfigDict
+
 
 class SeasonState(StrEnum):
     NOT_STARTED = "not_started"
@@ -30,6 +32,7 @@ class TournamentType(StrEnum):
     KNOCKOUT = "knockout"
     PUG = "pug"
 
+
 class TournamentState(StrEnum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
@@ -37,9 +40,9 @@ class TournamentState(StrEnum):
     CANCELLED = "cancelled"
 
 
-
 class GameMode(StrEnum):
     """CS2 game modes supported by the platform"""
+
     COMPETITIVE_5V5 = "competitive_5v5"
     WINGMAN_2V2 = "wingman_2v2"
     RETAKE = "retake"
@@ -48,6 +51,7 @@ class GameMode(StrEnum):
 
 class MapCategory(StrEnum):
     """Categories for maps"""
+
     COMPETITIVE = "competitive"
     WINGMAN = "wingman"
     HOSTAGE = "hostage"
@@ -56,18 +60,20 @@ class MapCategory(StrEnum):
 
 class LeagueFormat(StrEnum):
     """Tournament league format types"""
+
     HOME_AWAY = "home_away"
     SINGLE_ROUND_ROBIN = "single_round_robin"
     DOUBLE_ROUND_ROBIN = "double_round_robin"
     SWISS = "swiss"
-    
+
+
 class MapSelectionMethod(StrEnum):
     """How maps are selected for matches"""
+
     ADMIN_ASSIGNED = "admin_assigned"
     TEAM_PICK = "team_pick"
     MAP_VETO = "map_veto"
     RANDOM = "random"
-    
 
 
 # Response Schemas
@@ -78,6 +84,7 @@ class SeasonBase(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class RoundBase(BaseModel):
     id: UUID4
@@ -95,19 +102,20 @@ class RoundBase(BaseModel):
 
 class TeamELOHistoryBase(BaseModel):
     """Base schema for team ELO history response"""
+
     id: UUID4
     team_id: UUID4
     fixture_id: UUID4
     elo_rating: int
-    player_composition: List[UUID4]
+    player_composition: list[UUID4]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
-
 class MatchPlayerBase(BaseModel):
     """Base schema for match player response"""
+
     fixture_id: UUID4
     player_id: UUID4
     team_id: UUID4
@@ -116,8 +124,10 @@ class MatchPlayerBase(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class FixtureBase(BaseModel):
     """Base fixture response schema"""
+
     id: UUID4
     tournament_id: UUID4
     round_id: UUID4
@@ -134,6 +144,7 @@ class FixtureBase(BaseModel):
 
 class TournamentBase(BaseModel):
     """Base tournament response schema"""
+
     id: UUID4
     name: str
     type: TournamentType
@@ -148,6 +159,7 @@ class TournamentBase(BaseModel):
 
 class TournamentRegistrationBase(BaseModel):
     """Base schema for tournament registration responses"""
+
     id: UUID4
     tournament_id: UUID4
     team_id: UUID4

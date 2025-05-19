@@ -1,31 +1,36 @@
-from functools import wraps, partial
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Tuple
-from sqlalchemy import func
-from sqlmodel import and_, select, desc
-from sqlmodel.ext.asyncio.session import AsyncSession
-from datetime import datetime, timedelta
 import inspect
-import uuid
 import logging
+import uuid
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from functools import partial, wraps
+from typing import Any, Optional, TypeVar
+
+from sqlalchemy import func
+from sqlmodel import and_, desc, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from audit.context import AuditContext
-from auth.models import Player
-# Somehow the below is required because of the weird Relationships
-from competitions.models.tournaments import Tournament 
-from audit.schemas import  AuditEventType, AuditEventState
 from audit.models import AuditEvent
+from audit.schemas import AuditEventType
+from auth.models import Player
 
-LOG = logging.getLogger('uvicorn.error')
-T = TypeVar('T')
+
+# Somehow the below is required because of the weird Relationships
+
+
+LOG = logging.getLogger("uvicorn.error")
+T = TypeVar("T")
 
 
 class AuditQueryResult:
     """Container for audit query results with optional statistics"""
+
     def __init__(
         self,
-        events: List[AuditEvent],
+        events: list[AuditEvent],
         total_count: int,
-        statistics: Optional[Dict] = None
+        statistics: Optional[dict] = None,
     ):
         self.events = events
         self.total_count = total_count
@@ -36,47 +41,51 @@ class AuditService:
     """Enhanced audit service with support for cascading, and status tracking"""
 
     @staticmethod
-    def _get_session_and_actor(args: tuple, kwargs: dict, func: Callable) -> Tuple[Optional[AsyncSession], Optional[Player]]:
+    def _get_session_and_actor(
+        args: tuple, kwargs: dict, func: Callable
+    ) -> tuple[Optional[AsyncSession], Optional[Player]]:
         """Extract session and actor from function arguments"""
-        session = next((arg for arg in args if isinstance(arg, AsyncSession)), kwargs.get('session'))
-        actor = next((arg for arg in args if isinstance(arg, Player)), kwargs.get('actor'))
-        
+        session = next(
+            (arg for arg in args if isinstance(arg, AsyncSession)),
+            kwargs.get("session"),
+        )
+        actor = next(
+            (arg for arg in args if isinstance(arg, Player)), kwargs.get("actor")
+        )
+
         if not session or not actor:
             sig = inspect.signature(func)
             param_names = list(sig.parameters.keys())
-            
+
             # Determine if this is an instance method (has 'self' as first parameter)
-            is_instance_method = len(param_names) > 0 and param_names[0] == 'self'
-            
+            is_instance_method = len(param_names) > 0 and param_names[0] == "self"
+
             # If it's an instance method, we need to adjust indices since 'self' isn't in args
             # The wrapped function receives args without 'self', so we subtract 1 from the index
             offset = 1 if is_instance_method else 0
-            
-            if not session and 'session' in param_names:
-                session_idx = param_names.index('session') - offset
+
+            if not session and "session" in param_names:
+                session_idx = param_names.index("session") - offset
                 if 0 <= session_idx < len(args):
                     session = args[session_idx]
-                    
-            if not actor and 'actor' in param_names:
-                actor_idx = param_names.index('actor') - offset
+
+            if not actor and "actor" in param_names:
+                actor_idx = param_names.index("actor") - offset
                 if 0 <= actor_idx < len(args):
                     actor = args[actor_idx]
-                    
+
         return session, actor
-    
+
     @staticmethod
     def _extract_details(
         details_extractor: Optional[Callable],
         instance: Any,
         result: Any,
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
         """Extract details using bound or unbound methods"""
         if details_extractor is None:
-            return {
-                "result_type": type(result).__name__,
-                "result_str": str(result)
-            }
+            return {"result_type": type(result).__name__, "result_str": str(result)}
 
         if inspect.ismethod(details_extractor):
             # Already bound method
@@ -88,12 +97,10 @@ class AuditService:
 
     @staticmethod
     def _extract_id(
-        id_extractor: Optional[Callable],
-        instance: Any,
-        entity: Any
+        id_extractor: Optional[Callable], instance: Any, entity: Any
     ) -> uuid.UUID:
         """Extract entity ID using bound or unbound methods"""
-        if hasattr(entity, 'id'):
+        if hasattr(entity, "id"):
             return entity.id
 
         if id_extractor is None:
@@ -108,8 +115,6 @@ class AuditService:
             bound_method = partial(id_extractor, instance)
             return bound_method(entity)
 
-
-
     async def query_events(
         self,
         session: AsyncSession,
@@ -119,14 +124,13 @@ class AuditService:
         actor_id: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        include_details: bool = True,
         offset: int = 0,
         limit: Optional[int] = 100,
-        calculate_stats: bool = False
+        calculate_stats: bool = False,
     ) -> AuditQueryResult:
         """
         Query audit events with comprehensive filtering options
-        
+
         Args:
             session: Database session
             action_type: Filter by specific action type
@@ -135,17 +139,16 @@ class AuditService:
             actor_id: Filter by actor ID
             start_date: Include events after this date
             end_date: Include events before this date
-            include_details: Whether to include full event details
             offset: Number of records to skip
             limit: Maximum number of records to return
             calculate_stats: Whether to calculate additional statistics
-            
+
         Returns:
             AuditQueryResult containing events and optional statistics
         """
         # Build base query
         query = select(AuditEvent)
-        
+
         # Apply filters
         conditions = []
         if action_type:
@@ -160,7 +163,7 @@ class AuditService:
             conditions.append(AuditEvent.timestamp >= start_date)
         if end_date:
             conditions.append(AuditEvent.timestamp <= end_date)
-            
+
         if conditions:
             query = query.where(and_(*conditions))
 
@@ -189,85 +192,66 @@ class AuditService:
         return AuditQueryResult(events, total_count, statistics)
 
     async def get_summary_statistics(
-        self,
-        session: AsyncSession,
-        days: int = 7,
-        entity_type: Optional[str] = None
-    ) -> Dict:
+        self, session: AsyncSession, days: int = 7, entity_type: Optional[str] = None
+    ) -> dict:
         """
         Get summary statistics for audit events
-        
+
         Args:
             session: Database session
             days: Number of days to include in summary
             entity_type: Optional filter for specific entity type
-            
+
         Returns:
             Dictionary containing various statistics
         """
-        start_date = datetime.now() - timedelta(days=days)
-        
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
+
         # Base query conditions
         conditions = [AuditEvent.timestamp >= start_date]
         if entity_type:
             conditions.append(AuditEvent.entity_type == entity_type)
-            
+
         # Get action type counts
-        action_query = select(
-            AuditEvent.action_type,
-            func.count(AuditEvent.id).label('count')
-        ).where(
-            and_(*conditions)
-        ).group_by(
-            AuditEvent.action_type
+        action_query = (
+            select(AuditEvent.action_type, func.count(AuditEvent.id).label("count"))
+            .where(and_(*conditions))
+            .group_by(AuditEvent.action_type)
         )
-        
+
         action_result = await session.execute(action_query)
-        action_counts = {
-            action_type: count
-            for action_type, count in action_result.scalars().all()
-        }
-        
+        action_counts = dict(action_result.scalars().all())
+
         # Get entity type counts
-        entity_query = select(
-            AuditEvent.entity_type,
-            func.count(AuditEvent.id).label('count')
-        ).where(
-            and_(*conditions)
-        ).group_by(
-            AuditEvent.entity_type
+        entity_query = (
+            select(AuditEvent.entity_type, func.count(AuditEvent.id).label("count"))
+            .where(and_(*conditions))
+            .group_by(AuditEvent.entity_type)
         )
-        
+
         entity_result = await session.execute(entity_query)
-        entity_counts = {
-            entity_type: count
-            for entity_type, count in entity_result.scalars().all()
-        }
-        
+        entity_counts = dict(entity_result.scalars().all())
+
         # Get actor counts
-        actor_query = select(
-            AuditEvent.actor_id,
-            func.count(AuditEvent.id).label('count')
-        ).where(
-            and_(*conditions)
-        ).group_by(
-            AuditEvent.actor_id
-        ).order_by(
-            func.count(AuditEvent.id).desc()
-        ).limit(10)
-        
+        actor_query = (
+            select(AuditEvent.actor_id, func.count(AuditEvent.id).label("count"))
+            .where(and_(*conditions))
+            .group_by(AuditEvent.actor_id)
+            .order_by(func.count(AuditEvent.id).desc())
+            .limit(10)
+        )
+
         actor_result = await session.execute(actor_query)
         top_actors = {
-            str(actor_id): count
-            for actor_id, count in actor_result.scalars().all()
+            str(actor_id): count for actor_id, count in actor_result.scalars().all()
         }
-        
+
         return {
             "period_days": days,
             "total_events": sum(action_counts.values()),
             "action_counts": action_counts,
             "entity_counts": entity_counts,
-            "top_actors": top_actors
+            "top_actors": top_actors,
         }
 
     async def get_entity_history(
@@ -275,17 +259,17 @@ class AuditService:
         session: AsyncSession,
         entity_type: str,
         entity_id: str,
-        include_cascaded: bool = True
-    ) -> List[AuditEvent]:
+        include_cascaded: bool = True,
+    ) -> list[AuditEvent]:
         """
         Get complete audit history for an entity
-        
+
         Args:
             session: Database session
             entity_type: Type of entity
             entity_id: Entity ID
             include_cascaded: Whether to include cascaded events
-            
+
         Returns:
             List of audit events ordered by timestamp
         """
@@ -295,55 +279,55 @@ class AuditService:
                 entity_type=entity_type,
                 entity_id=entity_id,
                 session=session,
-                include_cascaded=True
+                include_cascaded=True,
             )
             return root_events
         else:
             # Get direct events only
-            query = select(AuditEvent).where(
-                and_(
-                    AuditEvent.entity_type == entity_type,
-                    AuditEvent.entity_id == entity_id
+            query = (
+                select(AuditEvent)
+                .where(
+                    and_(
+                        AuditEvent.entity_type == entity_type,
+                        AuditEvent.entity_id == entity_id,
+                    )
                 )
-            ).order_by(AuditEvent.timestamp)
-            
+                .order_by(AuditEvent.timestamp)
+            )
+
             result = await session.execute(query)
             return result.scalars().all()
 
     async def _calculate_query_statistics(
         self,
         session: AsyncSession,
-        base_conditions: List,
+        base_conditions: list,
         start_date: Optional[datetime],
-        end_date: Optional[datetime]
-    ) -> Dict:
+        end_date: Optional[datetime],
+    ) -> dict:
         """Calculate additional statistics for a query"""
         conditions = base_conditions.copy()
-        
+
         # Calculate event distribution over time
-        time_query = select(
-            func.date_trunc('day', AuditEvent.timestamp),
-            func.count()
-        ).where(
-            and_(*conditions)
-        ).group_by(
-            func.date_trunc('day', AuditEvent.timestamp)
-        ).order_by(
-            func.date_trunc('day', AuditEvent.timestamp)
+        time_query = (
+            select(func.date_trunc("day", AuditEvent.timestamp), func.count())
+            .where(and_(*conditions))
+            .group_by(func.date_trunc("day", AuditEvent.timestamp))
+            .order_by(func.date_trunc("day", AuditEvent.timestamp))
         )
-        
+
         time_result = await session.execute(time_query)
         time_distribution = {
-            date.strftime('%Y-%m-%d'): count
+            date.strftime("%Y-%m-%d"): count
             for date, count in time_result.scalars().all()
         }
-        
+
         return {
             "time_distribution": time_distribution,
             "date_range": {
                 "start": start_date.isoformat() if start_date else None,
-                "end": end_date.isoformat() if end_date else None
-            }
+                "end": end_date.isoformat() if end_date else None,
+            },
         }
 
     async def get_audit_trail(
@@ -352,47 +336,50 @@ class AuditService:
         entity_id: uuid.UUID,
         session: AsyncSession,
         include_cascaded: bool = False,
-        include_details: bool = True
-    ) -> List[Dict[str, Any]]:
+        include_details: bool = True,
+    ) -> list[dict[str, Any]]:
         """Get audit trail for an entity, optionally including cascaded events"""
         if include_cascaded:
             # Get root events for the entity
             stmt = select(AuditEvent).where(
                 AuditEvent.entity_type == entity_type,
                 AuditEvent.entity_id == entity_id,
-                AuditEvent.parent_event_id.is_(None)
+                AuditEvent.parent_event_id.is_(None),
             )
             root_events = (await session.execute(stmt)).scalars().all()
-            
+
             # Get all related events
             all_events = []
             for event in root_events:
-                stmt = select(AuditEvent).where(
-                    AuditEvent.root_event_id == event.id
-                ).order_by(
-                    AuditEvent.sequence_number,
-                    desc(AuditEvent.timestamp)
+                stmt = (
+                    select(AuditEvent)
+                    .where(AuditEvent.root_event_id == event.id)
+                    .order_by(AuditEvent.sequence_number, desc(AuditEvent.timestamp))
                 )
                 related_events = (await session.execute(stmt)).scalars().all()
                 all_events.extend(related_events)
-            
+
             return [
-                self._format_audit_event(event, include_details)
-                for event in all_events
+                self._format_audit_event(event, include_details) for event in all_events
             ]
         else:
-            stmt = select(AuditEvent).where(
-                AuditEvent.entity_type == entity_type,
-                AuditEvent.entity_id == entity_id
-            ).order_by(desc(AuditEvent.timestamp))
-            
+            stmt = (
+                select(AuditEvent)
+                .where(
+                    AuditEvent.entity_type == entity_type,
+                    AuditEvent.entity_id == entity_id,
+                )
+                .order_by(desc(AuditEvent.timestamp))
+            )
+
             events = (await session.execute(stmt)).scalars().all()
             return [
-                self._format_audit_event(event, include_details)
-                for event in events
-           ]
+                self._format_audit_event(event, include_details) for event in events
+            ]
 
-    def _format_audit_event(self, event: AuditEvent, include_details: bool) -> Dict[str, Any]:
+    def _format_audit_event(
+        self, event: AuditEvent, include_details: bool
+    ) -> dict[str, Any]:
         """Format an audit event for response"""
         formatted = {
             "id": event.id,
@@ -401,57 +388,55 @@ class AuditService:
             "entity_id": event.entity_id,
             "actor_id": event.actor_id,
             "timestamp": event.timestamp,
-            "event_state": event.event_state
+            "event_state": event.event_state,
         }
 
         if event.action_type == AuditEventType.STATUS_CHANGE:
-            formatted.update({
-                "previous_status": event.previous_status,
-                "new_status": event.new_status,
-                "transition_reason": event.transition_reason
-            })
+            formatted.update(
+                {
+                    "previous_status": event.previous_status,
+                    "new_status": event.new_status,
+                    "transition_reason": event.transition_reason,
+                }
+            )
 
         if event.action_type == AuditEventType.BULK_OPERATION:
-            formatted.update({
-                "operation_count": event.operation_count,
-                "affected_entities": event.affected_entities
-            })
+            formatted.update(
+                {
+                    "operation_count": event.operation_count,
+                    "affected_entities": event.affected_entities,
+                }
+            )
 
         if event.scope_type:
-            formatted.update({
-                "scope_type": event.scope_type,
-                "scope_id": event.scope_id
-            })
+            formatted.update(
+                {"scope_type": event.scope_type, "scope_id": event.scope_id}
+            )
 
         if include_details:
             formatted["details"] = event.details
             if event.error_message:
                 formatted["error"] = {
                     "message": event.error_message,
-                    "details": event.error_details
+                    "details": event.error_details,
                 }
 
         return formatted
 
     async def get_grace_period_events(
-        self,
-        session: AsyncSession,
-        entity_type: Optional[str] = None
-    ) -> List[AuditEvent]:
+        self, session: AsyncSession, entity_type: Optional[str] = None
+    ) -> list[AuditEvent]:
         """Get audit events that are still within their grace period"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         stmt = select(AuditEvent).where(
-            AuditEvent.grace_period_end.is_not(None),
-            AuditEvent.grace_period_end > now
+            AuditEvent.grace_period_end.is_not(None), AuditEvent.grace_period_end > now
         )
-        
+
         if entity_type:
             stmt = stmt.where(AuditEvent.entity_type == entity_type)
-            
+
         return (await session.execute(stmt)).scalars().all()
 
-
-    
     @classmethod
     def audited_transaction(
         cls,
@@ -461,21 +446,22 @@ class AuditService:
         id_extractor: Optional[Callable] = None,
         scope_type: Optional[str] = None,
         grace_period: Optional[timedelta] = None,
-        entity_param: Optional[str] = None  # Specify which parameter is the entity
+        entity_param: Optional[str] = None,  # Specify which parameter is the entity
     ):
         """Decorator for auditing create/update transactions"""
+
         def decorator(func: Callable[..., T]) -> Callable[..., T]:
             @wraps(func)
             async def wrapper(self, *args, **kwargs) -> T:
                 session, actor = cls._get_session_and_actor(args, kwargs, func)
-                audit_service = cls()
                 if not session or not actor:
-                    raise ValueError("Session and actor are required for audited transactions")
+                    raise ValueError(
+                        "Session and actor are required for audited transactions"
+                    )
 
-                
                 # Extract entity and ID based on operation type
                 entity_id = None
-                entity  = None
+                entity = None
                 pre_execution_details = None
 
                 # For DELETE and UPDATE, we need entity details before the operation
@@ -483,34 +469,46 @@ class AuditService:
                     if entity_param:
                         # If entity_param is specified, get the entity from the named parameter
                         import inspect
+
                         sig = inspect.signature(func)
                         bound_args = sig.bind(self, *args, **kwargs)
                         bound_args.apply_defaults()
                         entity = bound_args.arguments.get(entity_param)
                         if not entity:
-                            raise ValueError(f"Entity parameter '{entity_param}' not found or is None")
+                            raise ValueError(
+                                f"Entity parameter '{entity_param}' not found or is None"
+                            )
                     else:
                         # Default to the first entity that's a SQLModel
-                        entity = next((arg for arg in args if hasattr(arg, '__table__')), None)
+                        entity = next(
+                            (arg for arg in args if hasattr(arg, "__table__")), None
+                        )
                         if not entity:
-                            raise ValueError("Entity required for delete/update operations")
-                    context = {'actor': actor, **kwargs}
-                    pre_execution_details = cls._extract_details(details_extractor, self, entity, context)
+                            raise ValueError(
+                                "Entity required for delete/update operations"
+                            )
+                    context = {"actor": actor, **kwargs}
+                    pre_execution_details = cls._extract_details(
+                        details_extractor, self, entity, context
+                    )
                     entity_id = cls._extract_id(id_extractor, self, entity)
 
-
                 # Check if an AuditContext exists, either from kwargs or an existing context
-                audit_context: Optional[AuditContext] = kwargs.get('audit_context', None)
+                audit_context: Optional[AuditContext] = kwargs.get("audit_context")
                 await session.refresh(actor)
                 result = None
                 # If no context exists, create a new one
                 if audit_context is None:
-                    async with AuditContext(session, entity_id=entity_id) as audit_context:
-                        kwargs['audit_context'] = audit_context
+                    async with AuditContext(
+                        session, entity_id=entity_id
+                    ) as audit_context:
+                        kwargs["audit_context"] = audit_context
                         if not audit_context.root_event:
                             # TODO - uuid() - we should probaly try to use the UUID of entities that already exist
                             # We can't for entities that are being created through.
-                            await audit_context.create_root_event(action_type, entity_type, actor, "Root Event")
+                            await audit_context.create_root_event(
+                                action_type, entity_type, actor, "Root Event"
+                            )
                         result = await func(self, *args, **kwargs)
                         await session.flush()
 
@@ -522,25 +520,24 @@ class AuditService:
                                 entity_id=entity_id,
                                 actor=actor,
                                 details=pre_execution_details,
-                                grace_period=grace_period
+                                grace_period=grace_period,
                             )
                         else:
-                            if hasattr(result, '__table__'):
+                            if hasattr(result, "__table__"):
                                 await session.refresh(result)
                             await session.refresh(actor)
                             entity_id = cls._extract_id(id_extractor, None, result)
-                            if action_type == AuditEventType.CREATE:
-                                if entity_id and audit_context.root_event:
+                            if action_type == AuditEventType.CREATE and entity_id and audit_context.root_event:
                                     # Update the root event's entity_id if it was null
                                     # update_root_event_entity_id ensures that it only ever updates
                                     # once with the outer-most event's entity_id
-                                    await audit_context.update_root_event_entity_id(entity_id)
-                            context_data = {
-                                'actor': actor,
-                                'result': result,
-                                **kwargs
-                            }
-                            details = cls._extract_details(details_extractor, None, result, context_data)
+                                    await audit_context.update_root_event_entity_id(
+                                        entity_id
+                                    )
+                            context_data = {"actor": actor, "result": result, **kwargs}
+                            details = cls._extract_details(
+                                details_extractor, None, result, context_data
+                            )
                             await audit_context.create_audit_event(
                                 session=session,
                                 action_type=action_type,
@@ -550,9 +547,8 @@ class AuditService:
                                 details=details,
                                 grace_period=grace_period,
                                 scope_type=scope_type,
-                                scope_id=kwargs.get('scope_id')
+                                scope_id=kwargs.get("scope_id"),
                             )
-                        
 
                 else:
                     result = await func(self, *args, **kwargs)
@@ -566,25 +562,24 @@ class AuditService:
                             entity_id=entity_id,
                             actor=actor,
                             details=pre_execution_details,
-                            grace_period=grace_period
+                            grace_period=grace_period,
                         )
                     else:
-                        if hasattr(result, '__table__'):
+                        if hasattr(result, "__table__"):
                             await session.refresh(result)
                         await session.refresh(actor)
                         entity_id = cls._extract_id(id_extractor, None, result)
-                        if action_type == AuditEventType.CREATE:
-                            if entity_id and audit_context.root_event:
+                        if action_type == AuditEventType.CREATE and entity_id and audit_context.root_event:
                                 # Update the root event's entity_id if it was null
                                 # update_root_event_entity_id ensures that it only ever updates
                                 # once with the outer-most event's entity_id
-                                await audit_context.update_root_event_entity_id(entity_id)
-                        context_data = {
-                            'actor': actor,
-                            'result': result,
-                            **kwargs
-                        }
-                        details = cls._extract_details(details_extractor, None, result, context_data)
+                                await audit_context.update_root_event_entity_id(
+                                    entity_id
+                                )
+                        context_data = {"actor": actor, "result": result, **kwargs}
+                        details = cls._extract_details(
+                            details_extractor, None, result, context_data
+                        )
                         await audit_context.create_audit_event(
                             session=session,
                             action_type=action_type,
@@ -594,17 +589,19 @@ class AuditService:
                             details=details,
                             grace_period=grace_period,
                             scope_type=scope_type,
-                            scope_id=kwargs.get('scope_id')
+                            scope_id=kwargs.get("scope_id"),
                         )
-                
-                if hasattr(result, '__table__'):
+
+                if hasattr(result, "__table__"):
                     LOG.info(f"hasattr! Returning {result}")
                     await session.refresh(result)
                     return result
                 else:
                     LOG.info(f"Returning {result}")
                     return result
+
             return wrapper
+
         return decorator
 
 

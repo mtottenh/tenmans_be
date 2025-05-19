@@ -1,13 +1,14 @@
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from main import app  # Replace with your FastAPI app module
+
 
 # Fixture for test client
 @pytest_asyncio.fixture
 async def client():
     async with AsyncClient(base_url="http://localhost:8000") as client:
         yield client
+
 
 # Test cases for authentications
 class TestAuthentication:

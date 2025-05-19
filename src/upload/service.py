@@ -1,68 +1,63 @@
-from fastapi import APIRouter, Depends, UploadFile, HTTPException, status
-from sqlmodel.ext.asyncio.session import AsyncSession
-from pydantic import BaseModel
-from typing import Dict, Optional, Literal, Tuple
-from pathlib import Path, PurePath
-import aiofiles
-import os
 import shutil
-from werkzeug.utils import secure_filename
-from werkzeug.security import safe_join
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
+from pathlib import Path, PurePath
+from typing import ClassVar, Optional
 
-from db.main import get_session
-from auth.dependencies import get_current_player
+import aiofiles
+from fastapi import UploadFile
+from werkzeug.security import safe_join
+from werkzeug.utils import secure_filename
+
 from auth.models import Player
-from state.service import StateService, StateType, get_state_service
+from state.service import StateService, StateType
+
 from .models import UploadRequest, UploadResult, UploadToken, UploadType
+
+
 class UploadConfig:
     """Configuration for different upload types"""
-    CONFIGS = {
-        UploadType.TEAM_LOGO : {
+
+    CONFIGS: ClassVar[dict[UploadType, dict[str, any]]] = {
+        UploadType.TEAM_LOGO: {
             "allowed_extensions": ["image/jpeg", "image/png"],
             "max_size": 5_000_000,  # 5MB
             "storage_path": "/app/logo_store",
-
         },
         UploadType.MAP_IMAGE: {
             "allowed_extensions": ["image/jpeg", "image/png"],
             "max_size": 10_000_000,  # 10MB
             "storage_path": "/app/map_store",
-
         },
-         UploadType.PLAYER_AVATAR: {
+        UploadType.PLAYER_AVATAR: {
             "allowed_extensions": ["image/jpeg", "image/png"],
             "max_size": 2_000_000,  # 2MB
             "storage_path": "/app/avatar_store",
-
-        }
+        },
     }
 
 
 class UploadService:
     def __init__(self, state_service: StateService):
         self.state_service = state_service
-    
+
     def validate_upload_request(self, request: UploadRequest) -> None:
         """Validate upload request against config"""
         config = UploadConfig.CONFIGS.get(request.upload_type)
         if not config:
             raise ValueError(f"Invalid upload type: {request.upload_type}")
-            
+
         if request.content_type not in config["allowed_extensions"]:
             raise ValueError(f"Invalid content type for {request.upload_type}")
-            
+
         if request.size > config["max_size"]:
             raise ValueError(f"File too large for {request.upload_type}")
-    
+
     async def create_upload_token(
-        self,
-        request: UploadRequest,
-        player: Player
+        self, request: UploadRequest, player: Player
     ) -> UploadToken:
         """Create an upload token for a file"""
         self.validate_upload_request(request)
-        
+
         config = UploadConfig.CONFIGS[request.upload_type]
 
         # Store upload request in state service
@@ -72,7 +67,7 @@ class UploadService:
             metadata={
                 "player_id": str(player.id),
                 "original_filename": request.filename,
-                "created_at" : str(datetime.utcnow()),
+                "created_at": str(datetime.now(timezone.utc)),
             },
         )
         expiry_time = self.state_service.get_expr_time(StateType.FILE_UPLOAD)
@@ -81,10 +76,12 @@ class UploadService:
             token=state_id,
             allowed_extensions=config["allowed_extensions"],
             max_size=config["max_size"],
-            expires_in=int(expiry_time.total_seconds())
+            expires_in=int(expiry_time.total_seconds()),
         )
-    
-    async def validate_upload_token(self, token: str, file_content_type: Optional[str], final_id: Optional[str]) -> Tuple[UploadRequest, Dict]:
+
+    async def validate_upload_token(
+        self, token: str, file_content_type: Optional[str], final_id: Optional[str]
+    ) -> tuple[UploadRequest, dict]:
         """Process an upload and return the file path"""
 
         # Lets check we don't have a directory for the final ID!
@@ -94,37 +91,32 @@ class UploadService:
                 raise ValueError("Final ID cannot be a directory")
 
         result = await self.state_service.retrieve_state(
-            StateType.FILE_UPLOAD,
-            token,
-            UploadRequest,
-            delete = True
+            StateType.FILE_UPLOAD, token, UploadRequest, delete=True
         )
-        
+
         if not result:
             raise ValueError("Invalid or expired upload token")
-            
+
         request, metadata = result
-        
+
         # Validate upload matches request
         if file_content_type != request.content_type:
             raise ValueError("File type doesn't match request")
 
         # if request.used:
         #     raise ValueError("Upload token has already been used")
-        
-        #TODO Validate upload_type if request.upload_type != 
-        
+
+        # TODO Validate upload_type if request.upload_type !=
+
         return (request, metadata)
 
-
     async def process_upload(
-        self,
-        token: str,
-        file: UploadFile,
-        final_id: Optional[str] = None
+        self, token: str, file: UploadFile, final_id: Optional[str] = None
     ) -> str:
         """Process an upload and return the file path"""
-        (request, metadata) = await self.validate_upload_token(token, file.content_type, final_id)
+        (request, metadata) = await self.validate_upload_token(
+            token, file.content_type, final_id
+        )
 
         # TODO validate file size
         file_path = await self.store_file(file, metadata, request.upload_type, final_id)
@@ -137,35 +129,39 @@ class UploadService:
                 upload_type=request.upload_type,
                 original_filename=request.filename,
                 file_size=request.size,
-                uploaded_at=datetime.utcnow()
+                uploaded_at=datetime.now(timezone.utc),
             ),
             state_id=token,
         )
 
         return file_path
 
-    async def store_file(self, file: UploadFile, metadata: Dict, upload_type: UploadType, final_id: Optional[str]):
-
+    async def store_file(
+        self,
+        file: UploadFile,
+        metadata: dict,
+        upload_type: UploadType,
+        final_id: Optional[str],
+    ):
+        # Determine paths
+        config = UploadConfig.CONFIGS[upload_type]
         final_dir = None
         if final_id:
             final_dir = secure_filename(final_id)
             final_dir = PurePath(final_dir)
             final_dir = final_dir.stem
-            final_dir = Path(safe_join(os.getcwd(),config["storage_path"], final_dir))
-
-        # Determine paths
-        config = UploadConfig.CONFIGS[upload_type]
-        temp_dir = Path(os.getcwd()) / config["storage_path"] / "temp"
+            final_dir = Path(safe_join(str(Path.cwd()), config["storage_path"], final_dir))
+        temp_dir = Path.cwd() / config["storage_path"] / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
-        
+
         filename = secure_filename(metadata["original_filename"])
         temp_path = temp_dir / filename
-        
+
         # Save file to temp location
-        async with aiofiles.open(temp_path, 'wb') as out_file:
+        async with aiofiles.open(temp_path, "wb") as out_file:
             while content := await file.read(1024):
                 await out_file.write(content)
-        
+
         # If final_id provided, move to final location
 
         if final_dir:
@@ -173,10 +169,12 @@ class UploadService:
             final_path = final_dir / filename
             shutil.move(temp_path, final_path)
             return str(final_path)
-            
+
         return str(temp_path)
-    
-    async def move_upload_if_temp(self, upload_result: UploadResult, dir_name: str) -> str:
+
+    async def move_upload_if_temp(
+        self, upload_result: UploadResult, dir_name: str
+    ) -> str:
         """Move a temporary upload to a directory called 'name'"""
         if not upload_result.is_temp:
             return upload_result.file_path
@@ -190,7 +188,7 @@ class UploadService:
             raise ValueError(f"Invalid final directory name supplied {dir_name}")
         final_dir.mkdir(parents=True, exist_ok=True)
         file_extension = "".join(PurePath(upload_result.file_path).suffixes)
-        temp_filename = Path('logo' + file_extension)
+        temp_filename = Path("logo" + file_extension)
 
         final_path = final_dir / temp_filename
         shutil.move(upload_result.file_path, final_path)
@@ -202,12 +200,12 @@ class UploadService:
         Useful for cleanup if resource creation fails.
         """
         try:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+            path = Path(filepath)
+            if path.exists():
+                path.unlink()
             return True
         except Exception:
             return False
-
 
     async def get_upload_result(self, token_id: str) -> Optional[UploadResult]:
         """
@@ -218,11 +216,12 @@ class UploadService:
             state_type=StateType.FILE_UPLOAD_RESULT,
             state_id=token_id,
             model_class=UploadResult,
-            delete=False  # Keep the result for audit purposes
+            delete=False,  # Keep the result for audit purposes
         )
-        
+
         if not result:
             return None
-            
+
         upload_result, _ = result
         return upload_result
+

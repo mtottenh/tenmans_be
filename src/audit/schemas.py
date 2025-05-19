@@ -1,12 +1,17 @@
-from pydantic import BaseModel, UUID4, ConfigDict
-from typing import Dict, Any
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+from pydantic import UUID4, BaseModel, ConfigDict
+
+
+if TYPE_CHECKING:
+    from auth.schemas import PlayerPublic
 
 
 
 # NB - In the database
-# Enums take the value of the LHS, so we have to be careful in 
+# Enums take the value of the LHS, so we have to be careful in
 # Prepared statments that do things like create indexes.
 class AuditEventType(StrEnum):
     CREATE = "create"
@@ -20,12 +25,14 @@ class AuditEventType(StrEnum):
     BULK_OPERATION = "bulk_operation"
     CASCADE = "cascade"
 
+
 class AuditEventState(StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
     ROLLED_BACK = "rolled_back"
+
 
 class ScopeType(StrEnum):
     GLOBAL = "global"
@@ -39,7 +46,8 @@ class AuditLogCreate(BaseModel):
     action_type: str
     entity_type: str
     entity_id: UUID4
-    details: Dict[str, Any]
+    details: dict[str, Any]
+
 
 class AuditLogBase(BaseModel):
     id: UUID4
@@ -47,11 +55,12 @@ class AuditLogBase(BaseModel):
     entity_type: str
     entity_id: UUID4
     actor_id: UUID4
-    details: Dict[str, Any]
+    details: dict[str, Any]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class AuditLogDetailed(AuditLogBase):
     actor: "PlayerPublic"  # from auth schemas
-    entity_snapshot: Dict[str, Any]  # Snapshot of entity at time of action
+    entity_snapshot: dict[str, Any]  # Snapshot of entity at time of action

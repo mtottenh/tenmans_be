@@ -1,34 +1,35 @@
-from typing import Any, Dict, Optional, List
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from audit.models import AuditEvent
 from audit.schemas import AuditEventState, AuditEventType
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
-
 from auth.models import Player
-
 
 
 class AuditContext:
     """Context manager for tracking cascaded and linked audit events"""
+
     def __init__(
         self,
         session: AsyncSession,
         entity_id: Optional[uuid.UUID] = None,
         parent_event_id: Optional[uuid.UUID] = None,
         root_event_id: Optional[uuid.UUID] = None,
-        root_event: Optional[AuditEvent] = None
+        root_event: Optional[AuditEvent] = None,
     ):
         self.session = session
-        self.entity_id = entity_id 
+        self.entity_id = entity_id
         self.parent_event_id = parent_event_id
         self.root_event_id = root_event_id or parent_event_id
-        self.child_events: List[AuditEvent] = []
+        self.child_events: list[AuditEvent] = []
         self.sequence_number = 0
         self.root_event = root_event or None
         self.context_depth = 0
         self._active = False
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
 
     async def create_audit_event(
         self,
@@ -37,13 +38,13 @@ class AuditContext:
         entity_type: str,
         entity_id: Optional[uuid.UUID],
         actor: Player,
-        details: Dict[str, Any],
+        details: dict[str, Any],
         previous_status: Optional[str] = None,
         new_status: Optional[str] = None,
         transition_reason: Optional[str] = None,
         scope_type: Optional[str] = None,
         scope_id: Optional[uuid.UUID] = None,
-        grace_period: Optional[timedelta] = None
+        grace_period: Optional[timedelta] = None,
     ) -> AuditEvent:
         """Create and save an audit event"""
         await session.refresh(actor)
@@ -58,18 +59,20 @@ class AuditContext:
             transition_reason=transition_reason,
             scope_type=scope_type,
             scope_id=scope_id,
-            grace_period_end=datetime.now() + grace_period if grace_period else None,
-            event_state=AuditEventState.COMPLETED
+            grace_period_end=datetime.now(timezone.utc) + grace_period if grace_period else None,
+            event_state=AuditEventState.COMPLETED,
         )
-        
+
         return await self.add_event(event)
 
-    async def create_root_event(self, action_type: AuditEventType, 
-                                entity_type: str, 
-                                actor: str, 
-                                details: str,
-                                entity_id: Optional[uuid.UUID] = None
-                                ):
+    async def create_root_event(
+        self,
+        action_type: AuditEventType,
+        entity_type: str,
+        actor: str,
+        details: str,
+        entity_id: Optional[uuid.UUID] = None,
+    ):
         """Create the root audit event when entering a new context"""
         if self.root_event is None:
             # If there's no root event yet, create it
@@ -91,11 +94,15 @@ class AuditContext:
                 await self.session.flush()
 
         return self.root_event
-    
+
     async def update_root_event_entity_id(self, entity_id: uuid.UUID):
         """Update the root event's entity_id after entity creation"""
         await self.session.refresh(self.root_event)
-        if self.root_event and self.root_event.entity_id is None and self.context_depth == 1:
+        if (
+            self.root_event
+            and self.root_event.entity_id is None
+            and self.context_depth == 1
+        ):
             self.root_event.entity_id = entity_id
             self.session.add(self.root_event)
             await self.session.flush()
@@ -114,7 +121,7 @@ class AuditContext:
 
     async def __aenter__(self):
         """Enter the context and return the current instance"""
-        self.context_depth += 1 
+        self.context_depth += 1
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):

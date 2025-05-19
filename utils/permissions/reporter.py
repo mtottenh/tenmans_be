@@ -1,8 +1,9 @@
 import csv
-from typing import Dict, List
-from pathlib import Path
 import json
+from pathlib import Path
+
 from auth.schemas import PermissionAuditResult
+
 
 class SetEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -10,65 +11,77 @@ class SetEncoder(json.JSONEncoder):
             return list(obj)
         return json.JSONEncoder.default(self, obj)
 
+
 class PermissionReporter:
     """Utility for generating permission audit reports"""
-    
-    @staticmethod
-    def generate_csv_report(results: List[PermissionAuditResult], output_path: Path):
-        """Generate CSV report of permission audit results"""
-        with output_path.open('w', newline='') as f:
-            writer = csv.writer(f)
-            
-            # Write header
-            writer.writerow([
-                'Player ID', 'Name', 'Steam ID', 'Roles',
-                'Global Permissions', 'Team Permissions',
-                'Tournament Permissions', 'Issues'
-            ])
-            
-            # Write data
-            for result in results:
-                writer.writerow([
-                    result.player_id,
-                    result.player_name,
-                    result.steam_id,
-                    ','.join(result.roles),
-                    ','.join(result.global_permissions),
-                    json.dumps(result.team_permissions, cls=SetEncoder),
-                    json.dumps(result.tournament_permissions, cls=SetEncoder),
-                    ';'.join(result.issues)
-                ])
 
     @staticmethod
-    def generate_json_report(results: List[PermissionAuditResult], output_path: Path):
+    def generate_csv_report(results: list[PermissionAuditResult], output_path: Path):
+        """Generate CSV report of permission audit results"""
+        with output_path.open("w", newline="") as f:
+            writer = csv.writer(f)
+
+            # Write header
+            writer.writerow(
+                [
+                    "Player ID",
+                    "Name",
+                    "Steam ID",
+                    "Roles",
+                    "Global Permissions",
+                    "Team Permissions",
+                    "Tournament Permissions",
+                    "Issues",
+                ]
+            )
+
+            # Write data
+            for result in results:
+                writer.writerow(
+                    [
+                        result.player_id,
+                        result.player_name,
+                        result.steam_id,
+                        ",".join(result.roles),
+                        ",".join(result.global_permissions),
+                        json.dumps(result.team_permissions, cls=SetEncoder),
+                        json.dumps(result.tournament_permissions, cls=SetEncoder),
+                        ";".join(result.issues),
+                    ]
+                )
+
+    @staticmethod
+    def generate_json_report(results: list[PermissionAuditResult], output_path: Path):
         """Generate JSON report of permission audit results"""
         report_data = []
         for result in results:
-            report_data.append({
-                'player_id': result.player_id,
-                'name': result.player_name,
-                'steam_id': result.steam_id,
-                'roles': list(result.roles),
-                'global_permissions': list(result.global_permissions),
-                'team_permissions': {
-                    k: list(v) for k, v in result.team_permissions.items()
-                },
-                'tournament_permissions': {
-                    k: list(v) for k, v in result.tournament_permissions.items()
-                },
-                'issues': result.issues
-            })
-            
-        with output_path.open('w') as f:
+            report_data.append(
+                {
+                    "player_id": result.player_id,
+                    "name": result.player_name,
+                    "steam_id": result.steam_id,
+                    "roles": list(result.roles),
+                    "global_permissions": list(result.global_permissions),
+                    "team_permissions": {
+                        k: list(v) for k, v in result.team_permissions.items()
+                    },
+                    "tournament_permissions": {
+                        k: list(v) for k, v in result.tournament_permissions.items()
+                    },
+                    "issues": result.issues,
+                }
+            )
+
+        with output_path.open("w") as f:
             json.dump(report_data, f, indent=2)
 
     @staticmethod
-    def generate_summary_report(results: List[PermissionAuditResult]) -> str:
+    def generate_summary_report(results: list[PermissionAuditResult]) -> str:
         """Generate a text summary of permission audit results"""
         total_players = len(results)
         players_with_issues = len([r for r in results if r.issues])
         total_issues = sum(len(r.issues) for r in results)
-        
+
         # Count permission distribution
         global_perms = set()
         team_perms = set()
@@ -79,34 +92,32 @@ class PermissionReporter:
                 team_perms.update(perms)
             for perms in result.tournament_permissions.values():
                 tournament_perms.update(perms)
-                
+
         summary = [
-            f"Permission Audit Summary",
-            f"----------------------",
+            "Permission Audit Summary",
+            "----------------------",
             f"Total players audited: {total_players}",
             f"Players with issues: {players_with_issues}",
             f"Total issues found: {total_issues}",
-            f"",
-            f"Permission Distribution:",
+            "",
+            "Permission Distribution:",
             f"  Global permissions: {len(global_perms)}",
             f"  Team permissions: {len(team_perms)}",
             f"  Tournament permissions: {len(tournament_perms)}",
-            f"",
-            f"Top Issues:"
+            "",
+            "Top Issues:",
         ]
-        
+
         # Count issue frequency
-        issue_counts: Dict[str, int] = {}
+        issue_counts: dict[str, int] = {}
         for result in results:
             for issue in result.issues:
                 issue_counts[issue] = issue_counts.get(issue, 0) + 1
-                
+
         # Add top 5 most common issues
         for issue, count in sorted(
-            issue_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
+            issue_counts.items(), key=lambda x: x[1], reverse=True
         )[:5]:
             summary.append(f"  - {issue}: {count} occurrences")
-            
-        return '\n'.join(summary)
+
+        return "\n".join(summary)

@@ -1,19 +1,26 @@
-from typing import Any, Dict, List, Optional, Tuple
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
+
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-import uuid
-from datetime import datetime
+
 from audit.context import AuditContext
 from audit.models import AuditEventType
-from auth.models import Player, Role, Permission, PlayerRole, RolePermission
-from auth.schemas import ScopeType
 from audit.service import AuditService
-import logging
-LOG = logging.getLogger('uvicorn.error')
+from auth.models import Permission, Player, PlayerRole, Role, RolePermission
+from auth.schemas import ScopeType
+
+
+LOG = logging.getLogger("uvicorn.error")
+
 
 class PermissionServiceError(Exception):
     """Base exception for permission operations"""
+
     pass
+
 
 class PermissionScope:
     def __init__(self, scope_type: ScopeType, scope_id: Optional[uuid.UUID] = None):
@@ -23,37 +30,43 @@ class PermissionScope:
     def __eq__(self, other):
         if not isinstance(other, PermissionScope):
             return False
-        return (self.scope_type == other.scope_type and 
-                self.scope_id == other.scope_id)
+        return self.scope_type == other.scope_type and self.scope_id == other.scope_id
+
 
 class PermissionService:
     """Service for handling roles, permissions, and access control"""
-    
+
     def __init__(self, audit_service: Optional[AuditService] = None):
         self.audit_service = audit_service or AuditService()
 
-    def _permission_audit_details(self, permission: Permission, context: Dict) -> dict:
+    def _permission_audit_details(self, permission: Permission, context: dict) -> dict:  # noqa: ARG002
         """Extract audit details from a permission operation"""
         return {
             "permission_id": str(permission.id),
             "permission_name": permission.name,
             "description": permission.description,
-            "created_at": permission.created_at.isoformat() if permission.created_at else None
+            "created_at": permission.created_at.isoformat()
+            if permission.created_at
+            else None,
         }
 
-    async def get_permission(self, permission_id: uuid.UUID, session: AsyncSession) -> Optional[Permission]:
+    async def get_permission(
+        self, permission_id: uuid.UUID, session: AsyncSession
+    ) -> Optional[Permission]:
         """Get a permission by ID"""
         stmt = select(Permission).where(Permission.id == permission_id)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_permission_by_name(self, name: str, session: AsyncSession) -> Optional[Permission]:
+    async def get_permission_by_name(
+        self, name: str, session: AsyncSession
+    ) -> Optional[Permission]:
         """Get a permission by name"""
         stmt = select(Permission).where(Permission.name == name)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_all_permissions(self, session: AsyncSession) -> List[Permission]:
+    async def get_all_permissions(self, session: AsyncSession) -> list[Permission]:
         """Get all permissions"""
         stmt = select(Permission)
         result = await session.execute(stmt)
@@ -62,15 +75,15 @@ class PermissionService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.CREATE,
         entity_type="Permission",
-        details_extractor=_permission_audit_details
+        details_extractor=_permission_audit_details,
     )
     async def create_permission(
         self,
         name: str,
         description: str,
-        actor: Any,
+        actor: Any,  # noqa: ARG002
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
     ) -> Permission:
         """Create a new permission"""
         existing = await self.get_permission_by_name(name, session)
@@ -78,9 +91,7 @@ class PermissionService:
             raise PermissionServiceError(f"Permission '{name}' already exists")
 
         permission = Permission(
-            name=name,
-            description=description,
-            created_at=datetime.now()
+            name=name, description=description, created_at=datetime.now(timezone.utc)
         )
         session.add(permission)
         return permission
@@ -88,14 +99,14 @@ class PermissionService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.DELETE,
         entity_type="Permission",
-        details_extractor=_permission_audit_details
+        details_extractor=_permission_audit_details,
     )
     async def delete_permission(
         self,
         permission_id: uuid.UUID,
-        actor: Any,
+        actor: Any,  # noqa: ARG002
         session: AsyncSession,
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,  # noqa: ARG002
     ) -> Permission:
         """Delete a permission"""
         permission = await self.get_permission(permission_id, session)
@@ -103,7 +114,9 @@ class PermissionService:
             raise PermissionServiceError("Permission not found")
 
         # Remove permission from all roles
-        stmt = select(RolePermission).where(RolePermission.permission_id == permission_id)
+        stmt = select(RolePermission).where(
+            RolePermission.permission_id == permission_id
+        )
         result = await session.execute(stmt)
         role_permissions = result.scalars().all()
 
@@ -114,64 +127,56 @@ class PermissionService:
         return permission
 
     async def get_player_permissions(
-        self,
-        player: Player,
-        session: AsyncSession
-    ) -> List[Tuple[str, ScopeType, Optional[uuid.UUID]]]:
+        self, player: Player, session: AsyncSession
+    ) -> list[tuple[str, ScopeType, Optional[uuid.UUID]]]:
         """Get all permissions for a player with their scopes"""
-        stmt = select(
-            Permission.name,
-            PlayerRole.scope_type,
-            PlayerRole.scope_id
-        ).join(
-            Role,
-            Permission.roles
-        ).join(
-            PlayerRole,
-            Role.id == PlayerRole.role_id
-        ).where(
-            PlayerRole.player_id == player.id
+        stmt = (
+            select(Permission.name, PlayerRole.scope_type, PlayerRole.scope_id)
+            .join(Role, Permission.roles)
+            .join(PlayerRole, Role.id == PlayerRole.role_id)
+            .where(PlayerRole.player_id == player.id)
         )
-        
+
         result = await session.execute(stmt)
         #         [(PermissionName, ScopeType, ScopeID)]
         return [(row[0], ScopeType(row[1]), row[2]) for row in result]
 
-
     async def verify_permissions(
         self,
         player: Player,
-        required_permissions: List[str],
+        required_permissions: list[str],
         scope: Optional[PermissionScope],
-        session: AsyncSession
+        session: AsyncSession,
     ) -> bool:
         """Verify if player has all required permissions in scope"""
         player_permissions = await self.get_player_permissions(player, session)
-        
+
         for required_perm in required_permissions:
             has_permission = False
             # LOG.info(f"Has Permission: {has_permission}")
             for perm_name, perm_scope_type, perm_scope_id in player_permissions:
-              #   LOG.info(f"Checking {required_perm} == {perm_name}")
+                #   LOG.info(f"Checking {required_perm} == {perm_name}")
                 if perm_name != required_perm:
                     continue
 
                 if perm_scope_type == ScopeType.GLOBAL:
                     has_permission = True
                     break
-               # LOG.info(f"Checking '{scope.scope_type}:{scope.scope_id}' vs '{perm_scope_type}:{perm_scope_id}'")
-                if scope and perm_scope_type == scope.scope_type:
-                   #  LOG.info(f"Scoped permission")
-                    if (scope.scope_id is None) or (str(perm_scope_id) == str(scope.scope_id)):
+                # LOG.info(f"Checking '{scope.scope_type}:{scope.scope_id}' vs '{perm_scope_type}:{perm_scope_id}'")
+                if (scope and perm_scope_type == scope.scope_type and
+                    ((scope.scope_id is None) or (str(perm_scope_id) == str(scope.scope_id)))):
                         # LOG.info("Setting has permission!")
                         has_permission = True
                         break
 
             if not has_permission:
                 return False
-       # LOG.info(f"Has Permission: {has_permission}")
+        # LOG.info(f"Has Permission: {has_permission}")
         return True
-    
-def create_permission_service(audit_svc: Optional[AuditService] = None) -> PermissionService:
+
+
+def create_permission_service(
+    audit_svc: Optional[AuditService] = None,
+) -> PermissionService:
     audit_service = audit_svc or AuditService()
     return PermissionService(audit_service)

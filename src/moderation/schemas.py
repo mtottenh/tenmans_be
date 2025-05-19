@@ -1,20 +1,26 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field, model_validator
-from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
+from typing import Optional, Self
+
+from pydantic import UUID4, BaseModel, ConfigDict, model_validator
+
 from auth.schemas import PlayerPublic
 from teams.base_schemas import TeamBasic
+
+
 class BanScope(StrEnum):
     MATCH = "match"
     TOURNAMENT = "tournament"
     SEASON = "season"
     PERMANENT = "permanent"
 
+
 class BanStatus(StrEnum):
     ACTIVE = "active"
     EXPIRED = "expired"
     APPEALED = "appealed"
     REVOKED = "revoked"
+
 
 # Request Schemas
 class BanCreate(BaseModel):
@@ -26,22 +32,23 @@ class BanCreate(BaseModel):
     evidence: Optional[str]
     end_date: Optional[datetime]
 
-
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_scope_id(self) -> Self:
         if self.scope != BanScope.PERMANENT and self.scope_id is None:
-            raise ValueError('scope_id required for non-permanent bans')
+            raise ValueError("scope_id required for non-permanent bans")
         return self
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_target(self) -> Self:
         if self.player_id is not None and self.team_id is not None:
-            raise ValueError('Exactly one of player_id or team_id must be provided')
+            raise ValueError("Exactly one of player_id or team_id must be provided")
         return self
+
 
 class BanUpdate(BaseModel):
     status: BanStatus
     revoke_reason: Optional[str]
+
 
 # Response Schemas
 class BanBase(BaseModel):
@@ -56,6 +63,7 @@ class BanBase(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class BanDetailed(BanBase):
     player: Optional[PlayerPublic]

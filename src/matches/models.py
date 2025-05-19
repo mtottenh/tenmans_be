@@ -1,29 +1,43 @@
-from sqlmodel import SQLModel, Field, Column, Relationship
-import sqlalchemy as sa
-from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSON
-from sqlalchemy.ext.asyncio import AsyncAttrs
+import uuid
 from datetime import datetime
 from enum import StrEnum
-from typing import List, Optional
-import uuid
+from typing import TYPE_CHECKING, Optional
+
+import sqlalchemy as sa
+from sqlalchemy import ForeignKey
+from sqlalchemy.dialects.postgresql import JSON, TIMESTAMP, UUID
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlmodel import Column, Field, Relationship, SQLModel
+
+
+if TYPE_CHECKING:
+    from auth.models import Player
+    from competitions.models.fixtures import Fixture
+    from maps.models import Map
+    from teams.models import Team
+
 
 
 class MatchFormat(StrEnum):
     """Valid match formats"""
+
     BO1 = "bo1"  # Best of 1
     BO3 = "bo3"  # Best of 3
     BO5 = "bo5"  # Best of 5
+
 
 class ConfirmationStatus(StrEnum):
     PENDING = "pending"
     CONFIRMED = "confirmed"
     DISPUTED = "disputed"
 
-class Result(SQLModel,AsyncAttrs, table=True):
+
+class Result(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "results"
     id: uuid.UUID = Field(
-        sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4)
+        sa_column=Column(
+            UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
+        )
     )
     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
     map_id: uuid.UUID = Field(sa_column=Column(ForeignKey("maps.id")))
@@ -33,18 +47,22 @@ class Result(SQLModel,AsyncAttrs, table=True):
     team_1_side_first: str  # CT or T
     # Result confirmation workflow
     submitted_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    confirmed_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
+    confirmed_by: Optional[uuid.UUID] = Field(
+        sa_column=Column(ForeignKey("players.id"))
+    )
     confirmation_status: ConfirmationStatus = Field(
         sa_column=sa.Column(sa.Enum(ConfirmationStatus)),
-        default=ConfirmationStatus.PENDING
+        default=ConfirmationStatus.PENDING,
     )
     # Admin overides
     admin_override: bool = Field(default=False)
-    admin_override_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
+    admin_override_by: Optional[uuid.UUID] = Field(
+        sa_column=Column(ForeignKey("players.id"))
+    )
     admin_override_reason: Optional[str]
     # Evidence for submission
     demo_url: Optional[str]
-    screenshot_urls: List[str] = Field(sa_column=Column(JSON))
+    screenshot_urls: list[str] = Field(sa_column=Column(JSON))
     # Timestamps
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
@@ -53,16 +71,17 @@ class Result(SQLModel,AsyncAttrs, table=True):
     map: "Map" = Relationship(back_populates="results")
     submitter: "Player" = Relationship(
         back_populates="submitted_results",
-        sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.id"}
+        sa_relationship_kwargs={"primaryjoin": "Result.submitted_by == Player.id"},
     )
     confirmer: Optional["Player"] = Relationship(
         back_populates="confirmed_results",
-        sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.id"}
+        sa_relationship_kwargs={"primaryjoin": "Result.confirmed_by == Player.id"},
     )
     admin_overrider: Optional["Player"] = Relationship(
         back_populates="admin_overridden_results",
-        sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.id"}
+        sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.id"},
     )
+
     @property
     def winner_id(self) -> Optional[uuid.UUID]:
         """Get the winner's team ID"""
@@ -77,10 +96,15 @@ class Result(SQLModel,AsyncAttrs, table=True):
         """Check if the map was a draw"""
         return self.team_1_score == self.team_2_score
 
-class MatchPlayer(SQLModel,  AsyncAttrs, table=True):
+
+class MatchPlayer(SQLModel, AsyncAttrs, table=True):
     __tablename__ = "match_players"
-    fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id"), primary_key=True))
-    player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id"), primary_key=True))
+    fixture_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("fixtures.id"), primary_key=True)
+    )
+    player_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("players.id"), primary_key=True)
+    )
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     is_substitute: bool = Field(default=False)
     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))

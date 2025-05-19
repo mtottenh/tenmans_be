@@ -1,7 +1,8 @@
 from datetime import datetime
-from pydantic import BaseModel
-from typing import Optional, Literal
 from enum import StrEnum
+from typing import Optional
+
+from pydantic import BaseModel
 
 
 class UploadType(StrEnum):
@@ -11,14 +12,15 @@ class UploadType(StrEnum):
     TOURNAMENT_BANNER = "tournament_banner"
 
 
-
 class UploadRequest(BaseModel):
     """Request for an upload token"""
+
     filename: str
     content_type: str
     size: int
     upload_type: UploadType
     metadata: Optional[dict] = None
+
 
 class UploadTokenData(BaseModel):
     allowed_extensions: list[str]
@@ -28,6 +30,7 @@ class UploadTokenData(BaseModel):
 
 class UploadToken(UploadTokenData):
     """Response with upload token and metadata"""
+
     upload_url: str
     token: str
 

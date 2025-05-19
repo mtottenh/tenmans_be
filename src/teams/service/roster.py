@@ -1,75 +1,83 @@
-
-from typing import Dict, List, Optional
-from sqlalchemy import func
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, desc
-from sqlalchemy.orm import selectinload
-from sqlalchemy.sql.functions import count
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Optional
+
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
 from audit.context import AuditContext
 from audit.models import AuditEventType
+from audit.service import AuditService, create_audit_service
+from auth.models import Player, Role
 from auth.schemas import ScopeType
 from auth.service.permission import PermissionScope, PermissionService
+from competitions.models.seasons import Season
 from competitions.season.service import SeasonService, create_season_service
 from status.manager.roster import initialize_roster_status_manager
 from status.service import StatusTransitionService, create_status_transition_service
 from teams.base_schemas import RosterStatus, TeamHistory, TeamStatus
-from teams.models import Team, Roster
-from auth.models import Player, Role
-from competitions.models.seasons import Season
-from audit.service import AuditService, create_audit_service
+from teams.models import Roster, Team
 from teams.schemas import PlayerRosterHistory
-import logging
-LOG = logging.getLogger('uvicorn.error')
 
-class RosterServiceError(Exception):#
+
+LOG = logging.getLogger("uvicorn.error")
+
+
+class RosterServiceError(Exception):
     """Base exception for roster operations"""
+
     pass
+
 
 class RosterService:
     def __init__(
         self,
         audit_service: Optional[AuditService] = None,
         season_service: Optional[SeasonService] = None,
-        status_transition_service: Optional[StatusTransitionService] = None
+        status_transition_service: Optional[StatusTransitionService] = None,
     ):
         self.audit_service = audit_service or AuditService()
         self.season_service = season_service or SeasonService()
-        self.status_transition_service = status_transition_service or StatusTransitionService()
-        
+        self.status_transition_service = (
+            status_transition_service or StatusTransitionService()
+        )
+
         # Register roster status manager
         roster_manager = initialize_roster_status_manager()
-        self.status_transition_service.register_transition_manager("Roster", roster_manager)
+        self.status_transition_service.register_transition_manager(
+            "Roster", roster_manager
+        )
 
-    def _roster_audit_details(self, roster: Roster,  context: Dict) -> Dict:
+    def _roster_audit_details(self, roster: Roster, context: dict) -> dict:  # noqa: ARG002
         """Extract audit details from a roster operation"""
         audit_data = {
             "team_id": str(roster.team_id),
             "player_id": str(roster.player_id),
             "season_id": str(roster.season_id),
-            "timestamp": datetime.now().isoformat(),
-            "status": roster.status
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": roster.status,
         }
         # if details:
         #     audit_data.update(details)
         return audit_data
 
-    def _roster_id_gen(self, roster: Roster) -> uuid.UUID:
+    def _roster_id_gen(self, roster: Roster) -> uuid.UUID:  # noqa: ARG002
         return uuid.uuid4()
-
 
     async def get_team_roster(
         self,
         team: Team,
         season: Season,
         session: AsyncSession,
-        status: Optional[List[RosterStatus]] = None,
-        include_all: bool = False
-    ) -> List[Roster]:
+        status: Optional[list[RosterStatus]] = None,
+        include_all: bool = False,
+    ) -> list[Roster]:
         """
         Get all players on team roster for season.
-        
+
         Args:
             team: Team to get roster for
             season: Season context
@@ -77,11 +85,14 @@ class RosterService:
             include_all: If True, includes all roster entries regardless of status
             session: Database session
         """
-        stmt = select(Roster).where(
-            Roster.team_id == team.id,
-            Roster.season_id == season.id
-        ).options(
-            selectinload(Roster.player).selectinload(Player.roles).selectinload(Role.permissions)
+        stmt = (
+            select(Roster)
+            .where(Roster.team_id == team.id, Roster.season_id == season.id)
+            .options(
+                selectinload(Roster.player)
+                .selectinload(Player.roles)
+                .selectinload(Role.permissions)
+            )
         )
 
         # Apply status filter if provided, otherwise default to ACTIVE only
@@ -89,21 +100,18 @@ class RosterService:
             stmt = stmt.where(Roster.status.in_(status))
         elif not include_all:
             stmt = stmt.where(Roster.status == RosterStatus.ACTIVE)
-            
+
         result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_active_roster_count(
-        self,
-        team: Team,
-        season: Season,
-        session: AsyncSession
+        self, team: Team, season: Season, session: AsyncSession
     ) -> int:
         """Get count of active roster players"""
         stmt = select(Roster).where(
             Roster.team_id == team.id,
             Roster.season_id == season.id,
-            Roster.status == RosterStatus.ACTIVE
+            Roster.status == RosterStatus.ACTIVE,
         )
         result = (await session.execute(stmt)).scalars()
         return len(result.all())
@@ -114,11 +122,11 @@ class RosterService:
         season_id: str,
         session: AsyncSession,
         team_id: Optional[str] = None,
-        include_inactive: bool = False
+        include_inactive: bool = False,
     ) -> Optional[Roster]:
         """
         Get player's current roster entry for season
-        
+
         Args:
             player_id: Player's UUID
             season_id: Season's UUID
@@ -127,109 +135,99 @@ class RosterService:
             session: Database session
         """
         stmt = select(Roster).where(
-            Roster.player_id == player_id,
-            Roster.season_id == season_id
+            Roster.player_id == player_id, Roster.season_id == season_id
         )
-        
+
         if team_id:
             stmt = stmt.where(Roster.team_id == team_id)
-            
+
         if not include_inactive:
             stmt = stmt.where(Roster.status == RosterStatus.ACTIVE)
-            
+
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
     async def get_teams_with_min_players(
-        self,
-        season_id: uuid.UUID,
-        min_players: int,
-        session: AsyncSession
-    ) -> List[Team]:
+        self, season_id: uuid.UUID, min_players: int, session: AsyncSession
+    ) -> list[Team]:
         """Get teams that have minimum required active players"""
-        stmt = select(Team).join(Roster).where(
-            Roster.season_id == season_id,
-            Roster.status == RosterStatus.ACTIVE
-        ).group_by(Team.id).having(
-            func.count(Roster.player_id) >= min_players
+        stmt = (
+            select(Team)
+            .join(Roster)
+            .where(Roster.season_id == season_id, Roster.status == RosterStatus.ACTIVE)
+            .group_by(Team.id)
+            .having(func.count(Roster.player_id) >= min_players)
         )
         result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def get_suspended_players(
-        self,
-        team: Team,
-        season: Season,
-        session: AsyncSession
-    ) -> List[Roster]:
+        self, team: Team, season: Season, session: AsyncSession
+    ) -> list[Roster]:
         """Get all suspended players for a team"""
         return await self.get_team_roster(
-            team=team,
-            season=season,
-            status=[RosterStatus.SUSPENDED],
-            session=session
+            team=team, season=season, status=[RosterStatus.SUSPENDED], session=session
         )
 
     async def get_pending_players(
-        self,
-        team: Team,
-        season: Season,
-        session: AsyncSession
-    ) -> List[Roster]:
+        self, team: Team, season: Season, session: AsyncSession
+    ) -> list[Roster]:
         """Get all pending roster entries for a team"""
         return await self.get_team_roster(
-            team=team,
-            season=season,
-            status=[RosterStatus.PENDING],
-            session=session
+            team=team, season=season, status=[RosterStatus.PENDING], session=session
         )
 
     async def get_teams_for_player_by_player_id(
-        self,
-        player_id: str,
-        session: AsyncSession
+        self, player_id: str, session: AsyncSession
     ) -> PlayerRosterHistory:
         """Get current and previous teams for a player"""
-        stmt = select(Roster).where(
-            Roster.player_id == player_id
-        ).join(Team).options(
-            selectinload(Roster.team)
-            .selectinload(Team.captains)
+        stmt = (
+            select(Roster)
+            .where(Roster.player_id == player_id)
+            .join(Team)
+            .options(selectinload(Roster.team).selectinload(Team.captains))
         )
         result = (await session.execute(stmt)).scalars().all()
-        
+
         if not result:
             return PlayerRosterHistory(current=None, previous=None)
-            
+
         current_season = await self.season_service.get_active_season(session)
-        
+
         # Get current active team if any
         current_team = next(
-            (r for r in result 
-             if r.season_id == current_season.id 
-             and r.status == RosterStatus.ACTIVE 
-             and r.team.status == TeamStatus.ACTIVE),
-            None
+            (
+                r
+                for r in result
+                if r.season_id == current_season.id
+                and r.status == RosterStatus.ACTIVE
+                and r.team.status == TeamStatus.ACTIVE
+            ),
+            None,
         )
-        
+
         # Get previous teams - include removed/past rosters and teams
         previous_teams = [
-            r for r in result
-            if (r.season_id != current_season.id or  # Different season
-                r.status in [RosterStatus.REMOVED, RosterStatus.PAST] or  # Removed/past roster
-                r.team.status != TeamStatus.ACTIVE)  # Inactive team
+            r
+            for r in result
+            if (
+                r.season_id != current_season.id  # Different season
+                or r.status
+                in [RosterStatus.REMOVED, RosterStatus.PAST]  # Removed/past roster
+                or r.team.status != TeamStatus.ACTIVE
+            )  # Inactive team
             and r != current_team  # Not the current team
         ]
-        
+
         def roster_to_team_history(r: Roster) -> TeamHistory:
             if not r:
                 return None
-            is_captain=False
+            is_captain = False
             for captain in r.team.captains:
-                LOG.info(f"Checking { captain.player_id} == {player_id}")
+                LOG.info(f"Checking {captain.player_id} == {player_id}")
                 if str(captain.player_id) == player_id:
-                    LOG.info(f"Player is captain")
-                    is_captain=True
+                    LOG.info("Player is captain")
+                    is_captain = True
                     break
             return TeamHistory(
                 team_id=r.team_id,
@@ -237,12 +235,14 @@ class RosterService:
                 is_captain=is_captain,
                 season_id=r.season_id,
                 since=r.created_at,
-                status=r.team.status
+                status=r.team.status,
             )
-            
+
         return PlayerRosterHistory(
             current=roster_to_team_history(current_team),
-            previous=[roster_to_team_history(r) for r in previous_teams] if previous_teams else None
+            previous=[roster_to_team_history(r) for r in previous_teams]
+            if previous_teams
+            else None,
         )
 
     async def validate_roster_size(
@@ -251,18 +251,17 @@ class RosterService:
         season: Season,
         min_size: int,
         max_size: int,
-        session: AsyncSession
+        session: AsyncSession,
     ) -> tuple[bool, str]:
         """Validate roster size against requirements"""
         roster_size = await self.get_active_roster_count(team, season, session)
-        
+
         if roster_size < min_size:
             return False, f"Team roster below minimum size ({roster_size}/{min_size})"
         if roster_size > max_size:
             return False, f"Team roster exceeds maximum size ({roster_size}/{max_size})"
-            
-        return True, "Roster size valid"
 
+        return True, "Roster size valid"
 
     async def change_roster_status(
         self,
@@ -271,17 +270,14 @@ class RosterService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None,
-        audit_context: Optional[AuditContext] = None
+        metadata: Optional[dict] = None,
+        audit_context: Optional[AuditContext] = None,
     ) -> Roster:
         """Change a roster entry's status with validation and history tracking"""
         try:
             # Create scope for permission checking
-            scope = PermissionScope(
-                scope_type=ScopeType.TEAM,
-                scope_id=roster.team_id
-            )
-            
+            scope = PermissionScope(scope_type=ScopeType.TEAM, scope_id=roster.team_id)
+
             # Use status transition service
             updated_roster = await self.status_transition_service.transition_status(
                 entity=roster,
@@ -291,19 +287,19 @@ class RosterService:
                 scope=scope,
                 entity_metadata=metadata,
                 session=session,
-                audit_context=audit_context
+                audit_context=audit_context,
             )
-            
+
             return updated_roster
-            
-        except Exception as e:
+
+        except Exception:
             raise
         # raise RosterServiceError(f"Failed to change roster status: {str(e)}")
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.CREATE,
         entity_type="Roster",
-        details_extractor=_roster_audit_details
+        details_extractor=_roster_audit_details,
     )
     async def add_player_to_roster(
         self,
@@ -312,8 +308,8 @@ class RosterService:
         season: Season,
         actor: Player,
         session: AsyncSession,
-        details: Optional[Dict] = None,
-        audit_context: Optional[AuditContext] = None
+        details: Optional[dict] = None,
+        audit_context: Optional[AuditContext] = None,
     ) -> Roster:
         """Add a player to team roster"""
         # Check if player is already on a team this season
@@ -326,9 +322,9 @@ class RosterService:
             team_id=team.id,
             player_id=player.id,
             season_id=season.id,
-            status=RosterStatus.PENDING 
+            status=RosterStatus.PENDING,
         )
-        
+
         session.add(roster_entry)
         await session.flush()
         await session.refresh(roster_entry)
@@ -336,9 +332,9 @@ class RosterService:
         metadata = {
             "action": "roster_add",
             "season_id": str(season.id),
-            **(details or {})
+            **(details or {}),
         }
-        
+
         await self.change_roster_status(
             roster=roster_entry,
             new_status=RosterStatus.ACTIVE,
@@ -346,10 +342,10 @@ class RosterService:
             actor=actor,
             session=session,
             metadata=metadata,
-            audit_context=audit_context
+            audit_context=audit_context,
         )
         await session.refresh(roster_entry)
-        
+
         return roster_entry
 
     async def remove_player_from_team_roster(
@@ -360,14 +356,11 @@ class RosterService:
         actor: Player,
         session: AsyncSession,
         reason: str = "Removed from roster",
-        audit_context: Optional[AuditContext] = None
+        audit_context: Optional[AuditContext] = None,
     ) -> None:
         """Remove a player from team roster"""
         roster_entry = await self._get_player_roster(
-            player_id,
-            season_id,
-            session,
-            team_id=team_id
+            player_id, season_id, session, team_id=team_id
         )
 
         if not roster_entry:
@@ -381,7 +374,7 @@ class RosterService:
             actor=actor,
             session=session,
             metadata={"action": "roster_remove"},
-            audit_context=audit_context
+            audit_context=audit_context,
         )
 
     async def suspend_roster_member(
@@ -390,8 +383,8 @@ class RosterService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None,
-        audit_context: Optional[AuditContext] = None
+        metadata: Optional[dict] = None,
+        audit_context: Optional[AuditContext] = None,
     ) -> Roster:
         """Suspend a roster member"""
         return await self.change_roster_status(
@@ -401,7 +394,7 @@ class RosterService:
             actor=actor,
             session=session,
             metadata={"action": "roster_suspend", **(metadata or {})},
-            audit_context=audit_context
+            audit_context=audit_context,
         )
 
     async def reactivate_roster_member(
@@ -410,8 +403,8 @@ class RosterService:
         reason: str,
         actor: Player,
         session: AsyncSession,
-        metadata: Optional[Dict] = None,
-        audit_context: Optional[AuditContext] = None
+        metadata: Optional[dict] = None,
+        audit_context: Optional[AuditContext] = None,
     ) -> Roster:
         """Reactivate a suspended roster member"""
         return await self.change_roster_status(
@@ -421,27 +414,29 @@ class RosterService:
             actor=actor,
             session=session,
             metadata={"action": "roster_reactivate", **(metadata or {})},
-            audit_context=audit_context
+            audit_context=audit_context,
         )
 
     async def get_roster_status_history(
-        self,
-        roster_id: uuid.UUID,
-        session: AsyncSession
-    ) -> List[Dict]:
+        self, roster_id: uuid.UUID, session: AsyncSession
+    ) -> list[dict]:
         """Get status change history for a roster entry"""
         return await self.status_transition_service.get_status_history(
-            entity_type="Roster",
-            entity_id=roster_id,
-            session=session
+            entity_type="Roster", entity_id=roster_id, session=session
         )
 
-def create_roster_service(audit_service: Optional[AuditService] = None, 
-                          season_service: Optional[SeasonService] = None,
-                          permission_service: Optional[PermissionService] = None,
-                          status_transition_service: Optional[StatusTransitionService] = None
-                          ) -> RosterService:
+
+def create_roster_service(
+    audit_service: Optional[AuditService] = None,
+    season_service: Optional[SeasonService] = None,
+    permission_service: Optional[PermissionService] = None,
+    status_transition_service: Optional[StatusTransitionService] = None,
+) -> RosterService:
     audit_serivce = audit_service or create_audit_service()
     season_service = season_service or create_season_service()
-    status_transition_service = status_transition_service or create_status_transition_service(audit_service, permission_service)
+    status_transition_service = (
+        status_transition_service
+        or create_status_transition_service(audit_service, permission_service)
+    )
     return RosterService(audit_serivce, season_service, status_transition_service)
+

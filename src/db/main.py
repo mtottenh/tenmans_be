@@ -1,16 +1,15 @@
+from collections.abc import AsyncGenerator
+
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import Config
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import event
-from typing import AsyncGenerator, Dict, List
 
-from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy import text
 
-def get_postgres_config() -> Dict:
+def get_postgres_config() -> dict:
     """Get PostgreSQL-specific connection configurations."""
     return {
         # Connection pooling settings
@@ -22,31 +21,30 @@ def get_postgres_config() -> Dict:
     }
 
 
-DB_URL= f"postgresql+asyncpg://{Config.POSTGRES_USER}:{Config.POSTGRES_PASSWORD}@db:5432/{Config.POSTGRES_DB}"
+DB_URL = f"postgresql+asyncpg://{Config.POSTGRES_USER}:{Config.POSTGRES_PASSWORD}@db:5432/{Config.POSTGRES_DB}"
 # Create async engine with PostgreSQL-specific configurations
 engine = create_async_engine(
-    DB_URL,
-    echo=Config.DB_ECHO,
-    future=True,
-    **get_postgres_config()
+    DB_URL, echo=Config.DB_ECHO, future=True, **get_postgres_config()
 )
+
 
 # Register event listeners for connection-level settings
 @event.listens_for(engine.sync_engine, "connect")
-def set_postgres_session_settings(dbapi_connection, connection_record):
+def set_postgres_session_settings(dbapi_connection, connection_record):  # noqa: ARG001
     """Set session-specific PostgreSQL settings."""
     cursor = dbapi_connection.cursor()
-    
+
     # Set the search path explicitly for security
     cursor.execute("SET search_path TO public")
-    
+
     # Enable parallel query execution
     cursor.execute("SET max_parallel_workers_per_gather = 2")
-    
+
     # Set memory and timeout configurations
     cursor.execute("SET work_mem = '16MB'")
-    
+
     cursor.close()
+
 
 async def init_db():
     """Initialize database and create all tables."""
@@ -54,10 +52,12 @@ async def init_db():
         # Create all tables
         await conn.run_sync(SQLModel.metadata.create_all)
 
+
 async_session = sessionmaker(
     engine,
     class_=AsyncSession,
 )
+
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """Get a database session with optimized session settings."""
@@ -66,7 +66,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             # Set session-specific timeouts
             await session.execute(text("SET LOCAL statement_timeout = '60s'"))
             await session.execute(text("SET LOCAL lock_timeout = '30s'"))
-            
+
             yield session
             await session.commit()
         except Exception:

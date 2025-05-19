@@ -1,48 +1,44 @@
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, desc
-from typing import List, Optional
-from competitions.models.seasons import Season, SeasonState
-from ..schemas import SeasonCreate
 import uuid
+from typing import Optional
+
+from sqlmodel import desc, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from competitions.models.seasons import Season, SeasonState
+
+from ..schemas import SeasonCreate
+
 
 class SeasonStateError(Exception):
     pass
 
+
 # TODO - Add state transition and audited transactions...
 class SeasonService:
     async def create_season(
-        self,
-        season: SeasonCreate,
-        session: AsyncSession
+        self, season: SeasonCreate, session: AsyncSession
     ) -> Season:
         """Create a new season"""
         # Check if season with name exists
         existing = await self.get_season_by_name(season.name, session)
         if existing:
             raise ValueError(f"Season with name '{season.name}' already exists")
-            
-        new_season = Season(
-            name=season.name,
-            state=SeasonState.NOT_STARTED
-        )
+
+        new_season = Season(name=season.name, state=SeasonState.NOT_STARTED)
         session.add(new_season)
         await session.commit()
         await session.refresh(new_season)
         return new_season
 
-    async def start_season(
-        self,
-        season_id: uuid.UUID,
-        session: AsyncSession
-    ) -> Season:
+    async def start_season(self, season_id: uuid.UUID, session: AsyncSession) -> Season:
         """Start a season"""
         season = await self.get_season(season_id, session)
         if not season:
             raise ValueError("Season not found")
-        
+
         if season.state != SeasonState.NOT_STARTED:
             raise SeasonStateError("Season can only be started from NOT_STARTED state")
-            
+
         season.state = SeasonState.IN_PROGRESS
         session.add(season)
         await session.commit()
@@ -50,20 +46,18 @@ class SeasonService:
         return season
 
     async def complete_season(
-        self,
-        season_id: uuid.UUID,
-        session: AsyncSession
+        self, season_id: uuid.UUID, session: AsyncSession
     ) -> Season:
         """Complete a season"""
         season = await self.get_season(season_id, session)
         if not season:
             raise ValueError("Season not found")
-        
+
         if season.state != SeasonState.IN_PROGRESS:
             raise SeasonStateError("Can only complete an in-progress season")
-            
+
         # Optionally: Add any completion validation logic here
-            
+
         season.state = SeasonState.COMPLETED
         session.add(season)
         await session.commit()
@@ -71,18 +65,16 @@ class SeasonService:
         return season
 
     async def reopen_season(
-        self,
-        season_id: uuid.UUID,
-        session: AsyncSession
+        self, season_id: uuid.UUID, session: AsyncSession
     ) -> Season:
         """Reopen a completed season"""
         season = await self.get_season(season_id, session)
         if not season:
             raise ValueError("Season not found")
-        
+
         if season.state != SeasonState.COMPLETED:
             raise SeasonStateError("Can only reopen a completed season")
-            
+
         season.state = SeasonState.IN_PROGRESS
         session.add(season)
         await session.commit()
@@ -90,9 +82,7 @@ class SeasonService:
         return season
 
     async def get_season(
-        self,
-        season_id: uuid.UUID,
-        session: AsyncSession
+        self, season_id: uuid.UUID, session: AsyncSession
     ) -> Optional[Season]:
         """Get a season by ID"""
         stmt = select(Season).where(Season.id == season_id)
@@ -100,9 +90,7 @@ class SeasonService:
         return result.first()
 
     async def get_season_by_name(
-        self,
-        name: str,
-        session: AsyncSession
+        self, name: str, session: AsyncSession
     ) -> Optional[Season]:
         """Get a season by name"""
         stmt = select(Season).where(Season.name == name)
@@ -110,10 +98,8 @@ class SeasonService:
         return result.first()
 
     async def get_all_seasons(
-        self,
-        session: AsyncSession,
-        include_completed: bool = True
-    ) -> List[Season]:
+        self, session: AsyncSession, include_completed: bool = True
+    ) -> list[Season]:
         """Get all seasons"""
         stmt = select(Season)
         if not include_completed:
@@ -122,15 +108,11 @@ class SeasonService:
         result = (await session.execute(stmt)).scalars()
         return result.all()
 
-    async def get_active_season(
-        self,
-        session: AsyncSession
-    ) -> Optional[Season]:
+    async def get_active_season(self, session: AsyncSession) -> Optional[Season]:
         """Get the current active season"""
         stmt = select(Season).where(Season.state == SeasonState.IN_PROGRESS)
         result = (await session.execute(stmt)).scalars()
         return result.first()
-    
 
 
 def create_season_service() -> SeasonService:

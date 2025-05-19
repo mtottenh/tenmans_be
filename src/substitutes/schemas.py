@@ -1,7 +1,13 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field, model_validator
-from typing import List, Optional, Self
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING, Optional, Self
+
+from pydantic import UUID4, BaseModel, ConfigDict, model_validator
+
+
+if TYPE_CHECKING:
+    from auth.schemas import PlayerPublic
+    from competitions.base_schemas import SeasonBase, TournamentBase
 
 
 class SubstituteAvailabilityStatus(StrEnum):
@@ -11,21 +17,24 @@ class SubstituteAvailabilityStatus(StrEnum):
     USED = "USED"
     EXCLUDED = "EXCLUDED"
 
+
 class SubstituteAvailabilityCreate(BaseModel):
     tournament_id: Optional[UUID4]
     season_id: Optional[UUID4]
     is_available: bool = True
     availability_notes: Optional[str]
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_scope(self) -> Self:
         if self.tournament_id is not None and self.season_id is not None:
-            raise ValueError('Cannot be available for both tournament and season')
+            raise ValueError("Cannot be available for both tournament and season")
         return self
+
 
 class SubstituteAvailabilityUpdate(BaseModel):
     is_available: bool
     availability_notes: Optional[str]
+
 
 class SubstituteBase(BaseModel):
     id: UUID4
@@ -38,6 +47,7 @@ class SubstituteBase(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class SubstituteDetailed(SubstituteBase):
     player: "PlayerPublic"

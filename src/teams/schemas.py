@@ -1,8 +1,10 @@
-from pydantic import BaseModel, UUID4, ConfigDict, Field, computed_field
-from typing import List, Optional
 from datetime import datetime
-from teams.base_schemas import RosterStatus, TeamBase, TeamCaptainStatus, TeamHistory
+from typing import Optional
+
+from pydantic import UUID4, BaseModel, ConfigDict, Field, computed_field
+
 from auth.schemas import PlayerPublic
+from teams.base_schemas import RosterStatus, TeamBase, TeamCaptainStatus, TeamHistory
 
 
 # Response Schemas
@@ -14,6 +16,7 @@ class RosterMember(BaseModel):
     season_id: UUID4
     model_config = ConfigDict(from_attributes=True)
 
+
 class TeamCaptainInfo(BaseModel):
     id: UUID4
     player: PlayerPublic
@@ -22,16 +25,19 @@ class TeamCaptainInfo(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class TeamDetailed(TeamBase):
-    rosters: List[RosterMember]
-    captains: List[TeamCaptainInfo]
-    max_roster_size: int = Field(default=99) 
-    #current_elo_history: Optional[TeamELOHistory]
+    rosters: list[RosterMember]
+    captains: list[TeamCaptainInfo]
+    max_roster_size: int = Field(default=99)
+
+    # current_elo_history: Optional[TeamELOHistory]
     @computed_field
     @property
-    def active_roster_count(self) ->int:
-        return len([x for x in self.rosters if  x.status == RosterStatus.ACTIVE])
-    
+    def active_roster_count(self) -> int:
+        return len([x for x in self.rosters if x.status == RosterStatus.ACTIVE])
+
+
 class PlayerRosterHistory(BaseModel):
     current: Optional[TeamHistory]
-    previous: Optional[List[TeamHistory]]
+    previous: Optional[list[TeamHistory]]
