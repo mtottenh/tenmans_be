@@ -45,13 +45,21 @@ class AuditService:
             sig = inspect.signature(func)
             param_names = list(sig.parameters.keys())
             
-            if not session:
-                session_idx = param_names.index('session')
-                if session_idx < len(args):
+            # Determine if this is an instance method (has 'self' as first parameter)
+            is_instance_method = len(param_names) > 0 and param_names[0] == 'self'
+            
+            # If it's an instance method, we need to adjust indices since 'self' isn't in args
+            # The wrapped function receives args without 'self', so we subtract 1 from the index
+            offset = 1 if is_instance_method else 0
+            
+            if not session and 'session' in param_names:
+                session_idx = param_names.index('session') - offset
+                if 0 <= session_idx < len(args):
                     session = args[session_idx]
-            if not actor:
-                actor_idx = param_names.index('actor')
-                if actor_idx < len(args):
+                    
+            if not actor and 'actor' in param_names:
+                actor_idx = param_names.index('actor') - offset
+                if 0 <= actor_idx < len(args):
                     actor = args[actor_idx]
                     
         return session, actor
@@ -452,7 +460,8 @@ class AuditService:
         details_extractor: Optional[Callable] = None,
         id_extractor: Optional[Callable] = None,
         scope_type: Optional[str] = None,
-        grace_period: Optional[timedelta] = None
+        grace_period: Optional[timedelta] = None,
+        entity_param: Optional[str] = None  # Specify which parameter is the entity
     ):
         """Decorator for auditing create/update transactions"""
         def decorator(func: Callable[..., T]) -> Callable[..., T]:
@@ -469,15 +478,22 @@ class AuditService:
                 entity  = None
                 pre_execution_details = None
 
-                # TODO - This will have us default to the first entity that's a SQLModel
-                # Being the one that is stuck in the audit log.
-                # We need to be *very* Careful when using this decorator that 
-                # Decorated functions pass parameters in the correct order if this is the case.
                 # For DELETE and UPDATE, we need entity details before the operation
                 if action_type in [AuditEventType.DELETE, AuditEventType.UPDATE]:
-                    entity = next((arg for arg in args if hasattr(arg, '__table__')), None)
-                    if not entity:
-                        raise ValueError("Entity required for delete/update operations")
+                    if entity_param:
+                        # If entity_param is specified, get the entity from the named parameter
+                        import inspect
+                        sig = inspect.signature(func)
+                        bound_args = sig.bind(self, *args, **kwargs)
+                        bound_args.apply_defaults()
+                        entity = bound_args.arguments.get(entity_param)
+                        if not entity:
+                            raise ValueError(f"Entity parameter '{entity_param}' not found or is None")
+                    else:
+                        # Default to the first entity that's a SQLModel
+                        entity = next((arg for arg in args if hasattr(arg, '__table__')), None)
+                        if not entity:
+                            raise ValueError("Entity required for delete/update operations")
                     context = {'actor': actor, **kwargs}
                     pre_execution_details = cls._extract_details(details_extractor, self, entity, context)
                     entity_id = cls._extract_id(id_extractor, self, entity)
@@ -493,7 +509,7 @@ class AuditService:
                         kwargs['audit_context'] = audit_context
                         if not audit_context.root_event:
                             # TODO - uuid() - we should probaly try to use the UUID of entities that already exist
-                            # We can't for entities that are being breated through.
+                            # We can't for entities that are being created through.
                             await audit_context.create_root_event(action_type, entity_type, actor, "Root Event")
                         result = await func(self, *args, **kwargs)
                         await session.flush()

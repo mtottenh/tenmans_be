@@ -123,7 +123,7 @@ class FixtureService:
         if not tournament:
             raise FixtureServiceError("Tournament not found")
             
-        if tournament.state not in [TournamentState.NOT_STARTED, TournamentState.IN_PROGRESS]:
+        if tournament.status not in [TournamentState.NOT_STARTED, TournamentState.IN_PROGRESS]:
             raise FixtureServiceError("Cannot create fixtures for completed tournaments")
 
         # Validate round through round service

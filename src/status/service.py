@@ -123,11 +123,7 @@ class StatusTransitionService(Generic[T]):
             LOG.info(f"Executing transition pipeline for {entity_type} -> {new_status_enum}")
             try:
                 await pipeline.execute(
-                    entity=entity,
                     old_status=str(current_status),
-                    new_status=str(new_status_enum),
-                    actor=actor,
-                    session=session,
                     audit_context=audit_context,
                     **context
                 )

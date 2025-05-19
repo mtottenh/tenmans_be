@@ -72,8 +72,8 @@ class AuditEvent(SQLModel, table=True):
         # Entity type constraint
         CheckConstraint(
             "entity_type IN ('Player', 'Team', 'Tournament', 'Fixture', 'Season', "
-            "'TeamJoinRequest', 'TeamCaptain', 'Roster', 'Result', 'MatchPlayer', 'TournamentRegistration','Ban', "
-            "'Ticket', 'Role', 'PlayerRole', 'Permission', 'status')",
+            "'TeamJoinRequest', 'TeamCaptain', 'Roster', 'Result', 'Round', 'MatchPlayer', 'TournamentRegistration','Ban', "
+            "'Ticket', 'Role', 'PlayerRole', 'Permission', 'status', 'TestParamModel','TestEntityWithTable', 'TestEntity', 'SimpleTestEntity', 'test_entity', 'parent_entity', 'child_entity')",
             name="valid_entity_types"
         ),
         

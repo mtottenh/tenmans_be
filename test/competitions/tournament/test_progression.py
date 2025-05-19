@@ -22,29 +22,29 @@ class TestTournamentProgression:
         """Test starting a tournament activates first round"""
         # Setup
         tournament = regular_tournament_setup['tournament']
-        tournament.state = TournamentState.REGISTRATION_CLOSED
+        tournament.status = TournamentState.REGISTRATION_CLOSED
         service = TournamentService()
         
         # Generate tournament structure
         tournament = await service.generate_tournament_structure(
-            tournament.id,
+            tournament,
             admin_user,
             session
         )
         
         # Start tournament
         started_tournament = await service.start_tournament(
-            tournament.id,
+            tournament,
             admin_user,  
             session
         )
         
         # Verify tournament state
-        assert started_tournament.state == TournamentState.IN_PROGRESS
+        assert started_tournament.status == TournamentState.IN_PROGRESS
         assert started_tournament.actual_start_date is not None
         
         # Verify first round is active
-        rounds = await service._get_tournament_rounds(tournament.id, session)
+        rounds = await service._get_tournament_rounds(tournament, session)
         first_round = min(rounds, key=lambda r: r.round_number)
         assert first_round.status == "active"
         
@@ -63,7 +63,7 @@ class TestTournamentProgression:
         builder = regular_tournament_setup['builder']
         service = TournamentService()
 
-        tournament.state = TournamentState.IN_PROGRESS
+        tournament.status = TournamentState.IN_PROGRESS
         session.add(tournament)
         await session.commit()
 
@@ -76,16 +76,16 @@ class TestTournamentProgression:
 
         teams = builder.teams[:4]  # First 4 teams
         for i in range(0, len(teams), 2):
-            fixture = await builder.create_fixture_with_results(
+            fixture, results = await builder.create_fixture_with_results(
                 tournament=tournament,
                 round=round,
                 team_1=teams[i],
                 team_2=teams[i+1],
                 team_1_wins=2,  # Win 2-0
                 user=admin_user
-            )[0]
+            )
 
-        updated_tournament = await service.complete_round(
+        await service.complete_round(
             tournament.id,
             1,
             admin_user,
@@ -110,7 +110,7 @@ class TestTournamentProgression:
         builder = knockout_tournament_setup['builder']
         service = TournamentService()
         
-        tournament.state = TournamentState.IN_PROGRESS
+        tournament.status = TournamentState.IN_PROGRESS
         session.add(tournament)
         await session.commit()
 
@@ -145,7 +145,7 @@ class TestTournamentProgression:
             winners.append(teams[i] if i % 4 == 0 else teams[i+1])
 
         # Complete first round
-        updated_tournament = await service.complete_round(
+        await service.complete_round(
             tournament.id,
             1,
             admin_user,
@@ -177,7 +177,7 @@ class TestTournamentProgression:
         builder = regular_tournament_setup['builder']
         service = TournamentService()
 
-        tournament.state = TournamentState.IN_PROGRESS
+        tournament.status = TournamentState.IN_PROGRESS
         session.add(tournament)
         await session.commit()
 
@@ -211,7 +211,7 @@ class TestTournamentProgression:
         )
 
         # Complete round
-        updated_tournament = await service.complete_round(
+        await service.complete_round(
             tournament.id,
             1,
             admin_user,
@@ -241,7 +241,7 @@ class TestTournamentProgression:
         builder = regular_tournament_setup['builder']
         service = TournamentService()
 
-        tournament.state = TournamentState.IN_PROGRESS
+        tournament.status = TournamentState.IN_PROGRESS
         session.add(tournament)
         await session.commit()
 
@@ -289,7 +289,7 @@ class TestTournamentProgression:
         builder = knockout_tournament_setup['builder']
         service = TournamentService()
 
-        tournament.state = TournamentState.IN_PROGRESS
+        tournament.status = TournamentState.IN_PROGRESS
         session.add(tournament)
         await session.commit()
 
@@ -311,15 +311,18 @@ class TestTournamentProgression:
         )
 
         # Complete final round
-        updated_tournament = await service.complete_round(
+        await service.complete_round(
             tournament.id,
             3,
             admin_user,
             session
         )
+        
+        # Refetch tournament to verify completion
+        updated_tournament = await service.get_tournament(tournament.id, session)
 
         # Verify tournament completion
-        assert updated_tournament.state == TournamentState.COMPLETED
+        assert updated_tournament.status == TournamentState.COMPLETED
         assert updated_tournament.actual_end_date is not None
         
         # Verify final standings

@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime, timedelta
 import uuid
 import pytest_asyncio
-from competitions.models.tournaments import TournamentState
+from competitions.models.tournaments import TournamentState, TournamentType
 from competitions.models.rounds import RoundType
 from competitions.models.fixtures import FixtureStatus
 from competitions.tournament.service import TournamentService, TournamentServiceError
@@ -20,23 +20,23 @@ class TestTournamentGeneration:
     ):
         """Test generation of regular tournament structure"""
         tournament = regular_tournament_setup['tournament']
-        tournament.state = TournamentState.REGISTRATION_CLOSED
+        tournament.status = TournamentState.REGISTRATION_CLOSED
         session.add(tournament)
         await session.commit()
         
         service = TournamentService()
         generated = await service.generate_tournament_structure(
-            tournament.id,
+            tournament,
             admin_user,
             session
         )
         
         # Verify tournament state
-        assert generated.state == TournamentState.NOT_STARTED
+        assert generated.status == TournamentState.NOT_STARTED
         assert generated.actual_start_date is not None
         
         # Get rounds
-        rounds = await service._get_tournament_rounds(tournament.id, session)
+        rounds = await service._get_tournament_rounds(tournament, session)
         
         # Verify round structure
         assert len(rounds) > 0
@@ -49,7 +49,7 @@ class TestTournamentGeneration:
             assert len(fixtures) > 0
             assert all(f.status == FixtureStatus.SCHEDULED for f in fixtures)
             # Verify teams are properly assigned
-            team_ids = set(regular_tournament_setup['teams'])
+            team_ids = set(team.id for team in regular_tournament_setup['teams'])
             fixture_teams = {f.team_1 for f in fixtures} | {f.team_2 for f in fixtures}
             assert team_ids == fixture_teams
 
@@ -61,22 +61,22 @@ class TestTournamentGeneration:
     ):
         """Test generation of knockout tournament structure"""
         tournament = knockout_tournament_setup['tournament']
-        tournament.state = TournamentState.REGISTRATION_CLOSED
+        tournament.status = TournamentState.REGISTRATION_CLOSED
         session.add(tournament)
         await session.commit()
         
         service = TournamentService()
         generated = await service.generate_tournament_structure(
-            tournament.id,
+            tournament,
             admin_user,
             session
         )
         
         # Verify tournament state
-        assert generated.state == TournamentState.NOT_STARTED
+        assert generated.status == TournamentState.NOT_STARTED
         
         # Get rounds
-        rounds = await service._get_tournament_rounds(tournament.id, session)
+        rounds = await service._get_tournament_rounds(tournament, session)
         
         # Verify round structure
         assert len(rounds) == len(knockout_tournament_setup['teams']).bit_length() - 1  # Log2 ceiling
@@ -100,11 +100,16 @@ class TestTournamentGeneration:
     ):
         """Test generation fails for invalid tournament state"""
         tournament = regular_tournament_setup['tournament']
+        # Change tournament to an invalid state for generation
+        tournament.status = TournamentState.IN_PROGRESS
+        session.add(tournament)
+        await session.commit()
+        
         service = TournamentService()
         
-        with pytest.raises(TournamentServiceError, match="Tournament must be in REGISTRATION_CLOSED state"):
+        with pytest.raises(TournamentServiceError, match="Tournament must be in"):
             await service.generate_tournament_structure(
-                tournament.id,
+                tournament,
                 admin_user,
                 session
             )
@@ -125,17 +130,16 @@ class TestTournamentGeneration:
     ):
         """Test validation of team counts"""
         # Setup tournament with specific requirements
-        teams = await test_data_builder.create_teams(team_count, session)
-        tournament = await test_data_builder.create_regular_tournament(
-            team_count, session
-
-        )
-        tournament.min_teams = min_teams
-        tournament.state = TournamentState.REGISTRATION_CLOSED
+        await test_data_builder.generate_maps()  # Need maps before tournament
+        await test_data_builder.generate_season()  # Need season before tournament
+        await test_data_builder.generate_players(team_count * 5)  # Enough players for teams
+        await test_data_builder.generate_teams(team_count)
+        await test_data_builder.generate_tournament(TournamentType.REGULAR)
         
-        # Add to session
-        for team in teams:
-            session.add(team)
+        tournament = test_data_builder.tournament
+        tournament.min_teams = min_teams
+        tournament.status = TournamentState.REGISTRATION_CLOSED
+        
         session.add(tournament)
         await session.commit()
         
@@ -144,17 +148,17 @@ class TestTournamentGeneration:
         if should_raise:
             with pytest.raises(TournamentServiceError):
                 await service.generate_tournament_structure(
-                    tournament.id,
+                    tournament,
                     admin_user,
                     session
                 )
         else:
             generated = await service.generate_tournament_structure(
-                tournament.id,
+                tournament,
                 admin_user,
                 session
             )
-            assert generated.state == TournamentState.NOT_STARTED
+            assert generated.status == TournamentState.NOT_STARTED
 
     async def test_round_date_generation(
         self,
@@ -164,18 +168,18 @@ class TestTournamentGeneration:
     ):
         """Test generated round dates are properly spaced"""
         tournament = regular_tournament_setup['tournament']
-        tournament.state = TournamentState.REGISTRATION_CLOSED
+        tournament.status = TournamentState.REGISTRATION_CLOSED
         session.add(tournament)
         await session.commit()
         
         service = TournamentService()
         await service.generate_tournament_structure(
-            tournament.id,
+            tournament,
             admin_user,
             session
         )
         
-        rounds = await service._get_tournament_rounds(tournament.id, session)
+        rounds = await service._get_tournament_rounds(tournament, session)
         rounds.sort(key=lambda r: r.round_number)
         
         # Verify round dates

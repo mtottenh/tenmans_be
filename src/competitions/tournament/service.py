@@ -15,10 +15,12 @@ from competitions.models.linked_tournaments import LinkedTournament
 from competitions.models.tournaments import Tournament, TournamentRegistration, TournamentType, TournamentState
 from competitions.models.rounds import Round
 from competitions.models.fixtures import Fixture
+from competitions.rounds.service import RoundService
 from competitions.tournament.standings import get_standings_calculator
 from maps.schemas import TournamentMapPool
 from matches.service import MatchService
 from status.service import StatusTransitionService
+from status.transition_validator import TransitionError
 from teams.service.team import TeamService
 from teams.models import Team
 from .schemas import RegistrationReviewRequest, RegistrationStatus, RegistrationWithdrawRequest, TournamentBasicUpdate, TournamentConfigUpdate, TournamentCreate, TournamentRegistrationList, TournamentRegistrationRequest, TournamentTeam, TournamentStandings, TournamentWithStats
@@ -26,9 +28,11 @@ from audit.service import AuditService
 from auth.models import Player
 from .generation.strategies import get_generation_strategy, GenerationError
 from .generation.validators import TournamentValidator, ValidationError
+from status.manager.tournament import initialize_tournament_status_manager
+from competitions.rounds.round_winner_service import RoundWinnerService
 import logging
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger('uvicorn.error')
 
 class TournamentServiceError(Exception):
     """Base exception for tournament service errors"""
@@ -42,13 +46,26 @@ class TournamentService:
     def __init__(self,
                  team_service: Optional[TeamService] = None,
                  match_service: Optional[MatchService] = None,
+                 round_service: Optional[RoundService] = None,
                  audit_service: Optional[AuditService] = None,
                  status_transition_service: Optional[StatusTransitionService] = None,
                  validator: Optional[TournamentValidator] = None,
                  ):
         self.audit_service = audit_service or AuditService()
         self.team_service = team_service or TeamService()
+        
+        # Create round service with proper dependency injection
+        self.round_service = round_service or RoundService(
+            audit_service=self.audit_service,
+            status_transition_service=status_transition_service,
+            round_winner_service=RoundWinnerService()
+        )
+        
+        # Initialize status transition service and register tournament manager
         self.status_transition_service = status_transition_service or StatusTransitionService()
+        tournament_status_manager = initialize_tournament_status_manager()
+        self.status_transition_service.register_transition_manager("Tournament", tournament_status_manager)
+        
         self.match_service = match_service or MatchService()
         self.validator = validator or TournamentValidator()
 
@@ -58,10 +75,35 @@ class TournamentService:
             "tournament_id": str(tournament.id),
             "tournament_name": tournament.name,
             "tournament_type": tournament.type,
-            "tournament_state": tournament.state,
+            "tournament_status": tournament.status,
             "season_id": str(tournament.season_id),
             "created_at": tournament.created_at.isoformat() if tournament.created_at else None,
             "updated_at": tournament.updated_at.isoformat() if tournament.updated_at else None
+        }
+    
+    def _next_round_fixtures_audit_details(self, entity_or_result, context: Dict) -> dict:
+        """Extracts audit details from next round fixture generation"""
+        # Handle both pre-execution (Tournament) and post-execution (List[Fixture]) cases
+        if isinstance(entity_or_result, Tournament):
+            # Pre-execution: entity is the tournament
+            tournament = entity_or_result
+            fixtures = None
+        else:
+            # Post-execution: result is the list of fixtures
+            fixtures = entity_or_result
+            # Get the tournament from the context parameters
+            params = context.get('params', {})
+            tournament = params.get('tournament')
+        
+        round_number = context.get('params', {}).get('round_number') if context.get('params') else None
+        
+        return {
+            "tournament_id": str(tournament.id) if tournament else None,
+            "tournament_name": tournament.name if tournament else None,
+            "tournament_type": tournament.type if tournament else None,
+            "round_number": round_number,
+            "fixtures_generated": len(fixtures) if fixtures else 0,
+            "fixture_ids": [str(f.id) for f in fixtures] if fixtures else []
         }
     # Add helper method for audit details
     def _map_pool_audit_details(self, map_pool: TournamentMapPool, context: Dict) -> dict:
@@ -86,21 +128,21 @@ class TournamentService:
             "voted_at": vote.voted_at.isoformat()
         }
     
-    async def change_tournament_state(
+    async def change_tournament_status(
         self,
         tournament: Tournament,
-        new_state: TournamentState,
+        new_status: TournamentState,
         reason: str,
         actor: Player,
         session: AsyncSession,
         entity_metadata: Optional[Dict] = None
     ) -> Tournament:
         """
-        Change a tournament's state with validation and history tracking
+        Change a tournament's status with validation and history tracking
         
         Args:
             tournament: Tournament to update
-            new_state: New state to set
+            new_status: New status to set
             reason: Reason for the change
             actor: User making the change
             entity_metadata: Additional metadata
@@ -108,7 +150,7 @@ class TournamentService:
         """
         return await self.status_transition_service.transition_status(
             entity=tournament,
-            new_status=new_state,
+            new_status=new_status,
             reason=reason,
             actor=actor,
             entity_metadata=entity_metadata,
@@ -134,13 +176,13 @@ class TournamentService:
         """Retrieve all tournaments for a season"""
         stmt = select(Tournament).where(Tournament.season_id == season_id)
         if not include_completed:
-            stmt = stmt.where(Tournament.state != TournamentState.COMPLETED)
+            stmt = stmt.where(Tournament.status != TournamentState.COMPLETED)
         stmt = stmt.order_by(desc(Tournament.created_at))
         result = (await session.execute(stmt)).scalars()
         return result.all()
 
     async def _get_active_tournaments(self, session: AsyncSession) -> List[Tournament]:
-        query = select(Tournament, Team).where(Tournament.state == TournamentState.IN_PROGRESS).where(TournamentRegistration.tournament_id == Tournament.id).where(TournamentRegistration.team_id == Team.id)
+        query = select(Tournament, Team).where(Tournament.status == TournamentState.IN_PROGRESS).where(TournamentRegistration.tournament_id == Tournament.id).where(TournamentRegistration.team_id == Team.id)
         return (await session.execute(query)).scalars().all
 
     async def get_tournaments(
@@ -160,7 +202,7 @@ class TournamentService:
         
         # Apply filters
         if status:
-            query = query.where(Tournament.state.in_(status))
+            query = query.where(Tournament.status.in_(status))
         if season_id:
             query = query.where(Tournament.season_id == season_id)
             
@@ -249,7 +291,7 @@ class TournamentService:
         audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Update tournament details"""
-        if tournament.state != TournamentState.NOT_STARTED:
+        if tournament.status != TournamentState.NOT_STARTED:
             raise TournamentServiceError("Cannot update tournament after it has started")
 
         try:
@@ -278,7 +320,7 @@ class TournamentService:
         session: AsyncSession
     ) -> Tournament:
         """Update tournament configuration settings"""
-        if tournament.state != TournamentState.NOT_STARTED:
+        if tournament.status != TournamentState.NOT_STARTED:
             raise TournamentServiceError("Cannot update configuration after tournament has started")
         
         try:
@@ -367,13 +409,13 @@ class TournamentService:
         audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Cancels a tournament"""
-        if tournament.state == TournamentState.COMPLETED:
+        if tournament.status == TournamentState.COMPLETED:
             raise TournamentServiceError("Cannot cancel a completed tournament")
 
        # Update tournament state - this will trigger the cancellation pipeline
-        tournament = await self.change_tournament_state(
+        tournament = await self.change_tournament_status(
             tournament=tournament,
-            new_state=TournamentState.CANCELLED,
+            new_status=TournamentState.CANCELLED,
             reason=reason,
             actor=actor,
             session=session
@@ -402,27 +444,27 @@ class TournamentService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Tournament",
-        details_extractor=_tournament_audit_details
+        details_extractor=_tournament_audit_details,
+        entity_param="tournament"  # Specify that 'tournament' parameter is the entity
     )
     async def generate_tournament_structure(
         self,
-        tournament_id: uuid.UUID,
+        tournament: Tournament,
         actor: Player,
         session: AsyncSession,
         regenerate: bool = False,
         audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Generate tournament structure including rounds and fixtures"""
-        tournament = await self.get_tournament(tournament_id, session)
         if not tournament:
-            raise TournamentServiceError("Tournament not found")
+            raise TournamentServiceError("Tournament not provided")
             
         # Validate tournament state
         valid_states = [TournamentState.REGISTRATION_CLOSED]
         if regenerate:
             valid_states.append(TournamentState.NOT_STARTED)
             
-        if tournament.state not in valid_states:
+        if tournament.status not in valid_states:
             raise TournamentServiceError(
                 f"Tournament must be in {valid_states} state for generation"
             )
@@ -432,9 +474,9 @@ class TournamentService:
         
         try:
             # Transition to NOT_STARTED with generation context
-            tournament = await self.change_tournament_state(
+            tournament = await self.change_tournament_status(
                 tournament=tournament,
-                new_state=TournamentState.NOT_STARTED,
+                new_status=TournamentState.NOT_STARTED,
                 reason="Generating tournament structure",
                 actor=actor,
                 entity_metadata={"regenerate": regenerate},
@@ -497,23 +539,23 @@ class TournamentService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Tournament",
-        details_extractor=_tournament_audit_details
+        details_extractor=_tournament_audit_details,
+        entity_param="tournament"
     )
     async def start_tournament(
         self,
-        tournament_id: uuid.UUID,
+        tournament: Tournament,
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Start a tournament"""
-        tournament = await self.get_tournament(tournament_id, session)
         if not tournament:
-            raise TournamentServiceError("Tournament not found")
+            raise TournamentServiceError("Tournament not provided")
 
-        if tournament.state != TournamentState.NOT_STARTED:
+        if tournament.status != TournamentState.NOT_STARTED:
             raise TournamentServiceError(
-                "Tournament must be in NOT_STARTED state to begin"
+                "Tournament must be in NOT_STARTED status to begin"
             )
 
         # Get first round
@@ -522,7 +564,7 @@ class TournamentService:
             raise TournamentServiceError("No rounds found for tournament")
 
         # Update tournament state
-        tournament.state = TournamentState.IN_PROGRESS
+        tournament.status = TournamentState.IN_PROGRESS
         tournament.actual_start_date = datetime.now()
         tournament.updated_at = datetime.now()
 
@@ -566,26 +608,23 @@ class TournamentService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Tournament",
-        details_extractor=_tournament_audit_details
+        details_extractor=_next_round_fixtures_audit_details,
+        entity_param="tournament"  # Specify that 'tournament' parameter is the entity
     )
     async def generate_next_round_fixtures(
         self,
-        tournament_id: uuid.UUID,
+        tournament: Tournament,
         round_number: int,
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None
     ) -> List[Fixture]:
         """Generate fixtures for the next round (for knockout tournaments)"""
-        tournament = await self.get_tournament(tournament_id, session)
-        if not tournament:
-            raise TournamentServiceError("Tournament not found")
-            
         if tournament.type != TournamentType.KNOCKOUT and tournament.league_format != LeagueFormat.SWISS:
             raise TournamentServiceError("Only knockout tournaments/swiss leagues generate per-round fixtures")
             
         # Get the round
-        round = await self._get_round_by_number(tournament_id, round_number, session)
+        round = await self._get_round_by_number(tournament.id, round_number, session)
         if not round:
             raise TournamentServiceError(f"Round {round_number} not found")
             
@@ -593,7 +632,7 @@ class TournamentService:
         if round_number == 1:
             raise TournamentServiceError("First round fixtures should be generated with tournament")
             
-        previous_round = await self._get_round_by_number(tournament_id, round_number - 1, session)
+        previous_round = await self._get_round_by_number(tournament.id, round_number - 1, session)
         winners = await self.get_round_winners(previous_round, session)
         
         # Generate fixtures
@@ -621,13 +660,13 @@ class TournamentService:
         audit_context: Optional[AuditContext] = None
     ) -> Tournament:
         """Marks a tournament as completed and triggers completion pipeline"""
-        if tournament.state != TournamentState.IN_PROGRESS:
+        if tournament.status != TournamentState.IN_PROGRESS:
             raise ValueError("Can only complete an in-progress tournament")
 
         # Update tournament state - this will trigger the completion pipeline
-        tournament = await self.change_tournament_state(
+        tournament = await self.change_tournament_status(
             tournament=tournament,
-            new_state=TournamentState.COMPLETED,
+            new_status=TournamentState.COMPLETED,
             reason="Tournament completed",
             actor=actor,
             session=session
@@ -673,7 +712,7 @@ class TournamentService:
         if not tournament:
             raise TournamentServiceError("Tournament not found")
         
-        if tournament.state != TournamentState.NOT_STARTED:
+        if tournament.status != TournamentState.NOT_STARTED:
             raise TournamentServiceError("Map pool can only be created before tournament starts")
         
         # Create the map pool based on selection type
@@ -1014,10 +1053,10 @@ class TournamentService:
             raise RegistrationError("Only team captains can withdraw from tournaments")
             
         # Handle withdrawal based on tournament state
-        if tournament.state == TournamentState.REGISTRATION_OPEN:
+        if tournament.status == TournamentState.REGISTRATION_OPEN:
             # Simple withdrawal before registration closes
             registration.status = RegistrationStatus.WITHDRAWN
-        elif tournament.state in [TournamentState.REGISTRATION_CLOSED, 
+        elif tournament.status in [TournamentState.REGISTRATION_CLOSED, 
                                 TournamentState.IN_PROGRESS]:
             # Withdrawal after registration closes - handle forfeits
             registration.status = RegistrationStatus.WITHDRAWN
@@ -1043,8 +1082,8 @@ class TournamentService:
     ):
         """Validate a registration request"""
         # Check tournament state
-        if tournament.state != TournamentState.REGISTRATION_OPEN:
-            if (tournament.state == TournamentState.REGISTRATION_CLOSED and
+        if tournament.status != TournamentState.REGISTRATION_OPEN:
+            if (tournament.status == TournamentState.REGISTRATION_CLOSED and
                 tournament.allow_late_registration and
                 datetime.now() <= tournament.late_registration_end):
                 pass  # Allow late registration
@@ -1098,15 +1137,28 @@ class TournamentService:
         session: AsyncSession
     ) -> List[Team]:
         """Get all teams registered for the tournament"""
+        # Get the registrations with teams and rosters eagerly loaded
         stmt = select(TournamentRegistration).join(
             Tournament
-        ).where (
-           TournamentRegistration.tournament_id == tournament.id
+        ).where(
+            TournamentRegistration.tournament_id == tournament.id
         ).where(
             TournamentRegistration.status == 'approved'
+        ).options(
+            selectinload(TournamentRegistration.team).selectinload(Team.rosters)
         )
-        result = (await session.execute(stmt)).scalars()
-        return [ x.team for x in result.all()]
+        
+        result = await session.execute(stmt)
+        registrations = result.scalars().all()
+        
+        # Extract teams from registrations
+        teams = [reg.team for reg in registrations]
+        
+        # Load rosters for each team if not already loaded
+        for team in teams:
+            await session.refresh(team, ['rosters'])
+        
+        return teams
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
@@ -1125,19 +1177,31 @@ class TournamentService:
         if not tournament:
             raise TournamentServiceError("Tournament not found")
             
-        if tournament.state != TournamentState.REGISTRATION_OPEN:
+        if tournament.status != TournamentState.REGISTRATION_OPEN:
             raise TournamentServiceError("Tournament registration is not open")
             
         # Transition to REGISTRATION_CLOSED
-        tournament = await self.change_tournament_state(
+        tournament = await self.change_tournament_status(
             tournament=tournament,
-            new_state=TournamentState.REGISTRATION_CLOSED,
+            new_status=TournamentState.REGISTRATION_CLOSED,
             reason="Closing tournament registration",
             actor=actor,
             session=session
         )
         
         return tournament
+
+    async def _get_tournament_rounds(
+        self,
+        tournament: Tournament,
+        session: AsyncSession
+    ) -> List[Round]:
+        """Get all rounds for a tournament"""
+        stmt = select(Round).where(
+            Round.tournament_id == tournament.id
+        ).order_by(Round.round_number)
+        result = (await session.execute(stmt)).scalars()
+        return result.all()
 
     async def _get_round_by_number(
         self,
@@ -1222,7 +1286,7 @@ class TournamentService:
             id=tournament.id,
             name=tournament.name,
             type=tournament.type,
-            state=tournament.state,
+            state=tournament.status,
             season_id=tournament.season_id,
             max_team_size=tournament.max_team_size,
             created_at=tournament.created_at,
@@ -1263,14 +1327,62 @@ class TournamentService:
         result = (await session.execute(stmt)).scalars()
         return result.all()
 
+    async def _check_tournament_completion(
+        self,
+        tournament: Tournament,
+        actor: Player,
+        session: AsyncSession
+    ) -> None:
+        """Check if all rounds are completed and complete the tournament if needed"""
+        # Get all rounds
+        rounds = await self._get_tournament_rounds(tournament, session)
+        
+        # If all rounds are completed, complete the tournament
+        if all(r.status == "completed" for r in rounds):
+            LOG.info(f"All rounds completed for tournament {tournament.id} - completing tournament")
+            await self.complete_tournament(tournament, actor, session)
+    
+    async def complete_round(
+        self,
+        tournament_id: uuid.UUID,
+        round_number: int,
+        actor: Player,
+        session: AsyncSession
+    ):
+        """Facade method to complete a round - delegates to RoundService
+        
+        This is a facade method that doesn't need its own audit as the 
+        RoundService.complete_round already handles auditing.
+        """
+        # Get the tournament and round
+        tournament = await self.get_tournament(tournament_id, session)
+        if not tournament:
+            raise TournamentServiceError(f"Tournament {tournament_id} not found")
+            
+        round = await self._get_round_by_number(tournament_id, round_number, session)
+        if not round:
+            raise TournamentServiceError(f"Round {round_number} not found for tournament {tournament_id}")
+            
+        # Delegate to RoundService (which has its own auditing)
+        try:
+            await self.round_service.complete_round(round, actor, session)
+        except TransitionError as e:
+            # Re-raise TransitionError as TournamentServiceError for backward compatibility
+            raise TournamentServiceError(str(e))
+        
+        # Check if this was the final round and tournament should be completed
+        await self._check_tournament_completion(tournament, actor, session)
+
 
 def create_tournament_service(team_svc: Optional[TeamService] = None, 
                               match_svc: Optional[MatchService] = None, 
+                              round_svc: Optional[RoundService] = None,
                               audit_svc: Optional[AuditService] = None,
                               status_svc: Optional[StatusTransitionService] = None,
                               ):
     team_service = team_svc or TeamService()
     match_service = match_svc or MatchService()
+    round_service = round_svc or RoundService()
     audit_service = audit_svc or AuditService()
     status_service = status_svc or StatusTransitionService()
-    return TournamentService(team_service, match_service, audit_service, status_service)
+    return TournamentService(team_service, match_service, round_service, audit_service, status_service)

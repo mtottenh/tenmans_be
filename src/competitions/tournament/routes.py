@@ -424,8 +424,13 @@ async def generate_tournament_structure(
 ):
     """Generate tournament structure including rounds and fixtures"""
     try:
+        # First get the tournament
+        tournament = await tournament_service.get_tournament(tournament_id, session)
+        if not tournament:
+            raise HTTPException(status_code=404, detail="Tournament not found")
+            
         tournament = await tournament_service.generate_tournament_structure(
-            tournament_id,
+            tournament,
             current_player,
             session
         )
@@ -450,8 +455,13 @@ async def start_tournament(
 ):
     """Start a tournament"""
     try:
+        # First get the tournament
+        tournament = await tournament_service.get_tournament(tournament_id, session)
+        if not tournament:
+            raise HTTPException(status_code=404, detail="Tournament not found")
+            
         return await tournament_service.start_tournament(
-            tournament_id,
+            tournament,
             current_player,
             session
         )

@@ -54,27 +54,31 @@ class RoundCompleteStep(TransitionStep):
             
             # Generate fixtures for knockout tournaments
             if tournament.type == TournamentType.KNOCKOUT:
-                from competitions.tournament.service import TournamentService
-                tournament_service: TournamentService = context.get('tournament_service')
+                entity_metadata = context.get('entity_metadata', {})
+                round_winner_service = entity_metadata.get('round_winner_service')
                 
-                if tournament_service:
-                    # Get winners from completed round
-                    winning_teams = await tournament_service.get_round_winners(entity, session)
-                    
-                    if len(winning_teams) >= 2:
-                        # Generate fixtures for next round
-                        from competitions.tournament.generation.strategies import get_generation_strategy
-                        strategy = get_generation_strategy(tournament.type)
-                        fixtures = await strategy.generate_fixtures(
-                            tournament,
-                            next_round,
-                            winning_teams,
-                            session
-                        )
-                        session.add_all(fixtures)
-                    else:
-                        # Tournament should be completed - trigger completion
-                        LOG.info(f"Tournament {tournament.id} should be completed - final round")
+                if not round_winner_service:
+                    # Fallback to creating instance if not provided
+                    from competitions.rounds.round_winner_service import RoundWinnerService
+                    round_winner_service = RoundWinnerService()
+                
+                # Get winners from completed round
+                winning_teams = await round_winner_service.get_round_winners(entity, session)
+                
+                if len(winning_teams) >= 2:
+                    # Generate fixtures for next round
+                    from competitions.tournament.generation.strategies import get_generation_strategy
+                    strategy = get_generation_strategy(tournament)
+                    fixtures = await strategy.generate_fixtures(
+                        tournament,
+                        next_round,
+                        winning_teams,
+                        session
+                    )
+                    session.add_all(fixtures)
+                else:
+                    # Tournament should be completed - just log it
+                    LOG.info(f"Tournament {tournament.id} should be completed - final round")
         else:
             # No more rounds - tournament might need completion
             LOG.info(f"No more rounds for tournament {tournament.id} after round {entity.round_number}")

@@ -37,7 +37,7 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id")))
     name: str
     type: TournamentType = Field(sa_column=sa.Column(sa.Enum(TournamentType)))
-    state: TournamentState = Field(sa_column=sa.Column(sa.Enum(TournamentState)))
+    status: TournamentState = Field(sa_column=sa.Column(sa.Enum(TournamentState)))
     
     # Game mode and league format
     game_mode: GameMode = Field(

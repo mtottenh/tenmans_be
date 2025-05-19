@@ -14,12 +14,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from competitions.models.fixtures import Fixture, FixtureStatus
 from competitions.models.rounds import Round
 from enum import StrEnum
+import logging
 class RoundStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
-
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
 class AllFixturesCompleteValidator(TransitionValidator):
     """Validates that all fixtures in the round are completed"""
     async def validate(
@@ -65,11 +67,13 @@ class TournamentAdminValidator(TransitionValidator):
         actor = context["actor"]
         session = context["session"]
         round_entity = context["entity"]
-        
+        logger.info(f"PermissionService: {permission_service}, actor: {actor}")
+        perms = await permission_service.get_player_permissions(actor, session)
+        logger.info(f"Permissions: {perms}")
         # Check tournament management permissions
         has_permission = await permission_service.verify_permissions(
             actor,
-            ["manage_tournament"],
+            ["manage_tournaments"],
             PermissionScope(ScopeType.TOURNAMENT, round_entity.tournament_id),
             session
         )

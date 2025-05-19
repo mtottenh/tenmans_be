@@ -129,8 +129,9 @@ def override_dependencies():
 
 # Admin user fixture
 @pytest_asyncio.fixture
-async def admin_user(session):
+async def admin_user(session, test_roles, system_user):
     from auth.models import Player, AuthType, PlayerStatus
+    from auth.schemas import ScopeType
     admin = Player(
         name="Test Admin",
         steam_id="76561197971721556",
@@ -140,6 +141,17 @@ async def admin_user(session):
     session.add(admin)
     await session.commit()
     await session.refresh(admin)
+    
+    # Assign admin role to give the test admin proper permissions
+    await role_service.assign_role(
+        admin,
+        test_roles['admin'],
+        ScopeType.GLOBAL,
+        None,
+        actor=system_user,
+        session=session
+    )
+    
     return admin
 
 

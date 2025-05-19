@@ -10,14 +10,17 @@ import logging
 from faker import Faker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from auth.models import Player, AuthType
 from auth.schemas import PlayerStatus
 from teams.models import Team, TeamCaptain, Roster
+from teams.base_schemas import RosterStatus
 from competitions.models.seasons import Season, SeasonState
 from competitions.models.tournaments import Tournament, TournamentType, TournamentState
 from competitions.models.rounds import Round, RoundType
 from competitions.models.fixtures import Fixture, FixtureStatus
+from competitions.map_pool.models import TournamentMapPool, MapPoolMap, MapPoolSelectionType, MapPoolStatus
 from matches.models import Result, ConfirmationStatus, MatchFormat
 from maps.models import Map
 
@@ -55,6 +58,7 @@ class TestDataBuilder:
         self.fixtures: List[Fixture] = []
         self.results: List[Result] = []
         self.rosters: List[Roster] = []
+    
     async def generate_all(
         self,
         num_players: int = 50,
@@ -90,13 +94,13 @@ class TestDataBuilder:
         """Generate test players with realistic data"""
         logger.info(f"Generating {count} players...")
         
-        for _ in range(count):
+        for i in range(count):
             # Generate a random Steam64 ID
             steam_suffix = ''.join(random.choices('0123456789', k=11))
             steam_id = f"{TestDataConfig.STEAM_ID_PREFIX}{steam_suffix}"
             
             player = Player(
-                name=fake.user_name(),
+                name=f"{fake.user_name()}_{i}",  # Add index to ensure uniqueness
                 steam_id=steam_id,
                 auth_type=AuthType.STEAM,
                 current_elo=random.randint(
@@ -115,7 +119,7 @@ class TestDataBuilder:
         
         await self.session.commit()
         for player in self.players:
-            self.session.refresh(player)
+            await self.session.refresh(player)
         logger.info(f"Generated {len(self.players)} players")
 
     async def generate_teams(self, count: int):
@@ -127,8 +131,10 @@ class TestDataBuilder:
         
         for i in range(count):
             # Create team
+            team_word = fake.word().title()
+            # Add a unique number to ensure uniqueness
             team = Team(
-                name=f"Team {fake.unique.word().title()}",
+                name=f"Team {team_word} {i}",
                 created_at=fake.date_time_between(
                     start_date='-6m',
                     end_date='now'
@@ -166,28 +172,42 @@ class TestDataBuilder:
                         team_id=team.id,
                         player_id=player.id,
                         season_id=self.season.id,
-                        pending=False
+                        status=RosterStatus.ACTIVE
                     )
                     self.session.add(roster)
                     self.rosters.append(roster)
             self.teams.append(team)
 
         await self.session.commit()
-        for team in self.teams:
-            await self.session.refresh(team)
-            
-        for rosters in self.rosters:
-            await self.session.refresh(roster)
-
         
+        # Reload teams with their relationships
+        loaded_teams = []
+        for team in self.teams:
+            loaded_team = await self._load_team_with_relations(team.id)
+            loaded_teams.append(loaded_team)
+        
+        self.teams = loaded_teams
         logger.info(f"Generated {len(self.teams)} teams")
+
+    async def _load_team_with_relations(self, team_id: uuid.UUID) -> Team:
+        """Load a team with all its relationships using selectinload"""
+        stmt = (
+            select(Team)
+            .where(Team.id == team_id)
+            .options(
+                selectinload(Team.rosters).selectinload(Roster.player),
+                selectinload(Team.captains).selectinload(TeamCaptain.player)
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
     async def generate_season(self):
         """Generate a test season"""
         logger.info("Generating season...")
         
         self.season = Season(
-            name=f"Season {fake.unique.random_int(min=1, max=10)}",
+            name=f"Season {random.randint(1, 100)}_{fake.word()}",
             state=SeasonState.IN_PROGRESS,
             created_at=datetime.now() - timedelta(days=30)
         )
@@ -218,21 +238,30 @@ class TestDataBuilder:
                 "match_format": "bo1"
             }
         
+        # Calculate tournament duration based on type and number of teams
+        if tournament_type == TournamentType.KNOCKOUT:
+            # For knockout, calculate number of rounds needed
+            import math
+            num_rounds = math.ceil(math.log2(len(self.teams)))
+            tournament_duration = num_rounds * TestDataConfig.ROUND_INTERVAL_DAYS + 7  # Extra buffer
+        else:
+            # For regular tournaments, use default duration
+            tournament_duration = 100
+            
         tournament = Tournament(
             season_id=self.season.id,
             name=f"{self.season.name} {'Regular Season' if tournament_type == TournamentType.REGULAR else 'Knockout'}",
             type=tournament_type,
-            state=TournamentState.REGISTRATION_CLOSED,
+            status=TournamentState.REGISTRATION_CLOSED,
             min_teams=2,
             max_teams=len(self.teams),
             max_team_size=TestDataConfig.MAX_PLAYERS_PER_TEAM,
             min_team_size=TestDataConfig.MIN_PLAYERS_PER_TEAM,
-            registration_start=datetime.now() + timedelta(days=25),
-            registration_end=datetime.now() + timedelta(days=30),
-            scheduled_start_date=datetime.now() + timedelta(days=35),
-            scheduled_end_date=datetime.now() + timedelta(days=50),
-            format_config=format_config,
-            map_pool=[str(map_obj.id) for map_obj in self.maps]
+            registration_start=datetime.now() - timedelta(days=10),  # Set past dates
+            registration_end=datetime.now() - timedelta(days=5),
+            scheduled_start_date=datetime.now() + timedelta(days=1),
+            scheduled_end_date=datetime.now() + timedelta(days=tournament_duration),
+            format_config=format_config
         )
         
         self.session.add(tournament)
@@ -240,7 +269,46 @@ class TestDataBuilder:
         await self.session.refresh(tournament)
         self.tournament = tournament
         
-        logger.info(f"Generated tournament: {tournament.name}")
+        # Register all teams with the tournament
+        from competitions.models.tournaments import TournamentRegistration, RegistrationStatus
+        for team in self.teams:
+            # Get the first captain from the captains list
+            captain = team.captains[0] if team.captains else None
+            if not captain:
+                raise ValueError(f"Team {team.name} has no captains")
+                
+            registration = TournamentRegistration(
+                tournament_id=tournament.id,
+                team_id=team.id,
+                status=RegistrationStatus.APPROVED,
+                requested_by=captain.player_id,
+                requested_at=datetime.now() - timedelta(days=6),
+                reviewed_by=captain.player_id,  # Auto-approved
+                reviewed_at=datetime.now() - timedelta(days=6)
+            )
+            self.session.add(registration)
+        
+        await self.session.commit()
+        
+        # Create map pool for the tournament
+        map_pool = TournamentMapPool(
+            tournament_id=tournament.id,
+            selection_type=MapPoolSelectionType.ADMIN_DEFINED,
+            status=MapPoolStatus.FINALIZED,
+            finalized_at=datetime.now()
+        )
+        self.session.add(map_pool)
+        await self.session.flush()
+        
+        # Add maps to the pool
+        pool_maps = [
+            MapPoolMap(pool_id=map_pool.id, map_id=map_obj.id)
+            for map_obj in self.maps
+        ]
+        self.session.add_all(pool_maps)
+        await self.session.commit()
+        
+        logger.info(f"Generated tournament: {tournament.name} with {len(self.teams)} teams registered and {len(self.maps)} maps in pool")
         
     async def create_round(
         self,
@@ -434,8 +502,10 @@ async def regular_tournament_setup(
     await test_data_builder.generate_season() # We probably need to make a 'with season' v.s. without seson setup to test roster joining flows
     await test_data_builder.generate_players(40)  # Enough for 8 teams of 5
     await test_data_builder.generate_teams(8)
-
     await test_data_builder.generate_tournament(tournament_type=TournamentType.REGULAR)
+    
+    # Reload tournament with proper relationships
+    await session.refresh(test_data_builder.tournament)
     
     return {
         'tournament': test_data_builder.tournament,
@@ -451,10 +521,13 @@ async def knockout_tournament_setup(
     """Setup a knockout tournament with teams"""
     # Generate base data
     await test_data_builder.generate_maps()
+    await test_data_builder.generate_season()  # Season must be created before teams for rosters to be created
     await test_data_builder.generate_players(40)
     await test_data_builder.generate_teams(8)
-    await test_data_builder.generate_season()
     await test_data_builder.generate_tournament(tournament_type=TournamentType.KNOCKOUT)
+    
+    # Reload tournament with proper relationships
+    await session.refresh(test_data_builder.tournament)
     
     return {
         'tournament': test_data_builder.tournament,

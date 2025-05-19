@@ -32,7 +32,7 @@ class CaptainService:
     ):
         self.audit_service = audit_service or create_audit_service()
         self.permission_service = permission_service or create_permission_service(self.audit_service)
-        self.role_service = role_service or create_role_service(self.role_service)
+        self.role_service = role_service or create_role_service(self.permission_service)
         self.status_transition_service = status_transition_service or create_status_transition_service(
             self.audit_service,
             self.permission_service

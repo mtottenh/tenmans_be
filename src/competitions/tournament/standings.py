@@ -74,7 +74,7 @@ class StandingsCalculator(ABC):
         return calculator
 
 def get_standings_calculator(tournament_type: TournamentType):
-    return StandingsCalculator().get_calculator(tournament_type)
+    return StandingsCalculator.get_calculator(tournament_type)
 
 class RegularStandingsCalculator(StandingsCalculator):
     """Calculator for regular (round-robin/league) tournament standings"""
@@ -273,7 +273,7 @@ class KnockoutStandingsCalculator(StandingsCalculator):
             final_fixtures = await self._get_round_fixtures(final_round.id, session)
             if final_fixtures:
                 final_fixture = final_fixtures[0]
-                winner_id = await fixture.get_winner_id(session)
+                winner_id = await final_fixture.get_winner_id(session)
                 if winner_id:
                     team_stats[winner_id]['final_position'] = current_position
                     team_stats[winner_id]['status'] = 'winner'
@@ -302,12 +302,13 @@ class KnockoutStandingsCalculator(StandingsCalculator):
                 matches_won=stats['matches_won'],
                 matches_lost=stats['matches_lost'],
                 points=stats['points'],
-                status=stats['status']
+                status=stats['status'],
+                final_position=stats['final_position']
             ))
         
         # Sort by final position
         tournament_teams.sort(key=lambda x: (
-            x.final_position if hasattr(x, 'final_position') and x.final_position else float('inf')
+            x.final_position if x.final_position is not None else float('inf')
         ))
         
         # Get current round

@@ -233,6 +233,7 @@ class TournamentTeam(BaseModel):
     matches_lost: int
     points: int
     status: str  # "active", "eliminated", "qualified", etc.
+    final_position: Optional[int] = None  # Final position in the tournament (if completed)
 
     model_config = ConfigDict(from_attributes=True)
 

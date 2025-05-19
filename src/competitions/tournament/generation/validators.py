@@ -93,7 +93,7 @@ class TournamentValidator:
             if active_roster_count < tournament.min_team_size:
                 raise ValidationError(
                     f"Team {team.name} does not meet minimum roster size "
-                    f"of {tournament.min_team_size}"
+                    f"of {tournament.min_team_size} (has {active_roster_count} active players)"
                 )
                 
     @staticmethod
