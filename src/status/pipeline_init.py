@@ -8,6 +8,7 @@ from status.transition_steps.team import (
     TeamCaptainDeactivateStep,
     TeamTournamentRegistrationStep
 )
+from status.transition_steps.team_permissions import TeamCaptainPermissionRevokeStep
 from status.transition_steps.team_suspension import (
     TeamCaptainTemporaryStep,
     TeamFixtureRescheduleStep,
@@ -17,17 +18,24 @@ from teams.base_schemas import TeamStatus
 
 LOG = logging.getLogger('uvicorn.error')
 
-def initialize_team_status_pipelines(status_transition_service) -> None:
+def initialize_team_status_pipelines(status_transition_service, **kwargs) -> None:
     """Initialize all team status transition pipelines"""
     LOG.info("Initializing team status transition pipelines")
+    
+    # Get required services from kwargs
+    permission_service = kwargs.get('permission_service')
+    role_service = kwargs.get('role_service')
     
     # Team disbandment pipeline
     team_disband_pipeline = TransitionPipeline([
         TeamFixtureForfeitStep(),
         TeamRosterDeactivateStep(),
         TeamCaptainDeactivateStep(),
-        TeamTournamentRegistrationStep()
+        TeamTournamentRegistrationStep(),
+        TeamCaptainPermissionRevokeStep(permission_service, role_service) if permission_service and role_service else None
     ])
+    # Filter out None values
+    team_disband_pipeline.steps = [step for step in team_disband_pipeline.steps if step is not None]
     
     # Team suspension pipeline
     team_suspend_pipeline = TransitionPipeline([
@@ -235,12 +243,12 @@ def initialize_round_status_pipelines(status_transition_service) -> None:
     )
     
     LOG.info("Round status transition pipelines initialized")
-def initialize_all_pipelines(status_transition_service) -> None:
+def initialize_all_pipelines(status_transition_service, **kwargs) -> None:
     """Initialize all status transition pipelines"""
     LOG.info("Initializing all status transition pipelines")
     
-    # Initialize team pipelines
-    initialize_team_status_pipelines(status_transition_service)
+    # Initialize team pipelines with additional services
+    initialize_team_status_pipelines(status_transition_service, **kwargs)
     
     # Initialize tournament pipelines
     initialize_tournament_status_pipelines(status_transition_service)

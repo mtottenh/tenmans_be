@@ -36,7 +36,7 @@ class TestAuditTournament(SQLModel, table=True):
         sa_column=Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     )
     name: str
-    state: str = Field(default="NOT_STARTED")
+    status: str = Field(default="NOT_STARTED")
 
 
 class ComparisonTestService:

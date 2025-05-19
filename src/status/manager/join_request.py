@@ -103,6 +103,32 @@ class NoExistingTeamValidator(TransitionValidator):
             raise TransitionError("Player is already on a team this season")
         return True
 
+class NoDuplicateRequestValidator(TransitionValidator):
+    """Validates that player doesn't already have a pending request for the team"""
+    async def validate(
+        self,
+        current_status: JoinRequestStatus,
+        new_status: JoinRequestStatus,
+        context: Dict[str, Any]
+    ) -> bool:
+        if current_status is not None:  # Only validate for new requests
+            return True
+            
+        session = context.get('session')
+        join_request: TeamJoinRequest = context.get('entity')
+        
+        # Check for existing pending requests
+        stmt = select(TeamJoinRequest).where(
+            TeamJoinRequest.player_id == join_request.player_id,
+            TeamJoinRequest.team_id == join_request.team_id,
+            TeamJoinRequest.season_id == join_request.season_id,
+            TeamJoinRequest.status == JoinRequestStatus.PENDING
+        )
+        result = (await session.execute(stmt)).scalars()
+        if result.first():
+            raise TransitionError("Player already has a pending request for this team")
+        return True
+
 def initialize_join_request_manager() -> StatusTransitionManager:
     """Initialize the join request status transition manager with rules"""
     manager = StatusTransitionManager(
@@ -117,7 +143,7 @@ def initialize_join_request_manager() -> StatusTransitionManager:
     manager.add_rule(StatusTransitionRule(
         from_status=None,
         to_status={JoinRequestStatus.PENDING},
-        validators=[*common_validators, NoExistingTeamValidator()]
+        validators=[*common_validators, NoExistingTeamValidator(), NoDuplicateRequestValidator()]
     ))
     
     # Rules for pending requests

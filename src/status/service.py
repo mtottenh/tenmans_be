@@ -212,7 +212,8 @@ def create_status_transition_service(
 
 def create_enhanced_status_transition_service(
     audit_service: Optional[AuditService] = None,
-    permission_service: Optional[PermissionService] = None
+    permission_service: Optional[PermissionService] = None,
+    role_service: Optional['RoleService'] = None
 ) -> StatusTransitionService:
     """
     Create and configure an enhanced StatusTransitionService with pipeline support
@@ -223,6 +224,7 @@ def create_enhanced_status_transition_service(
     Args:
         audit_service: Optional audit service instance
         permission_service: Optional permission service instance
+        role_service: Optional role service instance
         
     Returns:
         Fully configured StatusTransitionService with pipeline support
@@ -230,9 +232,19 @@ def create_enhanced_status_transition_service(
     # Create the base service
     audit_service = audit_service or create_audit_service()
     permission_service = permission_service or create_permission_service(audit_service)
+    
+    # Create role service if not provided
+    if not role_service:
+        from auth.service.role import create_role_service
+        role_service = create_role_service(permission_service)
+    
     service = create_status_transition_service(audit_service, permission_service)
     
-    # Extend with pipeline functionality
-    enhanced_service = extend_status_transition_service(service)
+    # Extend with pipeline functionality and pass additional services
+    enhanced_service = extend_status_transition_service(
+        service, 
+        permission_service=permission_service,
+        role_service=role_service
+    )
     
     return enhanced_service

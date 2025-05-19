@@ -42,7 +42,7 @@ async def test_duplicate_join_requests(
     )
     
     # Attempt duplicate request
-    with pytest.raises(ValueError, match="already has a pending request"):
+    with pytest.raises(TransitionError, match="Player already has a pending request for this team"):
         await join_request_service.create_request(
             player=player,
             team=team,

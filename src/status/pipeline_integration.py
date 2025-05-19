@@ -14,7 +14,7 @@ from status.pipeline_init import initialize_all_pipelines
 LOG = logging.getLogger('uvicorn.error')
 T = TypeVar('T')
 
-def extend_status_transition_service(status_transition_service):
+def extend_status_transition_service(status_transition_service, **kwargs):
     """
     Extend the StatusTransitionService with pipeline functionality
     
@@ -23,8 +23,8 @@ def extend_status_transition_service(status_transition_service):
     """
     LOG.info("Extending StatusTransitionService with pipeline functionality")
     
-    # Initialize all pipeline steps
-    initialize_all_pipelines(status_transition_service)
+    # Initialize all pipeline steps with additional services
+    initialize_all_pipelines(status_transition_service, **kwargs)
     
     LOG.info("StatusTransitionService extended with pipeline functionality")
     return status_transition_service

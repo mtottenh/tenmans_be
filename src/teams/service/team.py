@@ -13,7 +13,7 @@ from auth.service.permission import PermissionService
 from competitions.models.tournaments import RegistrationStatus, TournamentRegistration
 from competitions.season.service import SeasonService
 from status.manager.team import initialize_team_status_manager
-from status.service import StatusTransitionService
+from status.service import StatusTransitionService, create_enhanced_status_transition_service
 from teams.models import Team, TeamCaptain, Roster, TeamStatus
 from teams.schemas import PlayerRosterHistory, TeamHistory, TeamDetailed
 from teams.base_schemas import RecruitmentStatus, RosterStatus, TeamCaptainStatus, TeamUpdate
@@ -44,7 +44,7 @@ class TeamService:
         self.roster_service = roster_service or RosterService(audit_service)
 
         # Initialize status transition service and manager
-        self.status_transition_service = status_transition_service or StatusTransitionService()
+        self.status_transition_service = status_transition_service or create_enhanced_status_transition_service()
         team_status_manager = initialize_team_status_manager()
         self.status_transition_service.register_transition_manager("Team", team_status_manager)
 
@@ -386,7 +386,8 @@ class TeamService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Team",
-        details_extractor=_team_audit_details
+        details_extractor=_team_audit_details,
+        entity_param="team"
     )
     async def update_team(
         self,
@@ -448,7 +449,8 @@ class TeamService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Team",
-        details_extractor=_team_audit_details
+        details_extractor=_team_audit_details,
+        entity_param="team"  # Specify that 'team' parameter is the entity
     )
     async def disband_team(
         self,
@@ -494,7 +496,8 @@ class TeamService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Team",
-        details_extractor=_team_audit_details
+        details_extractor=_team_audit_details,
+        entity_param="team"
     )
     async def suspend_team(
         self,
@@ -532,7 +535,8 @@ class TeamService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Team",
-        details_extractor=_team_audit_details
+        details_extractor=_team_audit_details,
+        entity_param="team"
     )
     async def reactivate_team(
         self,
@@ -570,7 +574,8 @@ class TeamService:
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
         entity_type="Team",
-        details_extractor=_team_audit_details
+        details_extractor=_team_audit_details,
+        entity_param="team"
     )
     async def archive_team(
         self,
@@ -693,6 +698,6 @@ def create_team_service(audit_service: Optional[AuditService],
     roster_service = roster_service or RosterService(audit_service, season_service)
     captain_service = captain_service or CaptainService()
     permission_service = permission_service or PermissionService(audit_service)
-    status_transition_service = status_transition_service or StatusTransitionService(audit_service, permission_service)
+    status_transition_service = status_transition_service or create_enhanced_status_transition_service(audit_service, permission_service)
     
     return TeamService(season_service, audit_service, captain_service, roster_service, status_transition_service)

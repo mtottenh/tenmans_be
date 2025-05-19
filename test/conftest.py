@@ -313,7 +313,7 @@ async def test_players(
     
     # Create regular player
     regular_user = await auth_service.create_player_with_email(
-        PlayerEmailCreate(name="regular_user",email="regular_user@gmail.com", password="abcdefgg1234",steam_id="12345789",submitted_evidence=".."),
+        PlayerEmailCreate(name="regular_user",email="regular_user@gmail.com", password="abcdefgg1234",steam_id="12345789",submitted_evidence=None),
         actor=system_user,
         session=session
     )
@@ -329,7 +329,7 @@ async def test_players(
     
     # Create another regular player
     another_user = await auth_service.create_player_with_email(
-        PlayerEmailCreate(name="another_user",email="another_user@gmail.com", password="abcdefg1234",steam_id="12345",submitted_evidence=".."),
+        PlayerEmailCreate(name="another_user",email="another_user@gmail.com", password="abcdefg1234",steam_id="12345",submitted_evidence=None),
         actor=system_user,
         session=session
     )
@@ -345,7 +345,7 @@ async def test_players(
     
     # Create admin player
     admin_user = await auth_service.create_player_with_email(
-       PlayerEmailCreate(name="admin_user",email="admin_user@gmail.com", password="abcdefgg1234",steam_id="123097845",submitted_evidence=".."),
+       PlayerEmailCreate(name="admin_user",email="admin_user@gmail.com", password="abcdefgg1234",steam_id="123097845",submitted_evidence=None),
         actor=system_user,
         session=session
     )
@@ -358,6 +358,29 @@ async def test_players(
         session=session
     )
     players['admin'] = admin_user
+    
+    # Create additional players for team tests requiring 5+ members
+    for i in range(3, 8):  # Create players 3 through 7
+        extra_player = await auth_service.create_player_with_email(
+            PlayerEmailCreate(
+                name=f"player_{i}",
+                email=f"player_{i}@gmail.com",
+                password="abcdefgg1234",
+                steam_id=f"1000000{i}",
+                submitted_evidence=None
+            ),
+            actor=system_user,
+            session=session
+        )
+        await role_service.assign_role(
+            extra_player,
+            test_roles['user'],
+            ScopeType.GLOBAL,
+            None,
+            actor=system_user,
+            session=session
+        )
+        players[f'player_{i}'] = extra_player
     
     return players
 

@@ -137,13 +137,14 @@ class IdentityService:
 
         # Create player
         hashed_password = self.get_password_hash(player_data.password)
-        player_dict = player_data.model_dump(exclude={'password'})
+        player_dict = player_data.model_dump(exclude={'password', 'submitted_evidence'})
         
         player = Player(
             **player_dict,
             password_hash=hashed_password,
             auth_type=AuthType.EMAIL,
-            status=PlayerStatus.ACTIVE
+            status=PlayerStatus.ACTIVE,
+            verification_evidence=player_data.submitted_evidence
         )
         
         session.add(player)
