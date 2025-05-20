@@ -8,21 +8,29 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install system dependencies and uv
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     coreutils \
     netcat-traditional \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+RUN echo "Installing UV:"
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Copy pyproject.toml file
 COPY pyproject.toml .
 COPY README.md .
+COPY uv.lock .
+
 # Install dependencies based on build argument
 ARG INSTALL_DEV=false
-RUN  if [ "${INSTALL_DEV}" = "true" ]; then pip install --no-cache-dir .[test,dev]; else pip install --no-cache-dir . ; fi
-
+RUN if [ "${INSTALL_DEV}" = "true" ]; then \
+        /root/.local/bin/uv pip install --system --no-cache .[test,dev]; \
+    else \
+        /root/.local/bin/uv pip install --system --no-cache .; \
+    fi
 
 # Create directories for storing assets
 RUN mkdir -p logo_store map_store

@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Any
 
 from sqlmodel import select
-
+from sqlalchemy.orm import selectinload
 from auth.schemas import ScopeType
 from auth.service.permission import PermissionScope, PermissionService
 from competitions.models.fixtures import Fixture, FixtureStatus

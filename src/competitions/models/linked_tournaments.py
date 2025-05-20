@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import JSON, TIMESTAMP, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
-
+from db.models import created_at_field, updated_at_field
 
 if TYPE_CHECKING:
     from competitions.models.tournaments import Tournament
@@ -41,7 +41,7 @@ class LinkedTournament(SQLModel, table=True):
         },
     )
 
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     # Relationships
     source_tournament: "Tournament" = Relationship(

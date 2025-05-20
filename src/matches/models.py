@@ -8,7 +8,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import JSON, TIMESTAMP, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
 
-from db.models import created_at_field, updated_at_field, timestamp_column
+from db.models import created_at_field, enum_column, timestamp_column, updated_at_field
 from utils.datetime import now_utc
 
 
@@ -63,7 +63,7 @@ class Result(SQLModel, table=True):
         sa_column=Column(ForeignKey("players.id"))
     )
     confirmation_status: ConfirmationStatus = Field(
-        sa_column=sa.Column(sa.Enum(ConfirmationStatus)),
+        sa_column=enum_column(ConfirmationStatus),
         default=ConfirmationStatus.PENDING,
     )
     # Admin overides
@@ -132,36 +132,36 @@ class MatchPlayer(SQLModel, table=True):
 
 class MatchDispute(SQLModel, table=True):
     __tablename__ = "match_disputes"
-    
+
     id: uuid.UUID = Field(
         sa_column=Column(
             UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
         )
     )
     result_id: uuid.UUID = Field(sa_column=Column(ForeignKey("results.id")))
-    
+
     # Dispute details
     disputed_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
     reason: str = Field(...)
     evidence_urls: list[str] = Field(sa_column=Column(JSON), default=[])
-    
+
     # Status
     status: DisputeStatus = Field(
-        sa_column=sa.Column(sa.Enum(DisputeStatus)),
+        sa_column=enum_column(DisputeStatus),
         default=DisputeStatus.PENDING,
     )
-    
+
     # Resolution
     resolved: bool = Field(default=False)
     resolved_by: Optional[uuid.UUID] = Field(
         sa_column=Column(ForeignKey("players.id"))
     )
     resolution_notes: Optional[str]
-    
+
     # Timestamps
     created_at: datetime = created_at_field()
     updated_at: datetime = updated_at_field()
     resolved_at: Optional[datetime] = Field(sa_column=timestamp_column(default=None, nullable=True))
-    
+
     # Relationships
     result: Result = Relationship(back_populates="disputes")

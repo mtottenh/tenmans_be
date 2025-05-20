@@ -6,7 +6,7 @@ from competitions.models.fixtures import FixtureStatus
 from competitions.models.rounds import RoundType
 from competitions.models.tournaments import TournamentState
 from competitions.tournament.service import TournamentService, TournamentServiceError
-
+from datetime import timedelta
 
 @pytest.mark.asyncio
 class TestTournamentProgression:
@@ -63,6 +63,8 @@ class TestTournamentProgression:
             round_number=1,
             round_type=RoundType.GROUP_STAGE,
             status="active",
+            start_date=tournament.scheduled_start_date,
+            end_date=tournament.scheduled_start_date + timedelta(days=7)
         )
 
         teams = builder.teams[:4]  # First 4 teams
@@ -165,6 +167,8 @@ class TestTournamentProgression:
             round_number=1,
             round_type=RoundType.GROUP_STAGE,
             status="active",
+            start_date=tournament.scheduled_start_date,
+            end_date=tournament.scheduled_start_date + timedelta(days=7)
         )
 
         teams = builder.teams[:4]
@@ -222,6 +226,8 @@ class TestTournamentProgression:
             round_number=1,
             round_type=RoundType.GROUP_STAGE,
             status="active",
+            start_date=tournament.scheduled_start_date,
+            end_date=tournament.scheduled_start_date + timedelta(days=7)
         )
 
         teams = builder.teams[:4]

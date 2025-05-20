@@ -9,14 +9,37 @@ import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
 from db.main import DB_URL
+# Import all models so they're available to Alembic
 from auth.models import *
 from audit.models import *
+
+# Import all schemas containing StrEnums for Alembic
+from admin.schemas import *
+from auth.schemas import *
+from audit.schemas import *
+from moderation.schemas import *
+from matches.schemas import *
+from pugs.schemas import *
+from substitutes.schemas import *
+from teams.base_schemas import *
+from teams.join_request.schemas import *
+from competitions.base_schemas import *
+from competitions.fixtures.schemas import *
+from competitions.map_pool.schemas import *
+from competitions.tournament.schemas import *
+
+# Import all models
 from competitions.models.fixtures import *
 from competitions.models.rounds import *
 from competitions.models.seasons import *
 from competitions.models.tournaments import *
+from competitions.models.scheduling import *
+from competitions.models.lobby import *
+from competitions.models.linked_tournaments import *
+from competitions.map_pool.models import *
 from maps.models import *
 from matches.models import *
+from matches.evidence.models import *
 from moderation.models import *
 from pugs.models import *
 from substitutes.models import *
@@ -91,7 +114,7 @@ async def run_migrations_online() -> None:
         await connection.run_sync(do_run_migrations)
 
 def do_run_migrations(connection: Connection) -> None:
-        
+
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

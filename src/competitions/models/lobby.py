@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
-
+from db.models import created_at_field, updated_at_field, timestamp_column
 
 if TYPE_CHECKING:
     from competitions.models.fixtures import Fixture
@@ -46,9 +46,9 @@ class MapVetoSession(SQLModel, table=True):
         sa_column=Column(ForeignKey("teams.id"), default=None)
     )
     current_action: Optional[VetoActionType] = Field(default=None)
-    deadline: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    completed_at: Optional[datetime] = Field(default=None)
+    deadline: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True))
+    created_at: datetime = created_at_field()
+    completed_at: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True))
 
     # Relationships
     fixture: "Fixture" = Relationship(back_populates="veto_session")
@@ -75,7 +75,7 @@ class MapVetoAction(SQLModel, table=True):
         sa_column=Column(ForeignKey("maps.id")), default=None
     )
     side: Optional[str] = Field(default=None)  # "ct", "t"
-    timestamp: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    timestamp: datetime = Field(sa_column=timestamp_column())
 
     # Relationships
     session: "MapVetoSession" = Relationship(back_populates="actions")

@@ -120,6 +120,7 @@ class SuspensionDurationValidator(TransitionValidator):
     async def validate(
         self, current_status: StrEnum, new_status: StrEnum, context: dict[str, Any]  # noqa: ARG002
     ) -> bool:
-        if str(new_status) == "SUSPENDED":
+        # Check if new status contains "SUSPEND" in any case
+        if "SUSPEND" in str(new_status).upper():
             return bool(context.get("end_date"))
         return True

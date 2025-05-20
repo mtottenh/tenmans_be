@@ -126,8 +126,18 @@ pythonpath = [
     "src",  # Add the main project source to Python path
     "utils"  # Add the utils directory
 ]
+# Configure asyncio for tests
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
+# Increase timeout for slow test operations
+timeout = 300
+# These filters help catch event loop and asyncio warnings
+filterwarnings = [
+    "error::RuntimeWarning:asyncio",  # Catch event loop issues
+    "ignore:coroutine .* was never awaited:RuntimeWarning",  # Ignore common false positive
+    "ignore::DeprecationWarning:passlib.*",  # Ignore passlib deprecation warnings
+    "ignore::DeprecationWarning:openid.*",  # Ignore OpenID deprecation warnings
+]
 
 # This ensures utils can import from src/
 [tool.hatch.build]

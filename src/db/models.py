@@ -1,11 +1,15 @@
 from datetime import datetime
-from typing import Any, Optional
+from enum import Enum
+from typing import Any, Optional, Type, TypeVar
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlmodel import Column, Field
 
 from utils.datetime import now_utc
+
+
+T = TypeVar('T', bound=Enum)
 
 
 def timestamp_column(
@@ -28,6 +32,29 @@ def timestamp_column(
         TIMESTAMP(timezone=True),
         nullable=nullable,
         default=default or now_utc,
+        **kwargs
+    )
+
+
+def enum_column(
+    enum_class: Type[T],
+    name: Optional[str] = None,
+    **kwargs
+) -> Column:
+    """
+    Create a properly configured Enum column for SQLModel classes.
+    
+    Args:
+        enum_class: The Enum class to use
+        name: Custom name for the enum type in the database (defaults to lowercase enum class name)
+        **kwargs: Additional column arguments
+    
+    Returns:
+        A SQLAlchemy Column configured for the enum
+    """
+    enum_name = name or enum_class.__name__.lower()
+    return Column(
+        sa.Enum(enum_class, name=enum_name),
         **kwargs
     )
 

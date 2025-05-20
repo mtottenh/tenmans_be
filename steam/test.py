@@ -38,7 +38,7 @@ async def login(request: Request):
     redirect_url = openid_request.redirectURL(realm=str(request.base_url), return_to=str(return_url))
     print(f"Redirect URL: {redirect_url}")
     # Redirect the user to Steam's OpenID endpoint
-    
+
     return RedirectResponse(url=str(redirect_url))
 
 @app.get("/authenticate")

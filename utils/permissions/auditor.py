@@ -86,9 +86,8 @@ class PermissionAuditor:
             result.roles.append(role.name)
 
             # Get permissions for this role
-            permissions = [
-                p.name for p in await role.awaitable_attrs.permissions
-            ]  # Use role.permissions directly
+            # Load role permissions with selectinload when getting roles
+            permissions = [p.name for p in role.permissions]
 
             # Check scope type
             if scope_type == ScopeType.GLOBAL:

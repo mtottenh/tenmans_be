@@ -136,7 +136,8 @@ def list_roles():
                 for role in roles:
                     click.echo(f"\nRole: {role.name}")
                     click.echo("Permissions:")
-                    for perm in await role.awaitable_attrs.permissions:
+                    # Load role permissions with selectinload when getting roles
+                    for perm in role.permissions:
                         click.echo(f"  - {perm.name}: {perm.description}")
             except Exception as e:
                 raise click.ClickException(str(e)) from e

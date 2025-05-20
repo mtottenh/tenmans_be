@@ -7,6 +7,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlmodel import Column, Field, Relationship, SQLModel
+from db.models import created_at_field, updated_at_field, timestamp_column
 
 from substitutes.schemas import SubstituteAvailabilityStatus
 
@@ -34,9 +35,9 @@ class SubstituteAvailability(SQLModel, AsyncAttrs, table=True):
         default=SubstituteAvailabilityStatus.AVAILABLE
     )
     availability_notes: Optional[str]  # e.g., "Only available weekends"
-    last_substitute_date: Optional[datetime]  # Track last time used as substitute
-    created_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(sl.TIMESTAMP, default=datetime.now))
+    last_substitute_date: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True)) # Track last time used as substitute
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Relationships
     player: "Player" = Relationship(back_populates="substitute_availability")

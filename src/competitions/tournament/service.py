@@ -84,6 +84,7 @@ class TournamentService:
         audit_service: Optional[AuditService] = None,
         status_transition_service: Optional[StatusTransitionService] = None,
         validator: Optional[TournamentValidator] = None,
+        round_winner_service: Optional[RoundWinnerService] = None,
     ):
         self.audit_service = audit_service or AuditService()
         self.team_service = team_service or TeamService()
@@ -215,8 +216,19 @@ class TournamentService:
     async def get_tournament(
         self, tournament_id: uuid.UUID, session: AsyncSession
     ) -> Optional[Tournament]:
-        """Retrieve a tournament by ID"""
-        stmt = select(Tournament).where(Tournament.id == tournament_id)
+        """Retrieve a tournament by ID with eager loading of related entities"""
+        stmt = (
+            select(Tournament)
+            .where(Tournament.id == tournament_id)
+            .options(
+                selectinload(Tournament.season),
+                selectinload(Tournament.rounds),
+                selectinload(Tournament.fixtures),
+                selectinload(Tournament.registrations),
+                selectinload(Tournament.maps),
+                selectinload(Tournament.map_pool)
+            )
+        )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
@@ -1171,7 +1183,8 @@ class TournamentService:
             raise RegistrationError("Only team captains can register for tournaments")
 
         # Check team size requirements
-        season = await tournament.awaitable_attrs.season
+        # Tournament season is now eagerly loaded in get_tournament
+        season = tournament.season
         roster_size = await self.team_service.get_active_roster_count(
             team, season, session
         )

@@ -44,10 +44,10 @@ def main():
     try:
         # Check if specific tests were passed as arguments
         test_args = sys.argv[1:] if len(sys.argv) > 1 else ["../test"]
-        
+
         # Build the pytest command
         pytest_command = ["docker", "exec", "tenmans-api-1", "pytest", "-v"] + test_args
-        
+
         print(f"\nRunning tests: {' '.join(test_args)}")
         run_command(pytest_command)
 

@@ -7,7 +7,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
 
-from db.models import created_at_field, updated_at_field
+from db.models import created_at_field, enum_column, updated_at_field, timestamp_column
 from teams.models import Team
 
 
@@ -45,12 +45,14 @@ class ModerationAction(SQLModel, table=True):
     player_id: uuid.UUID = Field(
         sa_column=Column(ForeignKey("players.id"), nullable=False)
     )
-    action_type: ModerationActionType
+    action_type: ModerationActionType = Field(
+        sa_column=enum_column(ModerationActionType)
+    )
     reason: str
     scope: str  # global, tournament, season, etc.
     scope_id: Optional[uuid.UUID] = None
-    start_date: datetime
-    end_date: Optional[datetime] = None
+    start_date: datetime = Field(sa_column=timestamp_column())
+    end_date: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
     issued_by: uuid.UUID = Field(
         sa_column=Column(ForeignKey("players.id"))
     )
@@ -83,18 +85,23 @@ class Ban(SQLModel, table=True):
     )
 
     # Scope of the ban
-    scope: BanScope
+    scope: BanScope = Field(
+        sa_column=enum_column(BanScope)
+    )
     scope_id: Optional[uuid.UUID] = Field(
         default=None
     )  # ID of match/tournament/season if applicable
 
     reason: str
     evidence: Optional[str]  # URLs or references to evidence
-    status: BanStatus = Field(default=BanStatus.ACTIVE)
+    status: BanStatus = Field(
+        sa_column=enum_column(BanStatus),
+        default=BanStatus.ACTIVE
+    )
 
     # Ban period
-    start_date: datetime
-    end_date: Optional[datetime]  # Null for permanent bans
+    start_date: datetime =  Field(sa_column=timestamp_column())
+    end_date: Optional[datetime]  =  Field(sa_column=timestamp_column(nullable=True)) # Null for permanent bans
 
     # Administrative details
     issued_by: uuid.UUID = Field(

@@ -7,10 +7,12 @@ import sqlalchemy as sa
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.orm import selectinload
 from sqlmodel import Column, Field, Relationship, SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from competitions.models.scheduling import ScheduleConflict, ScheduleSuggestion
+from db.models import enum_column, created_at_field, updated_at_field, timestamp_column
 from matches.models import MatchFormat, Result
 from matches.schemas import ConfirmationStatus
 
@@ -33,7 +35,7 @@ class FixtureStatus(StrEnum):
     FORFEITED = "forfeited"
 
 
-class Fixture(SQLModel, AsyncAttrs, table=True):
+class Fixture(SQLModel, table=True):
     __tablename__ = "fixtures"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -45,20 +47,20 @@ class Fixture(SQLModel, AsyncAttrs, table=True):
     team_1: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     team_2: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     match_format: str  # bo1, bo3, bo5
-    scheduled_at: datetime
-    rescheduled_from: Optional[datetime]
+    scheduled_at: datetime = Field(sa_column=timestamp_column())
+    rescheduled_from: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
     rescheduled_by: Optional[uuid.UUID] = Field(
         sa_column=Column(ForeignKey("players.id"))
     )
     reschedule_reason: Optional[str]
-    status: FixtureStatus = Field(sa_column=sa.Column(sa.Enum(FixtureStatus)))
+    status: FixtureStatus = Field(sa_column=enum_column(FixtureStatus))
     forfeit_winner: Optional[uuid.UUID] = Field(
         sa_column=Column(ForeignKey("teams.id"))
     )
     forfeit_reason: Optional[str]
     admin_notes: Optional[str]
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Existing relationships
     tournament: "Tournament" = Relationship(back_populates="fixtures")
@@ -101,27 +103,44 @@ class Fixture(SQLModel, AsyncAttrs, table=True):
         format_maps = {MatchFormat.BO1: 1, MatchFormat.BO3: 2, MatchFormat.BO5: 3}
         return format_maps[self.match_format]
 
-    async def get_winner_id(self, session: AsyncSession) -> Optional[uuid.UUID]:
-        """Get winner ID if match is complete"""
+    def get_winner_id_sync(self) -> Optional[uuid.UUID]:
+        """Synchronous method to get winner if fixture is forfeited"""
         if self.status == FixtureStatus.FORFEITED:
             return self.forfeit_winner
+        return None
+
+    async def get_winner_id(self, session: AsyncSession) -> Optional[uuid.UUID]:
+        """Get winner ID if match is complete"""
+        # First check if it's a forfeit (no DB query needed)
+        forfeit_winner = self.get_winner_id_sync()
+        if forfeit_winner:
+            return forfeit_winner
 
         if self.status != FixtureStatus.COMPLETED:
             return None
 
-        stmt = select(Result).where(Result.fixture_id == self.id)
-        results = (await session.execute(stmt)).scalars().all()
+        # Load results with selectinload if they're not already loaded
+        if not hasattr(self, "_results_loaded"):
+            stmt = (
+                select(Fixture)
+                .where(Fixture.id == self.id)
+                .options(selectinload(Fixture.results))
+            )
+            fixture_with_results = (await session.execute(stmt)).scalar_one_or_none()
+            if fixture_with_results:
+                self.results = fixture_with_results.results
+                self._results_loaded = True
 
         team_1_wins = sum(
             1
-            for r in results
+            for r in self.results
             if r.confirmation_status == ConfirmationStatus.CONFIRMED
             and r.team_1_score > r.team_2_score
         )
 
         team_2_wins = sum(
             1
-            for r in results
+            for r in self.results
             if r.confirmation_status == ConfirmationStatus.CONFIRMED
             and r.team_2_score > r.team_1_score
         )
@@ -133,9 +152,8 @@ class Fixture(SQLModel, AsyncAttrs, table=True):
 
         return None
 
-    @property
-    async def can_complete(self) -> bool:
-        """Check if fixture has enough confirmed results to complete"""
+    def can_complete_sync(self) -> bool:
+        """Synchronous check if fixture can be completed based on results"""
         if self.status != FixtureStatus.IN_PROGRESS:
             return False
 

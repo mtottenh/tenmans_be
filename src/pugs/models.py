@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from auth.models import Player
-from db.models import created_at_field, timestamp_column
+from db.models import created_at_field, enum_column, timestamp_column
 
 
 if TYPE_CHECKING:
@@ -33,14 +33,14 @@ class Pug(SQLModel, table=True):
         )
     )
     status: PugStatus = Field(
-        sa_column=sa.Column(sa.Enum(PugStatus)), default=PugStatus.CREATING
+        sa_column=enum_column(PugStatus), default=PugStatus.CREATING
     )
     match_format: str  # bo1, bo3
     max_players_per_team: int
     require_full_teams: bool = Field(default=True)
     map_pool: list[uuid.UUID] = Field(sa_column=Column(JSON))  # Array of map IDs
     created_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    completed_at: Optional[datetime]
+    completed_at: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True))
     created_at: datetime = created_at_field()
 
     creator: Player = Relationship(back_populates="created_pugs")
@@ -74,7 +74,7 @@ class PugPlayer(SQLModel, table=True):
         sa_column=Column(ForeignKey("players.id"), primary_key=True)
     )
     team_number: Optional[int] = Field(default=None)
-    joined_at: datetime = Field(sa_column=timestamp_column(default=datetime.now))
+    joined_at: datetime = Field(sa_column=timestamp_column())
     created_at: datetime = created_at_field()
 
     pug: Pug = Relationship(back_populates="players")

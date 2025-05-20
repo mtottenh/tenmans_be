@@ -8,7 +8,7 @@ from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
 from audit.schemas import AuditEventState, AuditEventType, ScopeType
 
-
+from db.models import timestamp_column
 if TYPE_CHECKING:
     from auth.models import Player
 
@@ -25,7 +25,7 @@ class AuditEvent(SQLModel, table=True):
     entity_id: Optional[uuid.UUID] = Field(nullable=True)
     action_type: AuditEventType
     actor_id: uuid.UUID = Field(foreign_key="players.id")
-    timestamp: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    timestamp: datetime =   Field(sa_column=timestamp_column())
 
     # Event processing state
     event_state: AuditEventState = Field(default=AuditEventState.PENDING)
@@ -58,7 +58,7 @@ class AuditEvent(SQLModel, table=True):
     root_event_id: Optional[uuid.UUID] = Field(
         foreign_key="audit_events.id", nullable=True
     )
-    grace_period_end: Optional[datetime]
+    grace_period_end: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True))
 
     # Relationships
     actor: "Player" = Relationship(back_populates="audit_events")

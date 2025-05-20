@@ -54,7 +54,7 @@ class TransitionPipeline:
 
         # Create a shared context dict that can be modified by steps
         shared_context = dict(context)
-        
+
         for step in self.steps:
             LOG.info(f"Executing transition step: {step.step_name}")
             try:
@@ -73,7 +73,7 @@ class TransitionPipeline:
                 LOG.error(f"Error in transition step {step.step_name}: {e!s}")
                 # We rely on the audit_context to handle the rollback
                 raise
-                
+
         # Update the original context with any new values
         for key, value in shared_context.items():
             context[key] = value

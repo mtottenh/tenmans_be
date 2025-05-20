@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import ARRAY, JSON, TIMESTAMP, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
-
+from db.models import created_at_field, updated_at_field, timestamp_column
 
 if TYPE_CHECKING:
     from auth.models import Player
@@ -48,8 +48,8 @@ class PlayerAvailability(SQLModel, table=True):
     tournament_id: Optional[uuid.UUID] = Field(
         sa_column=Column(ForeignKey("tournaments.id"))
     )  # Null for general availability
-    start_time: datetime
-    end_time: datetime
+    start_time: datetime = Field(sa_column=timestamp_column())
+    end_time: datetime = Field(sa_column=timestamp_column())
     availability_type: AvailabilityType = Field(
         sa_column=Column(Enum(AvailabilityType))
     )
@@ -62,8 +62,8 @@ class PlayerAvailability(SQLModel, table=True):
     recurring_pattern: Optional[dict] = Field(
         sa_column=Column(JSON), default=None
     )  # For weekly patterns
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Relationships
     player: "Player" = Relationship(back_populates="availability")
@@ -90,7 +90,7 @@ class TeamAvailability(SQLModel, table=True):
     unavailable_players: list[uuid.UUID] = Field(sa_column=Column(ARRAY(UUID)))
     available_substitutes: list[uuid.UUID] = Field(sa_column=Column(ARRAY(UUID)))
     has_minimum_players: bool
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    updated_at: datetime = updated_at_field()
 
     # Relationships
     team: "Team" = Relationship(back_populates="availability")
@@ -108,12 +108,12 @@ class ScheduleSuggestion(SQLModel, table=True):
         )
     )
     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
-    suggested_time: datetime
+    suggested_time: datetime = Field(sa_column=timestamp_column())
     confidence_score: float
     available_players_team1: int
     available_players_team2: int
     conflicts: list[dict] = Field(sa_column=Column(JSON))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     # Relationships
     fixture: "Fixture" = Relationship(back_populates="schedule_suggestions")
@@ -134,7 +134,7 @@ class ScheduleConflict(SQLModel, table=True):
     description: str
     severity: str  # "low", "medium", "high"
     affected_players: list[uuid.UUID] = Field(sa_column=Column(ARRAY(UUID)))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     # Relationships
     fixture: "Fixture" = Relationship(back_populates="schedule_conflicts")

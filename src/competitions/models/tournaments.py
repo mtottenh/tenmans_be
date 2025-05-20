@@ -9,11 +9,12 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlmodel import Column, Field, Relationship, SQLModel
 
-from competitions.base_schemas import GameMode, LeagueFormat, MapSelectionMethod
+from competitions.base_schemas import GameMode, LeagueFormat, MapSelectionMethod, TournamentState
 from competitions.models.fixtures import Fixture
 from competitions.models.rounds import Round
 from competitions.models.scheduling import PlayerAvailability, TeamAvailability
 from competitions.models.seasons import Season
+from db.models import enum_column, created_at_field, updated_at_field, timestamp_column
 from maps.models import Map, TournamentMap
 
 
@@ -32,16 +33,7 @@ class TournamentType(StrEnum):
     PUG = "pug"
 
 
-class TournamentState(StrEnum):
-    NOT_STARTED = "not_started"
-    REGISTRATION_OPEN = "registration_open"
-    REGISTRATION_CLOSED = "registration_closed"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-
-
-class Tournament(SQLModel, AsyncAttrs, table=True):
+class Tournament(SQLModel, table=True):
     __tablename__ = "tournaments"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -50,19 +42,22 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     )
     season_id: uuid.UUID = Field(sa_column=Column(ForeignKey("seasons.id")))
     name: str
-    type: TournamentType = Field(sa_column=sa.Column(sa.Enum(TournamentType)))
-    status: TournamentState = Field(sa_column=sa.Column(sa.Enum(TournamentState)))
+    type: TournamentType = Field(sa_column=enum_column(TournamentType))
+    status: TournamentState = Field(
+        sa_column=enum_column(TournamentState)
+    )
 
     # Game mode and league format
     game_mode: GameMode = Field(
-        sa_column=sa.Column(sa.Enum(GameMode)), default=GameMode.COMPETITIVE_5V5
+        sa_column=enum_column(GameMode),
+        default=GameMode.COMPETITIVE_5V5
     )
     league_format: LeagueFormat = Field(
-        sa_column=sa.Column(sa.Enum(LeagueFormat)),
+        sa_column=enum_column(LeagueFormat),
         default=LeagueFormat.SINGLE_ROUND_ROBIN,
     )
     map_selection_method: MapSelectionMethod = Field(
-        sa_column=sa.Column(sa.Enum(MapSelectionMethod)),
+        sa_column=enum_column(MapSelectionMethod),
         default=MapSelectionMethod.MAP_VETO,
     )
 
@@ -73,9 +68,9 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     min_team_size: int = Field(ge=5, le=10, default=5)
 
     # Registration period
-    registration_start: datetime
-    registration_end: datetime
-    late_registration_end: Optional[datetime] = None
+    registration_start: datetime =  Field(sa_column=timestamp_column())
+    registration_end: datetime =  Field(sa_column=timestamp_column())
+    late_registration_end: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
     allow_late_registration: bool = Field(default=False)
 
     # Tournament configuration
@@ -86,13 +81,13 @@ class Tournament(SQLModel, AsyncAttrs, table=True):
     )  # For scheduling preferences
 
     # Dates
-    scheduled_start_date: datetime
-    scheduled_end_date: datetime
-    actual_start_date: Optional[datetime] = None
-    actual_end_date: Optional[datetime] = None
+    scheduled_start_date: datetime  =  Field(sa_column=timestamp_column())
+    scheduled_end_date: datetime =   Field(sa_column=timestamp_column())
+    actual_start_date: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
+    actual_end_date: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True))
 
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Relationships
     season: Season = Relationship(back_populates="tournaments")
@@ -124,7 +119,7 @@ class RegistrationStatus(StrEnum):
     DISQUALIFIED = "disqualified"
 
 
-class TournamentRegistration(SQLModel, AsyncAttrs, table=True):
+class TournamentRegistration(SQLModel, table=True):
     __tablename__ = "tournament_registrations"
 
     id: uuid.UUID = Field(
@@ -134,20 +129,20 @@ class TournamentRegistration(SQLModel, AsyncAttrs, table=True):
     )
     tournament_id: uuid.UUID = Field(sa_column=Column(ForeignKey("tournaments.id")))
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
-    status: RegistrationStatus = Field(sa_column=sa.Column(sa.Enum(RegistrationStatus)))
+    status: RegistrationStatus = Field(sa_column=enum_column(RegistrationStatus))
 
     # Registration workflow fields
     requested_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    requested_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    requested_at: datetime =  Field(sa_column=timestamp_column())
     reviewed_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
-    reviewed_at: Optional[datetime]
+    reviewed_at: Optional[datetime] =  Field(sa_column=timestamp_column(nullable=True))
     review_notes: Optional[str]
 
     # Withdrawal fields
     withdrawn_by: Optional[uuid.UUID] = Field(
         sa_column=Column(ForeignKey("players.id"))
     )
-    withdrawn_at: Optional[datetime]
+    withdrawn_at: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
     withdrawal_reason: Optional[str]
 
     # Tournament specific fields

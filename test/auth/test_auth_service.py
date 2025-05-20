@@ -129,6 +129,12 @@ async def test_authenticate_player_valid_credentials(
     login_data = PlayerLogin(email="test@example.com", password="password123")
     mock_identity_service.get_player_by_email.return_value = test_player
     mock_identity_service.verify_password.return_value = True
+    mock_player_status_service.check_player_access.return_value = True
+    mock_token_service.create_auth_tokens.return_value = TokenResponse(
+        access_token="access_token",
+        refresh_token="refresh_token",
+        token_type="bearer",
+    )
 
     # Execute
     result = await auth_service.authenticate_player(login_data, mock_session)
@@ -145,9 +151,8 @@ async def test_authenticate_player_valid_credentials(
         login_data.email, mock_session
     )
     mock_identity_service.verify_password.assert_called_once()
-    mock_player_status_service.check_player_active.assert_called_once_with(test_player)
-    mock_token_service.create_access_token.assert_called_once()
-    mock_token_service.create_refresh_token.assert_called_once()
+    mock_player_status_service.check_player_access.assert_called_once_with(test_player, mock_session)
+    mock_token_service.create_auth_tokens.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -213,6 +218,7 @@ async def test_register_player_email(
     mock_identity_service,
     mock_token_service,
     mock_role_service,
+    test_player,
     mock_session,
 ):
     """Test player registration with email"""
@@ -222,6 +228,7 @@ async def test_register_player_email(
         password="password123",
         steam_id="76561198000000001",
         steam_name="NewPlayer",
+        submitted_evidence=None,
     )
 
     new_player = Player(
@@ -229,35 +236,38 @@ async def test_register_player_email(
         email=registration_data.email,
         password_hash="hashed_password",
         steam_id=registration_data.steam_id,
-        steam_name=registration_data.steam_name,
+        name=registration_data.steam_name,
         status=PlayerStatus.ACTIVE,
         auth_type=AuthType.EMAIL,
     )
 
-    default_role = Role(id="role123", name="player", permissions=["play"])
+    default_role = Role(id="role123", name="user", permissions=["play"])
 
-    mock_identity_service.get_player_by_email.return_value = None
-    mock_identity_service.get_player_by_steam_id.return_value = None
-    mock_identity_service.hash_password.return_value = "hashed_password"
+    mock_identity_service.create_player_with_email.return_value = new_player
     mock_role_service.get_role_by_name.return_value = default_role
-    mock_session.add = Mock()
-    mock_session.commit = AsyncMock()
     mock_session.refresh = AsyncMock()
+    mock_token_service.create_auth_tokens.return_value = TokenResponse(
+        access_token="access_token",
+        refresh_token="refresh_token",
+        token_type="bearer",
+    )
 
-    # Execute with patched Player creation
-    with patch("auth.service.auth.Player", return_value=new_player):
-        result = await auth_service.register_player(registration_data, mock_session)
+    # Execute
+    result = await auth_service.create_player(
+        player_data=registration_data,
+        actor=test_player,
+        session=mock_session
+    )
 
     # Assert
     assert result is not None
-    player, token_response = result
-    assert player.email == registration_data.email
-    assert token_response.access_token == "access_token"
+    assert result.id == new_player.id
+    assert result.email == registration_data.email
 
     # Verify method calls
-    mock_identity_service.get_player_by_email.assert_called_once()
-    mock_identity_service.get_player_by_steam_id.assert_called_once()
-    mock_role_service.add_player_to_role.assert_called_once()
+    mock_identity_service.create_player_with_email.assert_called_once()
+    mock_role_service.get_role_by_name.assert_called_once_with("user", mock_session)
+    mock_role_service.assign_role.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -271,13 +281,19 @@ async def test_register_player_duplicate_email(
         password="password123",
         steam_id="76561198000000002",
         steam_name="DuplicatePlayer",
+        submitted_evidence=None,
     )
 
-    mock_identity_service.get_player_by_email.return_value = test_player
+    # Make create_player_with_email raise ValueError
+    mock_identity_service.create_player_with_email.side_effect = ValueError("Player with this email already exists")
 
     # Execute and assert
-    with pytest.raises(ValueError, match="Email already registered"):
-        await auth_service.register_player(registration_data, mock_session)
+    with pytest.raises(ValueError, match="Player with this email already exists"):
+        await auth_service.create_player(
+            player_data=registration_data, 
+            actor=test_player, 
+            session=mock_session
+        )
 
 
 @pytest.mark.asyncio
@@ -291,14 +307,21 @@ async def test_register_player_duplicate_steam_id(
         password="password123",
         steam_id="76561198000000000",  # Same as test_player
         steam_name="DuplicatePlayer",
+        submitted_evidence=None,
     )
 
-    mock_identity_service.get_player_by_email.return_value = None
-    mock_identity_service.get_player_by_steam_id.return_value = test_player
+    # Make create_player_with_email raise ValueError for duplicate steam ID
+    mock_identity_service.create_player_with_email.side_effect = ValueError(
+        "Player with this steam ID already exists"
+    )
 
     # Execute and assert
-    with pytest.raises(ValueError, match="Steam ID already registered"):
-        await auth_service.register_player(registration_data, mock_session)
+    with pytest.raises(ValueError, match="Player with this steam ID already exists"):
+        await auth_service.create_player(
+            player_data=registration_data,
+            actor=test_player,
+            session=mock_session
+        )
 
 
 @pytest.mark.asyncio
@@ -313,23 +336,32 @@ async def test_refresh_access_token(
     """Test refreshing access token with valid refresh token"""
     # Setup
     refresh_token = "valid_refresh_token"
-    claims = {"sub": test_player.id, "type": "refresh"}
+    mock_token_service.verify_token.return_value = {
+        "player_id": str(test_player.id),
+        "is_refresh": True,
+        "auth_type": str(test_player.auth_type)
+    }
 
-    mock_token_service.decode_token.return_value = claims
     mock_identity_service.get_player_by_id = AsyncMock(return_value=test_player)
+    mock_player_status_service.check_player_access.return_value = True
+    mock_token_service.create_auth_tokens.return_value = TokenResponse(
+        access_token="access_token",
+        refresh_token="new_refresh_token",
+        token_type="bearer"
+    )
 
     # Execute
-    result = await auth_service.refresh_access_token(refresh_token, mock_session)
+    result = await auth_service.refresh_auth_tokens(refresh_token, mock_session)
 
     # Assert
     assert result is not None
-    player, token_response = result
-    assert player.id == test_player.id
-    assert token_response.access_token == "access_token"
+    assert result.access_token == "access_token"
+    assert result.refresh_token == "new_refresh_token"
 
     # Verify method calls
-    mock_token_service.decode_token.assert_called_once_with(refresh_token)
-    mock_player_status_service.check_player_active.assert_called_once_with(test_player)
+    mock_token_service.verify_token.assert_called_once_with(refresh_token)
+    mock_identity_service.get_player_by_id.assert_called_once()
+    mock_player_status_service.check_player_access.assert_called_once_with(test_player, mock_session)
 
 
 @pytest.mark.asyncio
@@ -339,15 +371,19 @@ async def test_refresh_access_token_invalid_token_type(
     """Test refresh token fails with wrong token type"""
     # Setup
     refresh_token = "invalid_token"
-    claims = {"sub": "player123", "type": "access"}  # Wrong type
 
-    mock_token_service.decode_token.return_value = claims
+    # Return data without is_refresh=True flag
+    mock_token_service.verify_token.return_value = {
+        "player_id": "player123",
+        "auth_type": "EMAIL"
+    }
 
     # Execute
-    result = await auth_service.refresh_access_token(refresh_token, mock_session)
+    result = await auth_service.refresh_auth_tokens(refresh_token, mock_session)
 
     # Assert
     assert result is None
+    mock_token_service.verify_token.assert_called_once_with(refresh_token)
 
 
 @pytest.mark.asyncio

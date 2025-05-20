@@ -111,7 +111,8 @@ class PermissionUI:
             print(f"\nRole: {role.name}")
             print(f"Scope: {scope_type.value}{scope_info}")
             print("Permissions:")
-            for perm in await role.awaitable_attrs.permissions:
+            # Load role permissions with selectinload when getting roles
+            for perm in role.permissions:
                 print(f"  - {perm.name}: {perm.description}")
 
     async def _add_role_flow(self, player: Player):
@@ -261,7 +262,8 @@ class PermissionUI:
                 print("\nAvailable Permissions:")
                 permissions = await self.auth_service.get_all_permissions(self.session)
                 for i, perm in enumerate(permissions, 1):
-                    has_perm = perm in await role.awaitable_attrs.permissions
+                    # Load role permissions with selectinload when getting roles
+                    has_perm = perm in role.permissions
                     mark = "✓" if has_perm else " "
                     print(f"{i}. [{mark}] {perm.name}: {perm.description}")
 

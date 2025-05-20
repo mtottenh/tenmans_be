@@ -4,6 +4,7 @@ from typing import Any, Optional
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from audit.context import AuditContext
 from audit.models import AuditEventType
@@ -67,8 +68,8 @@ class RoleService:
         return result.scalars().all()
 
     async def get_all_roles(self, session: AsyncSession) -> list[Role]:
-        """Get all roles"""
-        stmt = select(Role)
+        """Get all roles with eager loading of permissions"""
+        stmt = select(Role).options(selectinload(Role.permissions))
         result = await session.execute(stmt)
         return result.scalars().all()
 
@@ -175,11 +176,12 @@ class RoleService:
     async def get_player_roles(
         self, player: Player, session: AsyncSession
     ) -> list[tuple[Role, ScopeType, Optional[uuid.UUID]]]:
-        """Get all roles for a player with their scopes"""
+        """Get all roles for a player with their scopes and eager load permissions"""
         stmt = (
             select(Role, PlayerRole.scope_type, PlayerRole.scope_id)
             .join(PlayerRole, Role.id == PlayerRole.role_id)
             .where(PlayerRole.player_id == player.id)
+            .options(selectinload(Role.permissions))
         )
 
         result = await session.execute(stmt)

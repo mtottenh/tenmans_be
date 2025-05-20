@@ -16,7 +16,7 @@ LOG = logging.getLogger("uvicorn.error")
 
 class AssignReviewerStep(TransitionStep):
     """Assign a reviewer when dispute moves to under review"""
-    
+
     async def execute(
         self,
         old_status: str,
@@ -31,17 +31,17 @@ class AssignReviewerStep(TransitionStep):
         """Assign the actor as the reviewer"""
         if new_status != DisputeStatus.UNDER_REVIEW:
             return
-            
+
         entity.resolved_by = actor.id
         session.add(entity)
         await session.flush()
-        
+
         LOG.info(f"Assigned {actor.name} as reviewer for dispute {entity.id}")
 
 
 class UpdateResultStatusStep(TransitionStep):
     """Update the associated result status based on dispute resolution"""
-    
+
     async def execute(
         self,
         old_status: str,
@@ -56,14 +56,14 @@ class UpdateResultStatusStep(TransitionStep):
         """Update result status when dispute is resolved"""
         if new_status not in [DisputeStatus.RESOLVED, DisputeStatus.REJECTED]:
             return
-            
+
         result = await session.get(Result, entity.result_id)
         if not result:
             LOG.error(f"Result {entity.result_id} not found for dispute {entity.id}")
             return
-            
+
         resolution_type = context.get("resolution_type")
-        
+
         if new_status == DisputeStatus.RESOLVED:
             # Update result based on resolution type
             if resolution_type == "accept_result":
@@ -84,20 +84,20 @@ class UpdateResultStatusStep(TransitionStep):
                 result.confirmation_status = ConfirmationStatus.VOIDED
                 result.voided = True
                 result.voided_reason = reason
-                
+
         elif new_status == DisputeStatus.REJECTED:
             # If dispute is rejected, confirm the original result
             result.confirmation_status = ConfirmationStatus.CONFIRMED
-            
+
         session.add(result)
         await session.flush()
-        
+
         LOG.info(f"Updated result {result.id} status to {result.confirmation_status}")
 
 
 class NotifyTeamsStep(TransitionStep):
     """Notify teams about dispute resolution"""
-    
+
     async def execute(
         self,
         old_status: str,
@@ -112,21 +112,21 @@ class NotifyTeamsStep(TransitionStep):
         """Send notifications to affected teams"""
         if new_status not in [DisputeStatus.RESOLVED, DisputeStatus.REJECTED, DisputeStatus.ESCALATED]:
             return
-            
+
         result = await session.get(Result, entity.result_id)
         fixture = result.fixture
-        
+
         # TODO: Send notifications to both teams
         notification_message = f"Dispute {entity.id} has been {new_status.lower()}"
         if reason:
             notification_message += f": {reason}"
-            
+
         LOG.info(f"Notifying teams about dispute resolution: {notification_message}")
 
 
 class RecordResolutionStep(TransitionStep):
     """Record dispute resolution details"""
-    
+
     async def execute(
         self,
         old_status: str,
@@ -141,21 +141,21 @@ class RecordResolutionStep(TransitionStep):
         """Record resolution details"""
         if new_status not in [DisputeStatus.RESOLVED, DisputeStatus.REJECTED]:
             return
-            
+
         entity.resolved = True
         entity.resolved_by = actor.id
         entity.resolution_notes = reason
         entity.resolved_at = datetime.now(timezone.utc)
-        
+
         session.add(entity)
         await session.flush()
-        
+
         LOG.info(f"Recorded resolution for dispute {entity.id}")
 
 
 class EscalateToHigherAuthorityStep(TransitionStep):
     """Handle escalation to higher authority"""
-    
+
     async def execute(
         self,
         old_status: str,
@@ -170,11 +170,11 @@ class EscalateToHigherAuthorityStep(TransitionStep):
         """Handle dispute escalation"""
         if new_status != DisputeStatus.ESCALATED:
             return
-            
+
         # TODO: Create escalation ticket or notify higher authority
         escalation_reason = reason or "Dispute requires higher level review"
         LOG.info(f"Escalating dispute {entity.id}: {escalation_reason}")
-        
+
         # Update dispute with escalation info
         entity.resolution_notes = f"Escalated by {actor.name}: {escalation_reason}"
         session.add(entity)

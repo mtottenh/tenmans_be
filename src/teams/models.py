@@ -39,7 +39,7 @@ class Team(SQLModel, table=True):
     )
     name: str = Field(unique=True)
     status: TeamStatus = Field(default=TeamStatus.ACTIVE)
-    disbanded_at: Optional[datetime] = None
+    disbanded_at: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
     disbanded_reason: Optional[str] = None
     disbanded_by: Optional[uuid.UUID] = Field(
         sa_column=Column(ForeignKey("players.id"))
@@ -116,18 +116,3 @@ class TeamCaptain(SQLModel, table=True):
 
     team: Team = Relationship(back_populates="captains")
     player: "Player" = Relationship(back_populates="captain_of")
-
-
-# class TeamELOHistory(SQLModel, table=True):
-#     __tablename__ = "team_elo_history"
-#     id: uuid.UUID = Field(
-#         sa_column=Column(UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4))
-
-#     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
-#     fixture_id: uuid.UUID = Field(sa_column=Column(ForeignKey("fixtures.id")))
-#     elo_rating: int
-#     player_composition: List[uuid.UUID] = Field(sa_column=Column(JSON))
-#     created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-
-#     team: Team = Relationship(back_populates="elo_history")
-#     fixture: "Fixture" = Relationship(back_populates="team_elo_changes")

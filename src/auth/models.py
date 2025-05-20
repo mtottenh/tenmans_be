@@ -48,7 +48,7 @@ class PlayerRole(SQLModel, table=True):
     )
     scope_type: str  # 'global', 'team', 'tournament'
     scope_id: Optional[uuid.UUID] = Field(default=None)
-    created_at: datetime = Field(sa_column=timestamp_column(default=now_utc))
+    created_at: datetime = created_at_field()
 
 
 class Role(SQLModel, table=True):
@@ -59,7 +59,7 @@ class Role(SQLModel, table=True):
         )
     )
     name: str = Field(unique=True)
-    created_at: datetime = Field(sa_column=timestamp_column(default=now_utc))
+    created_at: datetime = created_at_field()
     permissions: list["Permission"] = Relationship(
         back_populates="roles", link_model=RolePermission
     )
@@ -78,7 +78,7 @@ class Permission(SQLModel, table=True):
     )
     name: str = Field(unique=True)
     description: str
-    created_at: datetime = Field(sa_column=timestamp_column(default=now_utc))
+    created_at: datetime = created_at_field()
     roles: list[Role] = Relationship(
         back_populates="permissions", link_model=RolePermission
     )
@@ -105,7 +105,7 @@ class Player(SQLModel, table=True):
 
     # Status field
     status: PlayerStatus = Field(default=PlayerStatus.PENDING_VERIFICATION)
-    
+
     # Timestamps
     created_at: datetime = created_at_field()
     updated_at: datetime = updated_at_field()

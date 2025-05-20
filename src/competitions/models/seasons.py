@@ -8,6 +8,8 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlmodel import Column, Field, Relationship, SQLModel
 
+from db.models import enum_column, created_at_field, updated_at_field
+
 
 if TYPE_CHECKING:
     from competitions.models.tournaments import Tournament
@@ -23,7 +25,7 @@ class SeasonState(StrEnum):
     COMPLETED = "completed"
 
 
-class Season(SQLModel, AsyncAttrs, table=True):
+class Season(SQLModel, table=True):
     __tablename__ = "seasons"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -31,8 +33,8 @@ class Season(SQLModel, AsyncAttrs, table=True):
         )
     )
     name: str = Field(unique=True)
-    state: SeasonState = Field(sa_column=sa.Column(sa.Enum(SeasonState)))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    state: SeasonState = Field(sa_column=enum_column(SeasonState))
+    created_at: datetime = created_at_field()
 
     tournaments: list["Tournament"] = Relationship(back_populates="season")
     rosters: list["Roster"] = Relationship(back_populates="season")

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import pytest
@@ -96,13 +95,14 @@ async def session(test_engine, prepare_test_database):
 
 
 # Override FastAPI dependencies for testing
-@pytest.fixture(autouse=True)
-def override_dependencies():
+@pytest_asyncio.fixture(autouse=True)
+async def override_dependencies(test_engine):
     from main import app
 
+    # Create a dependency override for the get_session dependency
     async def get_test_session():
         async_session = sessionmaker(
-            test_engine, class_=AsyncSession, expire_on_commit=False
+            test_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
         )
         async with async_session() as session:
             try:
@@ -110,8 +110,13 @@ def override_dependencies():
             finally:
                 await session.close()
 
+    # Apply the dependency override
     app.dependency_overrides[get_session] = get_test_session
+
+    # Return control to the test
     yield
+
+    # Clean up after the test
     app.dependency_overrides.clear()
 
 

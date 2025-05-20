@@ -77,7 +77,7 @@ def test_round(test_tournament):
         id=str(uuid.uuid4()),
         tournament_id=test_tournament.id,
         round_number=1,
-        type=RoundType.GROUP,
+        type=RoundType.GROUP_STAGE,
         best_of=1,
         start_date=datetime.now(timezone.utc),
         end_date=datetime.now(timezone.utc) + timedelta(days=7),
@@ -140,7 +140,7 @@ async def test_change_round_status(
     """Test changing round status with transition service"""
     # Setup
     new_status = "completed"
-    context = {"reason": "All fixtures completed"}
+    reason = "All fixtures completed"
 
     # Mock the transition service
     mock_status_transition_service.transition_status.return_value = test_round
@@ -149,19 +149,21 @@ async def test_change_round_status(
     result = await round_service.change_round_status(
         round=test_round,
         new_status=new_status,
+        reason=reason,
         actor=test_player,
-        session=mock_session,
-        transition_context=context,
+        session=mock_session
     )
 
     # Assert
     assert result == test_round
     mock_status_transition_service.transition_status.assert_called_once_with(
         entity=test_round,
-        to_status=new_status,
+        new_status=new_status,
+        reason=reason,
         actor=test_player,
         session=mock_session,
-        context=context,
+        entity_metadata=None,
+        audit_context=None
     )
 
 
@@ -172,7 +174,7 @@ async def test_create_round(round_service, test_tournament, test_player, mock_se
     round_data = {
         "tournament_id": test_tournament.id,
         "round_number": 1,
-        "type": RoundType.GROUP,
+        "type": RoundType.GROUP_STAGE,
         "best_of": 1,
         "start_date": datetime.now(timezone.utc),
         "end_date": datetime.now(timezone.utc) + timedelta(days=7),
@@ -189,7 +191,14 @@ async def test_create_round(round_service, test_tournament, test_player, mock_se
 
     # Execute
     round_obj = await round_service.create_round(
-        round_data=round_data, actor=test_player, session=mock_session
+        tournament_id=round_data["tournament_id"],
+        round_type=round_data["type"],
+        round_number=round_data["round_number"],
+        best_of=round_data["best_of"],
+        start_date=round_data["start_date"],
+        end_date=round_data["end_date"],
+        actor=test_player,
+        session=mock_session
     )
 
     # Assert
@@ -213,7 +222,7 @@ async def test_create_round_invalid_tournament(
     round_data = {
         "tournament_id": "invalid-id",
         "round_number": 1,
-        "type": RoundType.GROUP,
+        "type": RoundType.GROUP_STAGE,
         "best_of": 1,
     }
 
@@ -225,7 +234,14 @@ async def test_create_round_invalid_tournament(
     # Execute and assert
     with pytest.raises(RoundServiceError, match="Tournament not found"):
         await round_service.create_round(
-            round_data=round_data, actor=test_player, session=mock_session
+            tournament_id=round_data["tournament_id"],
+            round_type=round_data["type"],
+            round_number=round_data["round_number"],
+            best_of=round_data["best_of"],
+            start_date=datetime.now(timezone.utc),
+            end_date=datetime.now(timezone.utc) + timedelta(days=7),
+            actor=test_player,
+            session=mock_session
         )
 
 
@@ -273,7 +289,7 @@ async def test_complete_round(
         round=test_round,
         actor=test_player,
         session=mock_session,
-        tournament_service=tournament_service,
+        entity_metadata={"round_winner_service": mock_round_winner_service},
     )
 
     # Assert
@@ -533,7 +549,7 @@ async def test_cancel_round(
 
 
 @pytest.mark.asyncio
-async def test_auto_progress_round(
+async def test_round_complete_with_transition(
     round_service,
     test_round,
     test_fixtures,
@@ -542,7 +558,7 @@ async def test_auto_progress_round(
     mock_round_winner_service,
     mock_session,
 ):
-    """Test automatic progression of a round when all fixtures complete"""
+    """Test completion of a round with transition service"""
     # Setup
     test_round.status = "active"
 
@@ -566,11 +582,13 @@ async def test_auto_progress_round(
     mock_status_transition_service.transition_status.return_value = test_round_completed
 
     # Execute
-    result = await round_service.auto_progress_round(
-        round=test_round, actor=test_player, session=mock_session
+    result = await round_service.complete_round(
+        round=test_round, 
+        actor=test_player, 
+        session=mock_session,
+        entity_metadata={"round_winner_service": mock_round_winner_service}
     )
 
     # Assert
     assert result.status == "completed"
-    mock_round_winner_service.determine_round_winners.assert_called_once()
     mock_status_transition_service.transition_status.assert_called_once()

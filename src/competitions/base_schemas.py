@@ -33,11 +33,19 @@ class TournamentType(StrEnum):
     PUG = "pug"
 
 
+
 class TournamentState(StrEnum):
+    """
+    Tournament state enum
+    """
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    REGISTRATION_OPEN = "registration_open"
+    REGISTRATION_CLOSED = "registration_closed"
+
+
 
 
 class GameMode(StrEnum):

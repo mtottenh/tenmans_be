@@ -66,8 +66,19 @@ class FixtureService:
     async def get_fixture(
         self, fixture_id: uuid.UUID, session: AsyncSession
     ) -> Optional[Fixture]:
-        """Get a fixture by ID"""
-        stmt = select(Fixture).where(Fixture.id == fixture_id)
+        """Get a fixture by ID with eager loading of related entities"""
+        stmt = (
+            select(Fixture)
+            .where(Fixture.id == fixture_id)
+            .options(
+                selectinload(Fixture.tournament),
+                selectinload(Fixture.round),
+                selectinload(Fixture.team_1_rel),
+                selectinload(Fixture.team_2_rel),
+                selectinload(Fixture.match_players),
+                selectinload(Fixture.results)
+            )
+        )
         result = (await session.execute(stmt)).scalars()
         return result.first()
 
@@ -365,13 +376,23 @@ class FixtureService:
     async def get_fixture_with_details(
         self, fixture_id: uuid.UUID, session: AsyncSession
     ) -> Optional[Fixture]:
-        """Get fixture with related entities loaded"""
+        """Get fixture with related entities loaded using selectinload"""
+        # Using selectinload instead of joins for more efficient loading
         stmt = (
             select(Fixture)
             .where(Fixture.id == fixture_id)
-            .join(Tournament)
-            .join(Round)
-            .join(Team, Fixture.team_1 == Team.id)
+            .options(
+                selectinload(Fixture.tournament),
+                selectinload(Fixture.round),
+                selectinload(Fixture.team_1_rel),
+                selectinload(Fixture.team_2_rel),
+                selectinload(Fixture.match_players).selectinload(MatchPlayer.player),
+                selectinload(Fixture.results),
+                selectinload(Fixture.schedule_suggestions),
+                selectinload(Fixture.schedule_conflicts),
+                selectinload(Fixture.evidence),
+                selectinload(Fixture.veto_session)
+            )
         )
         result = (await session.execute(stmt)).scalars()
         return result.first()

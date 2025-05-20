@@ -58,11 +58,11 @@ class AdminService:
     ):
         self.auth_service = auth_service
         self.status_transition_service = status_service
-        
+
         # Initialize result and dispute status managers
         result_manager = initialize_result_status_manager()
         dispute_manager = initialize_dispute_status_manager()
-        
+
         # Register managers with status transition service
         self.status_transition_service.register_transition_manager("Result", result_manager)
         self.status_transition_service.register_transition_manager("MatchDispute", dispute_manager)
@@ -354,7 +354,7 @@ class AdminService:
         tournament = await session.get(Tournament, tournament_id)
         if not tournament:
             raise AdminServiceError("Tournament not found")
-        
+
         # Store original configuration for audit purposes
         original_config = {
             "name": tournament.name,
@@ -368,7 +368,7 @@ class AdminService:
             "scheduled_end_date": tournament.scheduled_end_date,
             "rules": tournament.rules,
         }
-        
+
         # Update tournament configuration
         if update_data.name is not None:
             tournament.name = update_data.name
@@ -390,7 +390,7 @@ class AdminService:
             tournament.scheduled_end_date = update_data.scheduled_end
         if update_data.rules is not None:
             tournament.rules = update_data.rules
-            
+
         # Update format configuration if provided
         if update_data.format_config is not None:
             if tournament.format == LeagueFormat.SWISS:
@@ -401,12 +401,12 @@ class AdminService:
                     tournament.double_elimination = update_data.format_config.get("double_elimination")
                 if update_data.format_config.get("third_place") is not None:
                     tournament.third_place_match = update_data.format_config.get("third_place")
-                
+
         session.add(tournament)
         await session.flush()
-        
+
         return tournament
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE, entity_type="Tournament"
     )
@@ -424,19 +424,19 @@ class AdminService:
         tournament = await session.get(Tournament, tournament_id)
         if not tournament:
             raise AdminServiceError("Tournament not found")
-        
+
         try:
             # Convert string to enum state
             target_status = TournamentState(new_status)
         except ValueError:
             raise AdminServiceError(f"Invalid tournament status: {new_status}")
-        
+
         # Use status transition service to handle the change
         context = {
             "skip_validations": skip_validations,
             "admin_forced": True,
         }
-        
+
         await self.status_transition_service.transition_status(
             entity=tournament,
             new_status=target_status,
@@ -446,9 +446,9 @@ class AdminService:
             session=session,
             audit_context=audit_context,
         )
-        
+
         return tournament
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.CREATE, entity_type="Round"
     )
@@ -464,20 +464,20 @@ class AdminService:
     ) -> Round:
         """Manually generate a tournament round"""
         from services.tournament import tournament_service
-        
+
         tournament = await session.get(Tournament, tournament_id)
         if not tournament:
             raise AdminServiceError("Tournament not found")
-        
+
         # Check if tournament is in a valid state
         if tournament.state not in [TournamentState.IN_PROGRESS, TournamentState.NOT_STARTED]:
             raise AdminServiceError(f"Tournament is in {tournament.state} state. Cannot generate rounds.")
-        
+
         # Check if the round already exists
         existing_round = await tournament_service._get_round_by_number(tournament_id, round_number, session)
         if existing_round:
             raise AdminServiceError(f"Round {round_number} already exists for this tournament.")
-        
+
         # Create the round
         round_type_enum = None
         if round_type:
@@ -490,7 +490,7 @@ class AdminService:
                 if round_type not in ["RoundOf16", "QuarterFinal", "SemiFinal", "Final", "ThirdPlace"]:
                     raise AdminServiceError(f"Invalid round type '{round_type}' for knockout format")
                 round_type_enum = round_type
-                
+
         # Create a new round
         new_round = Round(
             tournament_id=tournament_id,
@@ -503,16 +503,16 @@ class AdminService:
         )
         session.add(new_round)
         await session.flush()
-        
+
         # If we have forced pairings, create fixtures based on those
         if force_pairings and len(force_pairings) > 0:
             for pairing in force_pairings:
                 team1_id = pairing.get("team1_id")
                 team2_id = pairing.get("team2_id")
-                
+
                 if not team1_id or not team2_id:
                     continue
-                    
+
                 # Create fixture with the forced pairing
                 fixture = Fixture(
                     tournament_id=tournament_id,
@@ -525,14 +525,14 @@ class AdminService:
                     created_by=actor.id,
                 )
                 session.add(fixture)
-                
+
             await session.flush()
         else:
             # Use the tournament service to generate fixtures automatically
             await tournament_service._generate_fixtures_for_round(tournament, new_round, session)
-            
+
         return new_round
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE, entity_type="Team"
     )
@@ -546,18 +546,18 @@ class AdminService:
     ) -> Team:
         """Force disband a team"""
         from services.team import team_service
-        
+
         team = await session.get(Team, team_id)
         if not team:
             raise AdminServiceError("Team not found")
-        
+
         # Use status transition service to handle disband
         context = {
             "ban_captain": disband_data.ban_captain,
             "remove_from_tournaments": disband_data.remove_from_tournaments,
             "admin_forced": True
         }
-        
+
         await self.status_transition_service.transition_status(
             entity=team,
             new_status=TeamStatus.DISBANDED,
@@ -567,9 +567,9 @@ class AdminService:
             session=session,
             audit_context=audit_context,
         )
-        
+
         return team
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE, entity_type="Team"
     )
@@ -585,28 +585,28 @@ class AdminService:
         from services.captain import captain_service
         from services.roster import roster_service
         from services.team import team_service
-        
+
         team = await session.get(Team, team_id)
         if not team:
             raise AdminServiceError("Team not found")
-            
+
         player = await session.get(Player, roster_change.player_id)
         if not player:
             raise AdminServiceError("Player not found")
-        
+
         # Check which action to perform
         if roster_change.action == "add":
             # Check if player already on team
             existing_roster = await roster_service.get_player_roster(player.id, team.id, None, session)
             if existing_roster:
                 raise AdminServiceError("Player is already on this team")
-                
+
             # Get active season
             from services.season import season_service
             active_season = await season_service.get_active_season(session)
             if not active_season:
                 raise AdminServiceError("No active season found")
-                
+
             # Add player to roster
             return await roster_service.add_player_to_team(
                 team=team,
@@ -615,13 +615,13 @@ class AdminService:
                 actor=actor,
                 session=session,
             )
-            
+
         elif roster_change.action == "remove":
             # Check if player is on team
             existing_roster = await roster_service.get_player_roster(player.id, team.id, None, session)
             if not existing_roster:
                 raise AdminServiceError("Player is not on this team")
-                
+
             # Remove player from roster
             await roster_service.remove_player_from_team(
                 roster=existing_roster,
@@ -630,7 +630,7 @@ class AdminService:
                 session=session,
             )
             return existing_roster
-            
+
         elif roster_change.action == "promote_captain":
             # Promote to captain
             return await captain_service.add_captain(
@@ -639,7 +639,7 @@ class AdminService:
                 actor=actor,
                 session=session,
             )
-            
+
         elif roster_change.action == "demote_captain":
             # Check if player is a captain
             stmt = select(TeamCaptain).where(
@@ -650,7 +650,7 @@ class AdminService:
             result = (await session.execute(stmt)).scalars().first()
             if not result:
                 raise AdminServiceError("Player is not an active captain of this team")
-                
+
             # Demote from captain
             return await captain_service.remove_captain(
                 team_captain=result,
@@ -658,10 +658,10 @@ class AdminService:
                 actor=actor,
                 session=session,
             )
-            
+
         else:
             raise AdminServiceError(f"Invalid action: {roster_change.action}")
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE, entity_type="Player"
     )
@@ -677,10 +677,10 @@ class AdminService:
         player = await session.get(Player, player_id)
         if not player:
             raise AdminServiceError("Player not found")
-            
+
         # Calculate new ELO
         current_elo = player.current_elo or 1500  # Default starting ELO
-        
+
         if elo_adjustment.adjustment_type == "set":
             new_elo = elo_adjustment.new_elo
         elif elo_adjustment.adjustment_type == "add":
@@ -691,19 +691,19 @@ class AdminService:
                 new_elo = 0  # Don't allow negative ELO
         else:
             raise AdminServiceError(f"Invalid adjustment type: {elo_adjustment.adjustment_type}")
-        
+
         # Record previous highest ELO if this is a new high
         if not player.highest_elo or new_elo > player.highest_elo:
             player.highest_elo = new_elo
-            
+
         # Update the player
         player.current_elo = new_elo
         player.updated_at = datetime.now(timezone.utc)
         session.add(player)
         await session.flush()
-        
+
         return player
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE, entity_type="Player"
     )
@@ -719,25 +719,25 @@ class AdminService:
         from services.roster import roster_service
         from services.captain import captain_service
         from services.season import season_service
-        
+
         player = await session.get(Player, player_id)
         if not player:
             raise AdminServiceError("Player not found")
-            
+
         # Get active season
         active_season = await season_service.get_active_season(session)
         if not active_season:
             raise AdminServiceError("No active season found")
-            
+
         # Get all active team rosters for this player
         stmt = select(Roster).where(
             Roster.player_id == player_id,
             Roster.season_id == active_season.id,
             Roster.status == RosterStatus.ACTIVE
         ).options(selectinload(Roster.team))
-        
+
         result = (await session.execute(stmt)).scalars().all()
-        
+
         # Remove from each team's roster
         for roster in result:
             await roster_service.remove_player_from_team(
@@ -746,15 +746,15 @@ class AdminService:
                 actor=actor,
                 session=session,
             )
-            
+
         # Also remove any captain positions
         stmt = select(TeamCaptain).where(
             TeamCaptain.player_id == player_id,
             TeamCaptain.status == TeamCaptainStatus.ACTIVE
         )
-        
+
         captaincies = (await session.execute(stmt)).scalars().all()
-        
+
         for captaincy in captaincies:
             await captain_service.remove_captain(
                 team_captain=captaincy,
@@ -762,7 +762,7 @@ class AdminService:
                 actor=actor,
                 session=session,
             )
-    
+
     @AuditService.audited_transaction(
         action_type=AuditEventType.CREATE, entity_type="ModerationAction"
     )
@@ -778,18 +778,18 @@ class AdminService:
         player = await session.get(Player, player_id)
         if not player:
             raise AdminServiceError("Player not found")
-            
+
         # Create duration if specified
         end_date = None
         if action.duration_days:
             end_date = datetime.now(timezone.utc) + timedelta(days=action.duration_days)
-            
+
         # Map action type to enum
         try:
             action_type = ModerationActionType(action.action_type)
         except ValueError:
             raise AdminServiceError(f"Invalid action type: {action.action_type}")
-            
+
         # Create action record
         moderation_action = ModerationAction(
             player_id=player.id,
@@ -802,10 +802,10 @@ class AdminService:
             issued_by=actor.id,
             active=True
         )
-        
+
         session.add(moderation_action)
         await session.flush()
-        
+
         # If this is a ban, apply the ban logic
         if action.action_type == "ban":
             ban_data = BanCreate(
@@ -815,14 +815,14 @@ class AdminService:
                 evidence=[],
                 end_date=end_date
             )
-            
+
             await self.ban_player(
                 player_id=player.id,
                 ban_data=ban_data,
                 actor=actor,
                 session=session
             )
-        
+
         # If it's a suspension, mark player as suspended
         if action.action_type == "suspension":
             await self.status_transition_service.transition_status(
@@ -837,7 +837,7 @@ class AdminService:
                 session=session,
                 audit_context=audit_context,
             )
-            
+
         return moderation_action
 
     async def get_all_players(

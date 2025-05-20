@@ -11,6 +11,7 @@ from sqlmodel import Column, Field, Relationship, SQLModel
 
 from competitions.base_schemas import GameMode, MapCategory
 from competitions.map_pool.models import MapPoolMap
+from db.models import enum_column, created_at_field, updated_at_field
 from pugs.models import PugMapResult
 
 
@@ -27,7 +28,7 @@ class TournamentMap(SQLModel, table=True):
         sa_column=Column(ForeignKey("tournaments.id"), primary_key=True)
     )
     map_id: uuid.UUID = Field(sa_column=Column(ForeignKey("maps.id"), primary_key=True))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
 
 class Map(SQLModel, table=True):
@@ -40,13 +41,14 @@ class Map(SQLModel, table=True):
     name: str = Field(unique=True)
     img: Optional[str]
     category: MapCategory = Field(
-        sa_column=sa.Column(sa.Enum(MapCategory)), default=MapCategory.COMPETITIVE
+        sa_column=enum_column(MapCategory),
+        default=MapCategory.COMPETITIVE
     )
     supported_modes: list[GameMode] = Field(
         sa_column=Column(ARRAY(sa.String)), default=[GameMode.COMPETITIVE_5V5]
     )
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Relationships
     tournaments: list["Tournament"] = Relationship(

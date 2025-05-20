@@ -373,7 +373,7 @@ async def reschedule_fixture(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Fixture not found"
             )
-            
+
         return await fixture_service.reschedule_fixture(
             fixture=fixture,
             new_date=reschedule_data.new_scheduled_at,
@@ -403,7 +403,7 @@ async def forfeit_fixture(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Fixture not found"
             )
-            
+
         return await fixture_service.forfeit_fixture(
             fixture=fixture,
             forfeit_winner=forfeit_data.forfeit_winner,

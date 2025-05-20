@@ -78,7 +78,7 @@ def test_round(test_tournament):
         id=str(uuid.uuid4()),
         tournament_id=test_tournament.id,
         round_number=1,
-        type=RoundType.GROUP,
+        type=RoundType.GROUP_STAGE,
         best_of=1,
         status="active",
     )
@@ -132,7 +132,7 @@ async def test_create_fixture(
         team_1=test_teams[0].id,
         team_2=test_teams[1].id,
         sequence_number=1,
-        best_of=1,
+        match_format='bo1',
         scheduled_at=datetime.now(timezone.utc) + timedelta(days=7),
         notes="Test fixture",
     )

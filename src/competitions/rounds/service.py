@@ -184,6 +184,7 @@ class RoundService:
         action_type=AuditEventType.UPDATE,
         entity_type="Round",
         details_extractor=_round_audit_details,
+        entity_param='round'
     )
     async def complete_round(
         self,

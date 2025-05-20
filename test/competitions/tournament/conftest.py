@@ -331,6 +331,7 @@ class TestDataBuilder:
         round_type: RoundType,
         status: str,
         start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
     ) -> Round:
         """Create a tournament round"""
         if not start_date:
@@ -345,7 +346,7 @@ class TestDataBuilder:
             best_of=1,  # Default to BO1
             status=status,
             start_date=start_date,
-            end_date=start_date + timedelta(days=TestDataConfig.ROUND_INTERVAL_DAYS),
+            end_date=end_date or start_date + timedelta(days=TestDataConfig.ROUND_INTERVAL_DAYS),
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -551,3 +552,32 @@ async def knockout_tournament_setup(
         "teams": test_data_builder.teams,
         "builder": test_data_builder,
     }
+
+
+import pytest_asyncio
+
+from audit.service import AuditService
+from competitions.rounds.round_winner_service import RoundWinnerService
+from competitions.tournament.service import TournamentService
+from status.service import create_enhanced_status_transition_service
+
+@pytest_asyncio.fixture
+async def tournament_service():
+    """Create a fully configured TournamentService with all dependencies"""
+    # Create properly enhanced status transition service with pipeline support
+    status_transition_service = create_enhanced_status_transition_service()
+
+    # Create AuditService
+    audit_service = AuditService()
+
+    # Create RoundWinnerService
+    round_winner_service = RoundWinnerService()
+
+    # Create TournamentService with all dependencies
+    service = TournamentService(
+        status_transition_service=status_transition_service,
+        audit_service=audit_service,
+        round_winner_service=round_winner_service
+    )
+
+    return service

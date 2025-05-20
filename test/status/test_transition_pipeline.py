@@ -35,13 +35,13 @@ class RecordingStep(TransitionStep):
         # Ensure context is a dict
         if context is None:
             context = {}
-            
+
         # Track execution order
         if "execution_counter" not in context:
             context["execution_counter"] = 0
         self.execution_order = context["execution_counter"]
         context["execution_counter"] += 1
-        
+
         # Debug output to help diagnose issues
         print(f"Step {self.name} executed with order {self.execution_order}, counter now {context['execution_counter']}")
 
@@ -293,7 +293,7 @@ class TestTransitionPipeline:
                 # Ensure context is a dict
                 if context is None:
                     context = {}
-                
+
                 # Add to context
                 context[self.key] = self.value
 
@@ -318,7 +318,7 @@ class TestTransitionPipeline:
 
         # Execute
         context = {"initial_key": "initial_value"}
-        
+
         # Pass a shared dictionary that will be modified by the steps
         shared_context = dict(context)
         await pipeline.execute(
@@ -329,7 +329,7 @@ class TestTransitionPipeline:
             session=session,
             **shared_context
         )
-        
+
         # Copy back any modifications
         for key, value in shared_context.items():
             context[key] = value
