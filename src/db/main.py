@@ -48,9 +48,15 @@ def set_postgres_session_settings(dbapi_connection, connection_record):  # noqa:
 
 async def init_db():
     """Initialize database and create all tables."""
-    async with engine.begin() as conn:
-        # Create all tables
-        await conn.run_sync(SQLModel.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            # Create all tables
+            await conn.run_sync(SQLModel.metadata.create_all)
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        # Make sure to clean up the connection on error
+        await engine.dispose()
+        raise
 
 
 async_session = sessionmaker(

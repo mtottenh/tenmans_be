@@ -26,7 +26,19 @@ async def tournament_round_setup(session: AsyncSession, admin_user: Player):
     month_later = now + timedelta(days=30)
 
     # Create a season for referential integrity
-    season_id = uuid.uuid4()
+    from competitions.models.seasons import Season
+    
+    season = Season(
+        id=uuid.uuid4(),
+        name="Test Season",
+        status="active",
+        start_date=now - timedelta(days=30),
+        end_date=now + timedelta(days=60)
+    )
+    session.add(season)
+    await session.flush()
+    
+    season_id = season.id
 
     # Create tournament with unique name to prevent conflicts
     tournament_name = f"Pipeline Test Tournament {uuid.uuid4()}"
@@ -43,7 +55,9 @@ async def tournament_round_setup(session: AsyncSession, admin_user: Player):
         # Add required fields with default values
         registration_start=now - timedelta(days=10),
         registration_end=now - timedelta(days=5),
-        format_config={"match_format": "bo1"}
+        format_config={"match_format": "bo1"},
+        # Add required max_team_size field
+        max_team_size=5
     )
     session.add(tournament)
     await session.flush()  # Flush to get the ID but don't commit yet
@@ -81,8 +95,29 @@ async def tournament_round_setup(session: AsyncSession, admin_user: Player):
     await session.flush()
 
     # Create teams with unique IDs
-    team1_id = uuid.uuid4()
-    team2_id = uuid.uuid4()
+    from teams.models import Team
+    
+    team1 = Team(
+        id=uuid.uuid4(),
+        name="Test Team 1",
+        logo_path=None,
+        captain_id=admin_user.id,
+        status="active"
+    )
+    session.add(team1)
+    
+    team2 = Team(
+        id=uuid.uuid4(),
+        name="Test Team 2",
+        logo_path=None,
+        captain_id=admin_user.id,
+        status="active"
+    )
+    session.add(team2)
+    await session.flush()
+    
+    team1_id = team1.id
+    team2_id = team2.id
 
     # Create a completed fixture with unique ID
     fixture_id = uuid.uuid4()

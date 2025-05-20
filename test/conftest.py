@@ -35,50 +35,108 @@ def _compile_drop_table(element, compiler, **kwargs):
     return compiler.visit_drop_table(element) + " CASCADE"
 
 
-# Instead of redefining event_loop, we're using pytest-asyncio's built-in event_loop fixture
-# with configuration in pyproject.toml: asyncio_default_fixture_loop_scope = "function"
+# Create a new event loop for each test function
+@pytest_asyncio.fixture(scope="function")
+def event_loop():
+    """Create a new event loop for each test."""
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    # Clean up after the test
+    loop.close()
+    asyncio.set_event_loop(None)
 
 
 # Test database URL
 TEST_DATABASE_URL = f"postgresql+asyncpg://{Config.POSTGRES_USER}:{Config.POSTGRES_PASSWORD}@db/{Config.POSTGRES_DB}"
 
 
-@pytest.fixture(scope="session")
-def test_engine():
-    """Create a test engine fixture."""
+@pytest_asyncio.fixture(scope="function")
+async def test_engine(event_loop):
+    """Create a test engine fixture with the current event loop."""
+    import asyncio
+    # Ensure we're using the correct event loop
+    assert asyncio.get_event_loop() is event_loop, "Event loop mismatch in test_engine"
+    
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
         future=True,
-        pool_size=5,
+        pool_size=2,  # Reduced pool size for tests
         max_overflow=0,
-        pool_timeout=30,
-        pool_recycle=1800,
+        pool_timeout=10,
+        pool_recycle=300,
         pool_pre_ping=True,
         isolation_level="AUTOCOMMIT",  # This can help with transaction management
+        connect_args={"server_settings": {"application_name": "test"}},  # Add application name for debugging
     )
     yield engine
 
+    # Clean up engine resources
+    await engine.dispose()
+
 
 @pytest_asyncio.fixture(scope="function")
-async def prepare_test_database(test_engine):
-    """Initialize database for each test."""
+async def prepare_test_database(test_engine, event_loop):
+    """Initialize database for each test function using Alembic migrations."""
+    import asyncio
+    from sqlalchemy import text
+    import subprocess
+    import os
+
+    # Verify event loop
+    assert asyncio.get_event_loop() is event_loop, "Event loop mismatch in prepare_test_database"
+
+    # Drop schema and recreate it for a clean start
     async with test_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
-        await conn.run_sync(SQLModel.metadata.create_all)
+        try:
+            # Clean slate - drop all objects with CASCADE
+            await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+            await conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
+        except Exception as e:
+            print(f"Error resetting database schema: {e}")
+            raise
 
+    # Use Alembic to apply migrations - this ensures the schema matches production
     try:
-        yield
-    finally:
-        # Clean up after test
+        # Run alembic from the project root (/app) where alembic.ini is located
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            cwd="/app",  # Docker container's app directory
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print(f"Alembic migration failed: {result.stderr}")
+            raise Exception(f"Alembic migration failed: {result.stderr}")
+        print(f"Successfully applied Alembic migrations for test")
+    except Exception as e:
+        print(f"Error running Alembic migrations: {str(e)}")
+        raise
+
+    # Return control to the test
+    yield
+
+    # Clean up after test
+    try:
         async with test_engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.drop_all)
+            await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+    except Exception as e:
+        print(f"Error cleaning up test database: {e}")
 
 
-# Session fixture
-@pytest_asyncio.fixture
-async def session(test_engine, prepare_test_database):
+# Session fixture - function scoped for test isolation
+@pytest_asyncio.fixture(scope="function")
+async def session(test_engine, prepare_test_database, event_loop):
     """Provide an async session for testing."""
+    import asyncio
+    # Verify event loop
+    assert asyncio.get_event_loop() is event_loop, "Event loop mismatch in session fixture"
+    
     async_session = sessionmaker(
         test_engine,
         class_=AsyncSession,
@@ -90,14 +148,22 @@ async def session(test_engine, prepare_test_database):
     async with async_session() as session:
         try:
             yield session
+        except Exception as e:
+            await session.rollback()
+            print(f"Session exception: {e}")
+            raise
         finally:
             await session.close()
 
 
 # Override FastAPI dependencies for testing
-@pytest_asyncio.fixture(autouse=True)
-async def override_dependencies(test_engine):
+@pytest_asyncio.fixture(autouse=True, scope="function")
+async def override_dependencies(test_engine, event_loop):
+    import asyncio
     from main import app
+
+    # Verify event loop
+    assert asyncio.get_event_loop() is event_loop, "Event loop mismatch in override_dependencies"
 
     # Create a dependency override for the get_session dependency
     async def get_test_session():
@@ -107,6 +173,10 @@ async def override_dependencies(test_engine):
         async with async_session() as session:
             try:
                 yield session
+            except Exception as e:
+                await session.rollback()
+                print(f"Session exception in dependency: {e}")
+                raise
             finally:
                 await session.close()
 
@@ -120,8 +190,8 @@ async def override_dependencies(test_engine):
     app.dependency_overrides.clear()
 
 
-# Admin user fixture
-@pytest_asyncio.fixture
+# Admin user fixture - function scoped for test isolation
+@pytest_asyncio.fixture(scope="function")
 async def admin_user(session, test_roles, system_user):
     from auth.models import AuthType, Player, PlayerStatus
     from auth.schemas import ScopeType
@@ -226,13 +296,13 @@ async def get_or_create_system_user(session: AsyncSession) -> Player:
     return system_user
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def system_user(session: AsyncSession) -> Player:
     """Fixture to ensure SYSTEM user exists"""
     return await get_or_create_system_user(session)
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def test_permissions(
     session: AsyncSession, system_user: Player
 ) -> dict[str, Permission]:
@@ -240,7 +310,7 @@ async def test_permissions(
     return await init_permissions(session)
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def test_roles(
     session: AsyncSession, system_user: Player, test_permissions: dict[str, Permission]
 ) -> dict[str, Role]:
@@ -320,7 +390,7 @@ async def test_roles(
     return roles
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def test_players(
     session: AsyncSession, system_user: Player, test_roles: dict[str, Role]
 ) -> dict[str, Player]:
@@ -419,7 +489,7 @@ async def test_players(
     return players
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def test_season(session: AsyncSession, system_user: Player) -> Season:
     """Create an active test season"""
     from competitions.schemas import SeasonCreate

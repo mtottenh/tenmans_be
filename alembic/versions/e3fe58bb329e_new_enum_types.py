@@ -13,7 +13,7 @@ import sys
 import os
 import sqlmodel
 # Add the project root to the path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'src'))
 
 from alembic import op
 import sqlalchemy as sa

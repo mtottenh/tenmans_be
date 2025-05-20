@@ -38,7 +38,7 @@ class TeamJoinRequest(SQLModel, AsyncAttrs, table=True):
     # Request workflow timestamps
     created_at: datetime = created_at_field()
     updated_at: datetime = updated_at_field()
-    responded_at: Optional[datetime] = timestamp_column(nullable=True)
+    responded_at: Optional[datetime] = Field(sa_column=timestamp_column(nullable=True))
 
     # Response details
     response_message: Optional[str] = None  # Team's response message

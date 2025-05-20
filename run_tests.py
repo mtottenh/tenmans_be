@@ -40,13 +40,29 @@ def main():
     for i in range(5):
         time.sleep(1)  # Give services time to start
         print('.')
+    
+    # Start a uvicorn server for tests that need a running API
+    print("\nStarting test API server...")
+    run_command([
+        "docker", "exec", "-d", "tenmans-api-1", 
+        "python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"
+    ])
+    
+    # Wait for API to be ready
+    print("\nWaiting for API to start...")
+    for i in range(3):
+        time.sleep(1)
+        print('.')
 
     try:
         # Check if specific tests were passed as arguments
         test_args = sys.argv[1:] if len(sys.argv) > 1 else ["../test"]
 
-        # Build the pytest command
-        pytest_command = ["docker", "exec", "tenmans-api-1", "pytest", "-v"] + test_args
+        # Build the pytest command with event loop policy for asyncio
+        pytest_command = [
+            "docker", "exec", "tenmans-api-1", 
+            "python", "-m", "pytest", "-v", 
+        ] + test_args
 
         print(f"\nRunning tests: {' '.join(test_args)}")
         run_command(pytest_command)

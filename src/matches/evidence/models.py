@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
-
+from db.models import timestamp_column
 
 if TYPE_CHECKING:
     from auth.models import Player
@@ -45,7 +45,7 @@ class MatchEvidence(SQLModel, table=True):
         sa_column=Column(Enum(EvidenceStatus)), default=EvidenceStatus.PENDING
     )
     submitted_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    submitted_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    submitted_at: datetime = Field(sa_column=timestamp_column())
 
     # Relationships
     fixture: "Fixture" = Relationship(back_populates="evidence")
@@ -70,7 +70,7 @@ class EvidenceConfirmation(SQLModel, table=True):
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     status: str  # "confirmed", "disputed"
     notes: Optional[str] = None
-    confirmed_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    confirmed_at: datetime =  Field(sa_column=timestamp_column())
 
     # Relationships
     evidence: MatchEvidence = Relationship(back_populates="confirmations")
