@@ -27,16 +27,23 @@ class RecordingStep(TransitionStep):
         actor: Player,
         session: AsyncSession,
         audit_context=None,
-        **context,
+        context: dict = None,
     ) -> None:
         # Record execution
         self.executed = True
 
+        # Ensure context is a dict
+        if context is None:
+            context = {}
+            
         # Track execution order
         if "execution_counter" not in context:
             context["execution_counter"] = 0
         self.execution_order = context["execution_counter"]
         context["execution_counter"] += 1
+        
+        # Debug output to help diagnose issues
+        print(f"Step {self.name} executed with order {self.execution_order}, counter now {context['execution_counter']}")
 
         # Store in shared list if provided
         if "executed_steps" in context:
@@ -62,7 +69,7 @@ class AuditingStep(TransitionStep):
         actor: Player,
         session: AsyncSession,
         audit_context=None,
-        **context,
+        context: dict = None,
     ) -> None:
         if audit_context:
             await audit_context.create_audit_event(
@@ -89,7 +96,7 @@ class DataModificationStep(TransitionStep):
         actor: Player,
         session: AsyncSession,
         audit_context=None,
-        **context,
+        context: dict = None,
     ) -> None:
         # Modify the entity
         if hasattr(entity, "metadata"):
@@ -137,7 +144,7 @@ class TestTransitionPipeline:
             new_status="ACTIVE",
             actor=system_user,
             session=session,
-            **context,
+            executed_steps=context["executed_steps"],
         )
 
         # Verify all steps executed in order
@@ -176,7 +183,7 @@ class TestTransitionPipeline:
                 new_status="ACTIVE",
                 actor=system_user,
                 session=session,
-                **context,
+                executed_steps=context["executed_steps"],
             )
 
         # Verify execution stopped at failing step
@@ -281,8 +288,12 @@ class TestTransitionPipeline:
                 actor,
                 session,
                 audit_context=None,
-                **context,
+                context: dict = None,
             ):
+                # Ensure context is a dict
+                if context is None:
+                    context = {}
+                
                 # Add to context
                 context[self.key] = self.value
 
@@ -306,17 +317,25 @@ class TestTransitionPipeline:
         pipeline = TransitionPipeline([step1, step2, step3])
 
         # Execute
-        context = {}
+        context = {"initial_key": "initial_value"}
+        
+        # Pass a shared dictionary that will be modified by the steps
+        shared_context = dict(context)
         await pipeline.execute(
             entity=MockEntity(),
             old_status="DRAFT",
             new_status="ACTIVE",
             actor=system_user,
             session=session,
-            **context,
+            **shared_context
         )
+        
+        # Copy back any modifications
+        for key, value in shared_context.items():
+            context[key] = value
 
-        # Verify all context was preserved
+        # Verify all context was preserved and updated
+        assert context["initial_key"] == "initial_value"
         assert context["step1_data"] == "value1"
         assert context["step2_data"] == "value2"
         assert context["step3_data"] == "value3"

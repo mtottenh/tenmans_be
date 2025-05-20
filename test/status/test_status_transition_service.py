@@ -21,7 +21,7 @@ from teams.models import TeamStatus
 
 
 # Create test status enum
-class TestStatus(StrEnum):
+class SampleStatus(StrEnum):
     DRAFT = "DRAFT"
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
@@ -30,8 +30,8 @@ class TestStatus(StrEnum):
 
 
 # Create test entity
-class TestEntity:
-    def __init__(self, id: uuid4, status: TestStatus):
+class StatusTestEntity:
+    def __init__(self, id: uuid4, status: SampleStatus):
         self.id = id
         self.status = status
 
@@ -81,7 +81,7 @@ class TestStatusTransitionService:
     @pytest_asyncio.fixture
     async def test_entity(self):
         """Create a test entity"""
-        return TestEntity(id=uuid4(), status=TestStatus.DRAFT)
+        return StatusTestEntity(id=uuid4(), status=SampleStatus.DRAFT)
 
     @pytest_asyncio.fixture
     async def transition_service(self):
@@ -89,13 +89,13 @@ class TestStatusTransitionService:
         service = StatusTransitionService()
 
         # Create and configure transition manager
-        manager = StatusTransitionManager(TestStatus, "TestEntity")
+        manager = StatusTransitionManager(SampleStatus, "TestEntity")
 
         # Add transition rules
         manager.add_rule(
             StatusTransitionRule(
-                from_status={TestStatus.DRAFT},
-                to_status={TestStatus.ACTIVE},
+                from_status={SampleStatus.DRAFT},
+                to_status={SampleStatus.ACTIVE},
                 validators=[TestReasonValidator()],
                 required_permissions=[],
             )
@@ -103,8 +103,8 @@ class TestStatusTransitionService:
 
         manager.add_rule(
             StatusTransitionRule(
-                from_status={TestStatus.ACTIVE},
-                to_status={TestStatus.INACTIVE, TestStatus.SUSPENDED},
+                from_status={SampleStatus.ACTIVE},
+                to_status={SampleStatus.INACTIVE, SampleStatus.SUSPENDED},
                 validators=[TestReasonValidator()],
                 required_permissions=["manage_entity"],
             )
@@ -113,7 +113,7 @@ class TestStatusTransitionService:
         manager.add_rule(
             StatusTransitionRule(
                 from_status=None,  # From any status
-                to_status={TestStatus.DELETED},
+                to_status={SampleStatus.DELETED},
                 validators=[],
                 required_permissions=["admin"],
             )
@@ -124,7 +124,7 @@ class TestStatusTransitionService:
 
         # Create and register pipeline
         pipeline = TransitionPipeline([TestPipelineStep()])
-        service.register_transition_pipeline("TestEntity", TestStatus.ACTIVE, pipeline)
+        service.register_transition_pipeline("TestEntity", SampleStatus.ACTIVE, pipeline)
 
         return service
 
@@ -133,7 +133,7 @@ class TestStatusTransitionService:
         self,
         session: AsyncSession,
         system_user: Player,
-        test_entity: TestEntity,
+        test_entity: StatusTestEntity,
         transition_service: StatusTransitionService,
     ):
         """Test a valid status transition"""
@@ -146,14 +146,14 @@ class TestStatusTransitionService:
             session=session,
         )
 
-        assert result.status == TestStatus.ACTIVE
+        assert result.status == SampleStatus.ACTIVE
 
     @pytest.mark.asyncio
     async def test_transition_with_pipeline(
         self,
         session: AsyncSession,
         system_user: Player,
-        test_entity: TestEntity,
+        test_entity: StatusTestEntity,
         transition_service: StatusTransitionService,
     ):
         """Test transition with pipeline execution"""
@@ -169,7 +169,7 @@ class TestStatusTransitionService:
                 audit_context=audit_context,
             )
 
-            assert result.status == TestStatus.ACTIVE
+            assert result.status == SampleStatus.ACTIVE
             # TODO: Verify pipeline was executed by checking audit events
 
     @pytest.mark.asyncio
@@ -177,12 +177,12 @@ class TestStatusTransitionService:
         self,
         session: AsyncSession,
         system_user: Player,
-        test_entity: TestEntity,
+        test_entity: StatusTestEntity,
         transition_service: StatusTransitionService,
     ):
         """Test invalid transition raises error"""
         # Try to transition from DRAFT to SUSPENDED (not allowed)
-        test_entity.status = TestStatus.DRAFT
+        test_entity.status = SampleStatus.DRAFT
 
         with pytest.raises(TransitionError, match="No valid transition rule"):
             await transition_service.transition_status(
@@ -198,7 +198,7 @@ class TestStatusTransitionService:
         self,
         session: AsyncSession,
         system_user: Player,
-        test_entity: TestEntity,
+        test_entity: StatusTestEntity,
         transition_service: StatusTransitionService,
     ):
         """Test transition fails when reason is required but not provided"""
@@ -216,13 +216,13 @@ class TestStatusTransitionService:
         self,
         session: AsyncSession,
         system_user: Player,
-        test_entity: TestEntity,
+        test_entity: StatusTestEntity,
         transition_service: StatusTransitionService,
         test_roles: dict[str, Any],
     ):
         """Test transition that requires permissions"""
         # First activate the entity
-        test_entity.status = TestStatus.ACTIVE
+        test_entity.status = SampleStatus.ACTIVE
 
         # Try to transition to INACTIVE without permissions
         regular_user = Player(
@@ -248,7 +248,7 @@ class TestStatusTransitionService:
         self,
         session: AsyncSession,
         system_user: Player,
-        test_entity: TestEntity,
+        test_entity: StatusTestEntity,
         transition_service: StatusTransitionService,
     ):
         """Test retrieving status change history"""
@@ -277,7 +277,7 @@ class TestStatusTransitionService:
     ):
         """Test error when no transition manager is registered"""
         service = StatusTransitionService()
-        unregistered_entity = TestEntity(id=uuid4(), status=TestStatus.DRAFT)
+        unregistered_entity = StatusTestEntity(id=uuid4(), status=SampleStatus.DRAFT)
 
         with pytest.raises(ValueError, match="No transition manager registered"):
             await service.transition_status(
@@ -299,7 +299,7 @@ class TestStatusTransitionService:
         # Create and transition multiple entities
         entities = []
         for i in range(3):
-            entity = TestEntity(id=uuid4(), status=TestStatus.DRAFT)
+            entity = StatusTestEntity(id=uuid4(), status=SampleStatus.DRAFT)
             entities.append(entity)
 
             await transition_service.transition_status(

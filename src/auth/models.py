@@ -3,15 +3,17 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlmodel import Column, Field, Relationship, SQLModel
+
+from db.models import created_at_field, timestamp_column, updated_at_field
+from utils.datetime import now_utc
 
 from audit.models import AuditEvent
 from auth.schemas import AuthType, PlayerStatus
 from competitions.models.scheduling import PlayerAvailability
-from moderation.models import Ban
+from moderation.models import Ban, ModerationAction
 from substitutes.models import SubstituteAvailability
 from teams.join_request.models import TeamJoinRequest
 
@@ -26,7 +28,7 @@ if TYPE_CHECKING:
 
 
 
-class RolePermission(SQLModel, AsyncAttrs, table=True):
+class RolePermission(SQLModel, table=True):
     __tablename__ = "role_permissions"
     role_id: uuid.UUID = Field(
         sa_column=Column(ForeignKey("roles.id"), primary_key=True)
@@ -46,10 +48,10 @@ class PlayerRole(SQLModel, table=True):
     )
     scope_type: str  # 'global', 'team', 'tournament'
     scope_id: Optional[uuid.UUID] = Field(default=None)
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=timestamp_column(default=now_utc))
 
 
-class Role(SQLModel, AsyncAttrs, table=True):
+class Role(SQLModel, table=True):
     __tablename__ = "roles"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -57,7 +59,7 @@ class Role(SQLModel, AsyncAttrs, table=True):
         )
     )
     name: str = Field(unique=True)
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=timestamp_column(default=now_utc))
     permissions: list["Permission"] = Relationship(
         back_populates="roles", link_model=RolePermission
     )
@@ -67,7 +69,7 @@ class Role(SQLModel, AsyncAttrs, table=True):
     )
 
 
-class Permission(SQLModel, AsyncAttrs, table=True):
+class Permission(SQLModel, table=True):
     __tablename__ = "permissions"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -76,13 +78,13 @@ class Permission(SQLModel, AsyncAttrs, table=True):
     )
     name: str = Field(unique=True)
     description: str
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = Field(sa_column=timestamp_column(default=now_utc))
     roles: list[Role] = Relationship(
         back_populates="permissions", link_model=RolePermission
     )
 
 
-class Player(SQLModel, AsyncAttrs, table=True):
+class Player(SQLModel, table=True):
     __tablename__ = "players"
 
     id: uuid.UUID = Field(
@@ -103,9 +105,10 @@ class Player(SQLModel, AsyncAttrs, table=True):
 
     # Status field
     status: PlayerStatus = Field(default=PlayerStatus.PENDING_VERIFICATION)
-    # Update/Create
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    
+    # Timestamps
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Special AuditService Relation
     audit_events: list[AuditEvent] = Relationship(back_populates="actor")
@@ -175,4 +178,14 @@ class Player(SQLModel, AsyncAttrs, table=True):
     submitted_evidence: list["MatchEvidence"] = Relationship(back_populates="submitter")
     evidence_confirmations: list["EvidenceConfirmation"] = Relationship(
         back_populates="confirmer"
+    )
+    moderation_actions: list[ModerationAction] = Relationship(
+        back_populates="player",
+        sa_relationship_kwargs={"primaryjoin": "ModerationAction.player_id == Player.id"},
+    )
+    issued_actions: list[ModerationAction] = Relationship(
+        back_populates="admin",
+        sa_relationship=relationship(
+            ModerationAction, back_populates="admin", foreign_keys="ModerationAction.issued_by"
+        ),
     )

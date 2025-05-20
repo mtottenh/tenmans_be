@@ -17,7 +17,7 @@ from auth.models import Player
 
 
 # Create test entities
-class TestAuditTeam(SQLModel, table=True):
+class AuditTeamModel(SQLModel, table=True):
     """A simplified Team model for testing"""
 
     __tablename__ = "test_audit_teams"
@@ -29,7 +29,7 @@ class TestAuditTeam(SQLModel, table=True):
     status: str = Field(default="ACTIVE")
 
 
-class TestAuditTournament(SQLModel, table=True):
+class AuditTournamentModel(SQLModel, table=True):
     """A simplified Tournament model for testing"""
 
     __tablename__ = "test_audit_tournaments"
@@ -51,8 +51,8 @@ class ComparisonTestService:
     )
     async def register_team_default(
         self,
-        team: TestAuditTeam,  # This comes first
-        tournament: TestAuditTournament,  # This is what we actually want to audit
+        team: AuditTeamModel,  # This comes first
+        tournament: AuditTournamentModel,  # This is what we actually want to audit
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
@@ -71,8 +71,8 @@ class ComparisonTestService:
     )
     async def register_team_with_param(
         self,
-        team: TestAuditTeam,  # This comes first
-        tournament: TestAuditTournament,  # This is what we actually want to audit
+        team: AuditTeamModel,  # This comes first
+        tournament: AuditTournamentModel,  # This is what we actually want to audit
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
@@ -90,8 +90,8 @@ class TestEntityParamComparison:
     @pytest_asyncio.fixture
     async def setup_data(self, session: AsyncSession):
         """Create test data"""
-        team = TestAuditTeam(name="Test Team")
-        tournament = TestAuditTournament(name="Test Tournament")
+        team = AuditTeamModel(name="Test Team")
+        tournament = AuditTournamentModel(name="Test Tournament")
 
         session.add(team)
         session.add(tournament)

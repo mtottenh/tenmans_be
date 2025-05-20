@@ -18,7 +18,7 @@ from auth.models import Player
 
 
 # Create test entities
-class TestEntity(SQLModel, table=True):
+class AuditTestEntity(SQLModel, table=True):
     """A test entity for testing audit decorators"""
 
     __tablename__ = "test_entities"
@@ -38,15 +38,15 @@ class TestEntityService:
     """Test service to verify audit decorator behavior"""
 
     @AuditService.audited_transaction(
-        action_type=AuditEventType.CREATE, entity_type="TestEntity"
+        action_type=AuditEventType.CREATE, entity_type="AuditTestEntity"
     )
     async def create_entity_default(
         self,
-        entity: TestEntity,
+        entity: AuditTestEntity,
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
-    ) -> TestEntity:
+    ) -> AuditTestEntity:
         """Create method using default behavior (first SQLModel argument)"""
         session.add(entity)
         await session.flush()
@@ -54,18 +54,18 @@ class TestEntityService:
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
-        entity_type="TestEntity",
+        entity_type="AuditTestEntity",
         entity_param="target_entity",  # Specify which parameter is the entity
     )
     async def update_entity_with_param(
         self,
         some_id: uuid.UUID,  # This comes first
-        target_entity: TestEntity,  # But this is the entity we want to audit
+        target_entity: AuditTestEntity,  # But this is the entity we want to audit
         new_value: int,
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
-    ) -> TestEntity:
+    ) -> AuditTestEntity:
         """Update method with entity_param specified"""
         target_entity.value = new_value
         target_entity.updated_at = datetime.now(timezone.utc)
@@ -75,13 +75,13 @@ class TestEntityService:
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.DELETE,
-        entity_type="TestEntity",
+        entity_type="AuditTestEntity",
         entity_param="entity_to_delete",
     )
     async def delete_entity_with_param(
         self,
         reason: str,  # Non-entity parameter comes first
-        entity_to_delete: TestEntity,  # Entity specified by entity_param
+        entity_to_delete: AuditTestEntity,  # Entity specified by entity_param
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
@@ -103,7 +103,7 @@ class TestAuditDecorator:
     @pytest_asyncio.fixture
     async def test_entity(self, session: AsyncSession):
         """Create a test entity"""
-        entity = TestEntity(name="Test Entity", value=42)
+        entity = AuditTestEntity(name="Test Entity", value=42)
         session.add(entity)
         await session.commit()
         await session.refresh(entity)
@@ -118,7 +118,7 @@ class TestAuditDecorator:
     ):
         """Test that default behavior works (first SQLModel argument)"""
         # Create a new entity
-        new_entity = TestEntity(name="Created Entity", value=100)
+        new_entity = AuditTestEntity(name="Created Entity", value=100)
 
         # Call the decorated method
         result = await test_service.create_entity_default(
@@ -140,7 +140,7 @@ class TestAuditDecorator:
         # Check the most recent event
         latest_event = max(events, key=lambda e: e.timestamp)
         assert latest_event.action_type == AuditEventType.CREATE
-        assert latest_event.entity_type == "TestEntity"
+        assert latest_event.entity_type == "AuditTestEntity"
         assert latest_event.entity_id == result.id
         assert latest_event.actor_id == system_user.id
 
@@ -148,7 +148,7 @@ class TestAuditDecorator:
     async def test_update_with_entity_param(
         self,
         test_service: TestEntityService,
-        test_entity: TestEntity,
+        test_entity: AuditTestEntity,
         session: AsyncSession,
         system_user: Player,
     ):
@@ -175,7 +175,7 @@ class TestAuditDecorator:
         # Check the most recent event
         latest_event = max(events, key=lambda e: e.timestamp)
         assert latest_event.action_type == AuditEventType.UPDATE
-        assert latest_event.entity_type == "TestEntity"
+        assert latest_event.entity_type == "AuditTestEntity"
         assert latest_event.entity_id == test_entity.id
         assert latest_event.actor_id == system_user.id
 
@@ -183,7 +183,7 @@ class TestAuditDecorator:
     async def test_delete_with_entity_param(
         self,
         test_service: TestEntityService,
-        test_entity: TestEntity,
+        test_entity: AuditTestEntity,
         session: AsyncSession,
         system_user: Player,
     ):
@@ -210,7 +210,7 @@ class TestAuditDecorator:
         # Check the most recent event
         latest_event = max(events, key=lambda e: e.timestamp)
         assert latest_event.action_type == AuditEventType.DELETE
-        assert latest_event.entity_type == "TestEntity"
+        assert latest_event.entity_type == "AuditTestEntity"
         assert latest_event.entity_id == test_entity.id
         assert latest_event.actor_id == system_user.id
 
@@ -227,16 +227,16 @@ class TestAuditDecorator:
         class BadService:
             @AuditService.audited_transaction(
                 action_type=AuditEventType.UPDATE,
-                entity_type="TestEntity",
+                entity_type="AuditTestEntity",
                 entity_param="nonexistent_param",  # This parameter doesn't exist
             )
             async def bad_method(
-                self, entity: TestEntity, actor: Player, session: AsyncSession
-            ) -> TestEntity:
+                self, entity: AuditTestEntity, actor: Player, session: AsyncSession
+            ) -> AuditTestEntity:
                 return entity
 
         service = BadService()
-        test_entity = TestEntity(name="Test")
+        test_entity = AuditTestEntity(name="Test")
 
         # Should raise an error about missing parameter
         with pytest.raises(

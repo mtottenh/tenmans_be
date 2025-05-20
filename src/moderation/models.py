@@ -4,10 +4,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
 
+from db.models import created_at_field, updated_at_field
 from teams.models import Team
 
 
@@ -30,7 +30,46 @@ class BanStatus(StrEnum):
     REVOKED = "revoked"
 
 
-class Ban(SQLModel, AsyncAttrs, table=True):
+class ModerationActionType(StrEnum):
+    WARNING = "warning"
+    SUSPENSION = "suspension"
+    BAN = "ban"
+    MUTE = "mute"
+
+
+class ModerationAction(SQLModel, table=True):
+    __tablename__ = "moderation_actions"
+    id: uuid.UUID = Field(
+        sa_column=Column(UUID, nullable=False, primary_key=True, default=uuid.uuid4)
+    )
+    player_id: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("players.id"), nullable=False)
+    )
+    action_type: ModerationActionType
+    reason: str
+    scope: str  # global, tournament, season, etc.
+    scope_id: Optional[uuid.UUID] = None
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    issued_by: uuid.UUID = Field(
+        sa_column=Column(ForeignKey("players.id"))
+    )
+    active: bool = True
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
+
+    # Relationships
+    player: "Player" = Relationship(
+        back_populates="moderation_actions",
+        sa_relationship_kwargs={"primaryjoin": "ModerationAction.player_id == Player.id"},
+    )
+    admin: "Player" = Relationship(
+        back_populates="issued_actions",
+        sa_relationship_kwargs={"foreign_keys": "ModerationAction.issued_by"},
+    )
+
+
+class Ban(SQLModel, table=True):
     __tablename__ = "bans"
     id: uuid.UUID = Field(
         sa_column=Column(UUID, nullable=False, primary_key=True, default=uuid.uuid4)
@@ -63,9 +102,8 @@ class Ban(SQLModel, AsyncAttrs, table=True):
     )  # Admin who issued ban
     revoked_by: Optional[uuid.UUID] = Field(sa_column=Column(ForeignKey("players.id")))
     revoke_reason: Optional[str]
-
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Relationships
     player: Optional["Player"] = Relationship(

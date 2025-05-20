@@ -3,9 +3,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
+
+from db.models import created_at_field, timestamp_column, updated_at_field
 
 from competitions.models.lobby import MapVetoAction, MapVetoSession
 from competitions.models.scheduling import TeamAvailability
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     from teams.join_request.models import TeamJoinRequest
 
 
-class Team(SQLModel, AsyncAttrs, table=True):
+class Team(SQLModel, table=True):
     __tablename__ = "teams"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -44,9 +45,9 @@ class Team(SQLModel, AsyncAttrs, table=True):
         sa_column=Column(ForeignKey("players.id"))
     )
     logo: Optional[str]
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     recruitment_status: RecruitmentStatus = Field(default=RecruitmentStatus.ACTIVE)
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     # Existing relationships
     rosters: list["Roster"] = Relationship(back_populates="team")
@@ -79,7 +80,7 @@ class Team(SQLModel, AsyncAttrs, table=True):
     veto_actions: list[MapVetoAction] = Relationship(back_populates="team")
 
 
-class Roster(SQLModel, AsyncAttrs, table=True):
+class Roster(SQLModel, table=True):
     __tablename__ = "rosters"
     team_id: uuid.UUID = Field(
         sa_column=Column(ForeignKey("teams.id"), primary_key=True)
@@ -91,15 +92,15 @@ class Roster(SQLModel, AsyncAttrs, table=True):
         sa_column=Column(ForeignKey("seasons.id"), primary_key=True)
     )
     status: RosterStatus = Field(default=RosterStatus.PENDING)
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     team: Team = Relationship(back_populates="rosters")
     player: "Player" = Relationship(back_populates="team_rosters")
     season: Season = Relationship(back_populates="rosters")
 
 
-class TeamCaptain(SQLModel, AsyncAttrs, table=True):
+class TeamCaptain(SQLModel, table=True):
     __tablename__ = "team_captains"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -111,7 +112,7 @@ class TeamCaptain(SQLModel, AsyncAttrs, table=True):
     player_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
 
     status: TeamCaptainStatus = Field(default=TeamCaptainStatus.ACTIVE)
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     team: Team = Relationship(back_populates="captains")
     player: "Player" = Relationship(back_populates="captain_of")

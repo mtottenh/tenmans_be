@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from state.service import State, StateService, StateType
 
 
-class TestModel(BaseModel):
+class StateTestModel(BaseModel):
     """Test model for state service tests"""
 
     id: str
@@ -46,7 +46,7 @@ def state_service(mock_redis):
 @pytest.fixture
 def test_state_data():
     """Create test state data"""
-    return TestModel(
+    return StateTestModel(
         id=str(uuid.uuid4()), name="test_item", value=42, metadata={"foo": "bar"}
     )
 
@@ -140,11 +140,11 @@ async def test_get_state(state_service, test_state_data):
 
     # Execute
     result = await state_service.get_state(
-        state_type=state_type, state_id=state_id, model_class=TestModel
+        state_type=state_type, state_id=state_id, model_class=StateTestModel
     )
 
     # Assert
-    assert isinstance(result, TestModel)
+    assert isinstance(result, StateTestModel)
     assert result.id == test_state_data.id
     assert result.name == test_state_data.name
     assert result.value == test_state_data.value
@@ -158,7 +158,7 @@ async def test_get_state_not_found(state_service):
 
     # Execute
     result = await state_service.get_state(
-        state_type=StateType.GENERAL, state_id="non-existent", model_class=TestModel
+        state_type=StateType.GENERAL, state_id="non-existent", model_class=StateTestModel
     )
 
     # Assert
@@ -395,11 +395,11 @@ async def test_get_with_metadata(state_service, test_state_data):
 
     # Execute
     result, result_metadata = await state_service.get_with_metadata(
-        state_type=state_type, state_id=state_id, model_class=TestModel
+        state_type=state_type, state_id=state_id, model_class=StateTestModel
     )
 
     # Assert
-    assert isinstance(result, TestModel)
+    assert isinstance(result, StateTestModel)
     assert result_metadata == metadata
 
 
@@ -415,7 +415,7 @@ async def test_atomic_update(state_service, test_state_data):
     state_service.redis.multi = AsyncMock()
 
     # Execute update function
-    async def update_func(data: TestModel) -> TestModel:
+    async def update_func(data: StateTestModel) -> StateTestModel:
         data.value += 1
         return data
 
@@ -423,7 +423,7 @@ async def test_atomic_update(state_service, test_state_data):
         state_type=state_type,
         state_id=state_id,
         update_func=update_func,
-        model_class=TestModel,
+        model_class=StateTestModel,
     )
 
     # Assert

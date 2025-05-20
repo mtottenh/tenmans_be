@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import UUID4, BaseModel
+from pydantic import UUID4, BaseModel, ConfigDict
 
 from competitions.models.scheduling import AvailabilityStatus, AvailabilityType
 
@@ -31,8 +31,7 @@ class AvailabilityResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamAvailabilityResponse(BaseModel):
@@ -47,8 +46,7 @@ class TeamAvailabilityResponse(BaseModel):
     has_minimum_players: bool
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ScheduleSuggestionResponse(BaseModel):
@@ -58,5 +56,4 @@ class ScheduleSuggestionResponse(BaseModel):
     available_players_team2: int
     conflicts: list[dict]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

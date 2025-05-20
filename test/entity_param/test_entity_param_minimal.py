@@ -7,6 +7,7 @@ import pytest_asyncio
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel, select
 
 from audit.context import AuditContext
@@ -27,8 +28,7 @@ class MinimalTestEntity(SQLModel, table=True):
     )
     name: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)  # from_attributes replaces orm_mode
 
 
 @pytest_asyncio.fixture

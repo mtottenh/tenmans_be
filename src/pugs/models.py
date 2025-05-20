@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING, Optional
 
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
-from sqlalchemy.dialects.postgresql import JSON, TIMESTAMP, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from auth.models import Player
+from db.models import created_at_field, timestamp_column
 
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ class PugStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class Pug(SQLModel, AsyncAttrs, table=True):
+class Pug(SQLModel, table=True):
     __tablename__ = "pugs"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -40,8 +40,8 @@ class Pug(SQLModel, AsyncAttrs, table=True):
     require_full_teams: bool = Field(default=True)
     map_pool: list[uuid.UUID] = Field(sa_column=Column(JSON))  # Array of map IDs
     created_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
     completed_at: Optional[datetime]
+    created_at: datetime = created_at_field()
 
     creator: Player = Relationship(back_populates="created_pugs")
     teams: list["PugTeam"] = Relationship(back_populates="pug")
@@ -49,13 +49,13 @@ class Pug(SQLModel, AsyncAttrs, table=True):
     map_results: list["PugMapResult"] = Relationship(back_populates="pug")
 
 
-class PugTeam(SQLModel, AsyncAttrs, table=True):
+class PugTeam(SQLModel, table=True):
     __tablename__ = "pug_teams"
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
     team_number: int = Field(primary_key=True)  # 1 or 2
     team_name: str
     captain_id: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     pug: Pug = Relationship(back_populates="teams")
     captain: "Player" = Relationship(back_populates="pug_captain_of")
@@ -67,14 +67,15 @@ class PugTeam(SQLModel, AsyncAttrs, table=True):
     )
 
 
-class PugPlayer(SQLModel, AsyncAttrs, table=True):
+class PugPlayer(SQLModel, table=True):
     __tablename__ = "pug_players"
     pug_id: uuid.UUID = Field(sa_column=Column(ForeignKey("pugs.id"), primary_key=True))
     player_id: uuid.UUID = Field(
         sa_column=Column(ForeignKey("players.id"), primary_key=True)
     )
     team_number: Optional[int] = Field(default=None)
-    joined_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    joined_at: datetime = Field(sa_column=timestamp_column(default=datetime.now))
+    created_at: datetime = created_at_field()
 
     pug: Pug = Relationship(back_populates="players")
     player: Player = Relationship(back_populates="pug_participations")
@@ -86,7 +87,7 @@ class PugPlayer(SQLModel, AsyncAttrs, table=True):
     )
 
 
-class PugMapResult(SQLModel, AsyncAttrs, table=True):
+class PugMapResult(SQLModel, table=True):
     __tablename__ = "pug_map_results"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -100,7 +101,7 @@ class PugMapResult(SQLModel, AsyncAttrs, table=True):
     team_2_score: int
     team_1_side_first: str  # CT or T
     demo_url: Optional[str]
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     pug: Pug = Relationship(back_populates="map_results")
     map: "Map" = Relationship(back_populates="pug_results")

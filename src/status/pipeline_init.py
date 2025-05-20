@@ -261,4 +261,133 @@ def initialize_all_pipelines(status_transition_service, **kwargs) -> None:
     # Initialize round pipelines
     initialize_round_status_pipelines(status_transition_service)
     initialize_tournament_generation_pipelines(status_transition_service)
+    # Initialize result and dispute pipelines
+    initialize_result_status_pipelines(status_transition_service)
+    initialize_dispute_status_pipelines(status_transition_service)
     LOG.info("All status transition pipelines initialized")
+
+
+def initialize_result_status_pipelines(status_transition_service) -> None:
+    """Initialize result status transition pipelines"""
+    LOG.info("Initializing result status transition pipelines")
+    
+    from matches.models import ConfirmationStatus
+    from status.transition_steps.result import (
+        CreateDisputeStep,
+        NotifyAdminsStep,
+        NotifyOpposingTeamStep,
+        RecalculateStandingsStep,
+        UpdateFixtureStatusStep,
+    )
+    
+    # Pending result submission pipeline
+    pending_pipeline = TransitionPipeline([NotifyOpposingTeamStep()])
+    
+    # Result confirmation pipeline
+    confirm_pipeline = TransitionPipeline([UpdateFixtureStatusStep()])
+    
+    # Result dispute pipeline
+    dispute_pipeline = TransitionPipeline([CreateDisputeStep(), NotifyAdminsStep()])
+    
+    # Admin override pipeline
+    override_pipeline = TransitionPipeline([UpdateFixtureStatusStep(), RecalculateStandingsStep()])
+    
+    # Void result pipeline
+    void_pipeline = TransitionPipeline([UpdateFixtureStatusStep(), RecalculateStandingsStep()])
+    
+    # Register pipelines
+    status_transition_service.register_transition_pipeline(
+        entity_type="Result",
+        new_status=ConfirmationStatus.PENDING,
+        pipeline=pending_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="Result",
+        new_status=ConfirmationStatus.CONFIRMED,
+        pipeline=confirm_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="Result",
+        new_status=ConfirmationStatus.DISPUTED,
+        pipeline=dispute_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="Result",
+        new_status=ConfirmationStatus.ADMIN_OVERRIDE,
+        pipeline=override_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="Result",
+        new_status=ConfirmationStatus.VOIDED,
+        pipeline=void_pipeline,
+    )
+    
+    LOG.info("Result status transition pipelines initialized")
+
+
+def initialize_dispute_status_pipelines(status_transition_service) -> None:
+    """Initialize dispute status transition pipelines"""
+    LOG.info("Initializing dispute status transition pipelines")
+    
+    from matches.models import DisputeStatus
+    from status.transition_steps.dispute import (
+        AssignReviewerStep,
+        EscalateToHigherAuthorityStep,
+        NotifyTeamsStep,
+        RecordResolutionStep,
+        UpdateResultStatusStep,
+    )
+    
+    # Under review pipeline
+    review_pipeline = TransitionPipeline([AssignReviewerStep()])
+    
+    # Dispute resolution pipeline
+    resolve_pipeline = TransitionPipeline([
+        UpdateResultStatusStep(),
+        RecordResolutionStep(),
+        NotifyTeamsStep(),
+    ])
+    
+    # Dispute rejection pipeline
+    reject_pipeline = TransitionPipeline([
+        UpdateResultStatusStep(),
+        RecordResolutionStep(),
+        NotifyTeamsStep(),
+    ])
+    
+    # Dispute escalation pipeline
+    escalate_pipeline = TransitionPipeline([
+        EscalateToHigherAuthorityStep(),
+        NotifyTeamsStep(),
+    ])
+    
+    # Register pipelines
+    status_transition_service.register_transition_pipeline(
+        entity_type="MatchDispute",
+        new_status=DisputeStatus.UNDER_REVIEW,
+        pipeline=review_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="MatchDispute",
+        new_status=DisputeStatus.RESOLVED,
+        pipeline=resolve_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="MatchDispute",
+        new_status=DisputeStatus.REJECTED,
+        pipeline=reject_pipeline,
+    )
+    
+    status_transition_service.register_transition_pipeline(
+        entity_type="MatchDispute",
+        new_status=DisputeStatus.ESCALATED,
+        pipeline=escalate_pipeline,
+    )
+    
+    LOG.info("Dispute status transition pipelines initialized")

@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Optional
 import sqlalchemy as sa
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import JSON, TIMESTAMP, UUID
-from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlmodel import Column, Field, Relationship, SQLModel
+
+from db.models import created_at_field, updated_at_field, timestamp_column
+from utils.datetime import now_utc
 
 
 if TYPE_CHECKING:
@@ -16,6 +18,14 @@ if TYPE_CHECKING:
     from maps.models import Map
     from teams.models import Team
 
+
+
+class DisputeStatus(StrEnum):
+    PENDING = "pending"
+    UNDER_REVIEW = "under_review"
+    RESOLVED = "resolved"
+    REJECTED = "rejected"
+    ESCALATED = "escalated"
 
 
 class MatchFormat(StrEnum):
@@ -30,9 +40,11 @@ class ConfirmationStatus(StrEnum):
     PENDING = "pending"
     CONFIRMED = "confirmed"
     DISPUTED = "disputed"
+    ADMIN_OVERRIDE = "admin_override"
+    VOIDED = "voided"
 
 
-class Result(SQLModel, AsyncAttrs, table=True):
+class Result(SQLModel, table=True):
     __tablename__ = "results"
     id: uuid.UUID = Field(
         sa_column=Column(
@@ -60,12 +72,15 @@ class Result(SQLModel, AsyncAttrs, table=True):
         sa_column=Column(ForeignKey("players.id"))
     )
     admin_override_reason: Optional[str]
+    # Voiding
+    voided: bool = Field(default=False)
+    voided_reason: Optional[str]
     # Evidence for submission
     demo_url: Optional[str]
     screenshot_urls: list[str] = Field(sa_column=Column(JSON))
     # Timestamps
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
-    updated_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
 
     fixture: "Fixture" = Relationship(back_populates="results")
     map: "Map" = Relationship(back_populates="results")
@@ -81,6 +96,7 @@ class Result(SQLModel, AsyncAttrs, table=True):
         back_populates="admin_overridden_results",
         sa_relationship_kwargs={"primaryjoin": "Result.admin_override_by == Player.id"},
     )
+    disputes: list["MatchDispute"] = Relationship(back_populates="result")
 
     @property
     def winner_id(self) -> Optional[uuid.UUID]:
@@ -97,7 +113,7 @@ class Result(SQLModel, AsyncAttrs, table=True):
         return self.team_1_score == self.team_2_score
 
 
-class MatchPlayer(SQLModel, AsyncAttrs, table=True):
+class MatchPlayer(SQLModel, table=True):
     __tablename__ = "match_players"
     fixture_id: uuid.UUID = Field(
         sa_column=Column(ForeignKey("fixtures.id"), primary_key=True)
@@ -107,8 +123,45 @@ class MatchPlayer(SQLModel, AsyncAttrs, table=True):
     )
     team_id: uuid.UUID = Field(sa_column=Column(ForeignKey("teams.id")))
     is_substitute: bool = Field(default=False)
-    created_at: datetime = Field(sa_column=Column(TIMESTAMP, default=datetime.now))
+    created_at: datetime = created_at_field()
 
     fixture: "Fixture" = Relationship(back_populates="match_players")
     player: "Player" = Relationship(back_populates="match_participations")
     team: "Team" = Relationship(back_populates="match_players")
+
+
+class MatchDispute(SQLModel, table=True):
+    __tablename__ = "match_disputes"
+    
+    id: uuid.UUID = Field(
+        sa_column=Column(
+            UUID(as_uuid=True), nullable=False, primary_key=True, default=uuid.uuid4
+        )
+    )
+    result_id: uuid.UUID = Field(sa_column=Column(ForeignKey("results.id")))
+    
+    # Dispute details
+    disputed_by: uuid.UUID = Field(sa_column=Column(ForeignKey("players.id")))
+    reason: str = Field(...)
+    evidence_urls: list[str] = Field(sa_column=Column(JSON), default=[])
+    
+    # Status
+    status: DisputeStatus = Field(
+        sa_column=sa.Column(sa.Enum(DisputeStatus)),
+        default=DisputeStatus.PENDING,
+    )
+    
+    # Resolution
+    resolved: bool = Field(default=False)
+    resolved_by: Optional[uuid.UUID] = Field(
+        sa_column=Column(ForeignKey("players.id"))
+    )
+    resolution_notes: Optional[str]
+    
+    # Timestamps
+    created_at: datetime = created_at_field()
+    updated_at: datetime = updated_at_field()
+    resolved_at: Optional[datetime] = Field(sa_column=timestamp_column(default=None, nullable=True))
+    
+    # Relationships
+    result: Result = Relationship(back_populates="disputes")

@@ -17,7 +17,7 @@ from auth.models import Player
 
 
 # Create test entity
-class TestEntityWithTable(SQLModel, table=True):
+class EntityWithTableModel(SQLModel, table=True):
     """Test entity with table creation"""
 
     __tablename__ = "test_entity_with_table"
@@ -35,12 +35,12 @@ async def ensure_test_table(session: AsyncSession):
     from sqlalchemy import text
 
     await session.execute(
-        text(f"DROP TABLE IF EXISTS {TestEntityWithTable.__tablename__} CASCADE")
+        text(f"DROP TABLE IF EXISTS {EntityWithTableModel.__tablename__} CASCADE")
     )
     await session.execute(
         text(
             f"""
-        CREATE TABLE {TestEntityWithTable.__tablename__} (
+        CREATE TABLE {EntityWithTableModel.__tablename__} (
             id UUID PRIMARY KEY,
             name VARCHAR NOT NULL
         )
@@ -51,7 +51,7 @@ async def ensure_test_table(session: AsyncSession):
     yield
     # Clean up
     await session.execute(
-        text(f"DROP TABLE IF EXISTS {TestEntityWithTable.__tablename__} CASCADE")
+        text(f"DROP TABLE IF EXISTS {EntityWithTableModel.__tablename__} CASCADE")
     )
     await session.commit()
 
@@ -60,7 +60,7 @@ class TestServiceWithTable:
     """Test service that uses the table entity"""
 
     @AuditService.audited_transaction(
-        action_type=AuditEventType.CREATE, entity_type="TestEntityWithTable"
+        action_type=AuditEventType.CREATE, entity_type="EntityWithTableModel"
     )
     async def create_entity(
         self,
@@ -68,24 +68,24 @@ class TestServiceWithTable:
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
-    ) -> TestEntityWithTable:
+    ) -> EntityWithTableModel:
         """Create method"""
-        entity = TestEntityWithTable(name=name)
+        entity = EntityWithTableModel(name=name)
         session.add(entity)
         await session.flush()
         return entity
 
     @AuditService.audited_transaction(
-        action_type=AuditEventType.UPDATE, entity_type="TestEntityWithTable"
+        action_type=AuditEventType.UPDATE, entity_type="EntityWithTableModel"
     )
     async def update_default(
         self,
-        first: TestEntityWithTable,
-        second: TestEntityWithTable,
+        first: EntityWithTableModel,
+        second: EntityWithTableModel,
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
-    ) -> TestEntityWithTable:
+    ) -> EntityWithTableModel:
         """Update using default (first entity)"""
         first.name = "First Updated"
         second.name = "Second Updated"
@@ -96,17 +96,17 @@ class TestServiceWithTable:
 
     @AuditService.audited_transaction(
         action_type=AuditEventType.UPDATE,
-        entity_type="TestEntityWithTable",
+        entity_type="EntityWithTableModel",
         entity_param="second",
     )
     async def update_second(
         self,
-        first: TestEntityWithTable,
-        second: TestEntityWithTable,
+        first: EntityWithTableModel,
+        second: EntityWithTableModel,
         actor: Player,
         session: AsyncSession,
         audit_context: Optional[AuditContext] = None,
-    ) -> TestEntityWithTable:
+    ) -> EntityWithTableModel:
         """Update using entity_param=second"""
         first.name = "First Updated Again"
         second.name = "Second Updated Again"
@@ -148,7 +148,7 @@ async def test_entity_param_with_table(
     # Check which entity was audited
     stmt = select(AuditEvent).where(
         AuditEvent.action_type == AuditEventType.UPDATE,
-        AuditEvent.entity_type == "TestEntityWithTable",
+        AuditEvent.entity_type == "EntityWithTableModel",
     )
     result = await session.execute(stmt)
     update_events = result.scalars().all()
@@ -166,7 +166,7 @@ async def test_entity_param_with_table(
     # Check which entity was audited now
     stmt = select(AuditEvent).where(
         AuditEvent.action_type == AuditEventType.UPDATE,
-        AuditEvent.entity_type == "TestEntityWithTable",
+        AuditEvent.entity_type == "EntityWithTableModel",
     )
     result = await session.execute(stmt)
     all_update_events = result.scalars().all()

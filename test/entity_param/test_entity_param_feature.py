@@ -16,7 +16,7 @@ from auth.models import Player
 
 
 # Create simple test models
-class TestParamModel(SQLModel, table=True):
+class ParamTestModel(SQLModel, table=True):
     """A simple model for testing"""
 
     __tablename__ = "test_param_models"
@@ -38,8 +38,8 @@ class TestEntityParamFeature:
         """Test that entity_param correctly identifies which argument to audit"""
 
         # Create test entities
-        entity1 = TestParamModel(name="Entity 1", value=1)
-        entity2 = TestParamModel(name="Entity 2", value=2)
+        entity1 = ParamTestModel(name="Entity 1", value=1)
+        entity2 = ParamTestModel(name="Entity 2", value=2)
         session.add(entity1)
         session.add(entity2)
         await session.commit()
@@ -48,17 +48,17 @@ class TestEntityParamFeature:
         class TestService:
             @AuditService.audited_transaction(
                 action_type=AuditEventType.UPDATE,
-                entity_type="TestParamModel",
+                entity_type="ParamTestModel",
                 # No entity_param - will use first SQLModel entity
             )
             async def update_without_param(
                 self,
-                first_entity: TestParamModel,
-                second_entity: TestParamModel,
+                first_entity: ParamTestModel,
+                second_entity: ParamTestModel,
                 actor: Player,
                 session: AsyncSession,
                 audit_context: Optional[AuditContext] = None,
-            ) -> TestParamModel:
+            ) -> ParamTestModel:
                 """Method without entity_param specified"""
                 first_entity.value += 10
                 second_entity.value += 20
@@ -69,17 +69,17 @@ class TestEntityParamFeature:
 
             @AuditService.audited_transaction(
                 action_type=AuditEventType.UPDATE,
-                entity_type="TestParamModel",
+                entity_type="ParamTestModel",
                 entity_param="second_entity",  # Explicitly specify second entity
             )
             async def update_with_param(
                 self,
-                first_entity: TestParamModel,
-                second_entity: TestParamModel,
+                first_entity: ParamTestModel,
+                second_entity: ParamTestModel,
                 actor: Player,
                 session: AsyncSession,
                 audit_context: Optional[AuditContext] = None,
-            ) -> TestParamModel:
+            ) -> ParamTestModel:
                 """Method with entity_param specified"""
                 first_entity.value += 10
                 second_entity.value += 20
@@ -102,7 +102,7 @@ class TestEntityParamFeature:
         entity1_events = result.scalars().all()
 
         assert len(entity1_events) == 1, "Should have 1 audit event for entity1"
-        assert entity1_events[0].entity_type == "TestParamModel"
+        assert entity1_events[0].entity_type == "ParamTestModel"
 
         # Check audit event for entity2 (should not have one from this call)
         stmt = select(AuditEvent).where(
@@ -130,7 +130,7 @@ class TestEntityParamFeature:
         assert len(entity2_events_after) == 1, (
             "Should now have 1 audit event for entity2"
         )
-        assert entity2_events_after[0].entity_type == "TestParamModel"
+        assert entity2_events_after[0].entity_type == "ParamTestModel"
 
         # entity1 should still only have the one event from before
         stmt = select(AuditEvent).where(
@@ -148,14 +148,14 @@ class TestEntityParamFeature:
     ):
         """Test that entity_param works with keyword arguments"""
 
-        entity = TestParamModel(name="Test Entity", value=42)
+        entity = ParamTestModel(name="Test Entity", value=42)
         session.add(entity)
         await session.commit()
 
         class TestService:
             @AuditService.audited_transaction(
                 action_type=AuditEventType.UPDATE,
-                entity_type="TestParamModel",
+                entity_type="ParamTestModel",
                 entity_param="target",  # Parameter passed as kwarg
             )
             async def update_entity(
@@ -163,8 +163,8 @@ class TestEntityParamFeature:
                 new_value: int,
                 actor: Player,
                 session: AsyncSession,
-                target: TestParamModel = None,  # Entity as keyword argument
-            ) -> TestParamModel:
+                target: ParamTestModel = None,  # Entity as keyword argument
+            ) -> ParamTestModel:
                 """Method with entity as keyword argument"""
                 if target:
                     target.value = new_value
@@ -191,5 +191,5 @@ class TestEntityParamFeature:
         events = result.scalars().all()
 
         assert len(events) == 1
-        assert events[0].entity_type == "TestParamModel"
+        assert events[0].entity_type == "ParamTestModel"
         assert events[0].entity_id == entity.id

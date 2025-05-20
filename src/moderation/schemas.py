@@ -50,6 +50,15 @@ class BanUpdate(BaseModel):
     revoke_reason: Optional[str]
 
 
+class ModerationActionCreate(BaseModel):
+    player_id: UUID4
+    action_type: str  # warning, suspension, ban, mute
+    reason: str
+    scope: str  # global, tournament, season
+    scope_id: Optional[UUID4] = None
+    duration_days: Optional[int] = None
+
+
 # Response Schemas
 class BanBase(BaseModel):
     id: UUID4

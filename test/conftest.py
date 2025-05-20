@@ -36,13 +36,8 @@ def _compile_drop_table(element, compiler, **kwargs):
     return compiler.visit_drop_table(element) + " CASCADE"
 
 
-# Event loop fixture
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for each test case."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# Instead of redefining event_loop, we're using pytest-asyncio's built-in event_loop fixture
+# with configuration in pyproject.toml: asyncio_default_fixture_loop_scope = "function"
 
 
 # Test database URL

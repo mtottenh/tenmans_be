@@ -126,6 +126,8 @@ pythonpath = [
     "src",  # Add the main project source to Python path
     "utils"  # Add the utils directory
 ]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 
 # This ensures utils can import from src/
 [tool.hatch.build]

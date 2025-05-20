@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from competitions.base_schemas import GameMode, MapCategory
 from maps.models import Map
 from maps.schemas import MapCreate
-from maps.service import MapNotFoundException, MapService
+from maps.service import MapNotFoundError, MapService
 
 
 @pytest.fixture
@@ -28,8 +28,8 @@ def test_maps():
             name="de_dust2",
             display_name="Dust II",
             image_url="https://example.com/dust2.jpg",
-            category=MapCategory.ACTIVE_DUTY,
-            supported_modes=[GameMode.COMPETITIVE, GameMode.WINGMAN],
+            category=MapCategory.COMPETITIVE,
+            supported_modes=[GameMode.COMPETITIVE_5V5, GameMode.WINGMAN_2V2],
             active=True,
             created_at=datetime.now(timezone.utc),
         ),
@@ -38,8 +38,8 @@ def test_maps():
             name="de_inferno",
             display_name="Inferno",
             image_url="https://example.com/inferno.jpg",
-            category=MapCategory.ACTIVE_DUTY,
-            supported_modes=[GameMode.COMPETITIVE],
+            category=MapCategory.COMPETITIVE,
+            supported_modes=[GameMode.COMPETITIVE_5V5],
             active=True,
             created_at=datetime.now(timezone.utc),
         ),
@@ -48,8 +48,8 @@ def test_maps():
             name="de_mirage",
             display_name="Mirage",
             image_url="https://example.com/mirage.jpg",
-            category=MapCategory.RESERVE,
-            supported_modes=[GameMode.COMPETITIVE, GameMode.WINGMAN],
+            category=MapCategory.COMPETITIVE,
+            supported_modes=[GameMode.COMPETITIVE_5V5, GameMode.WINGMAN_2V2],
             active=True,
             created_at=datetime.now(timezone.utc),
         ),
@@ -58,8 +58,8 @@ def test_maps():
             name="de_cache",
             display_name="Cache",
             image_url="https://example.com/cache.jpg",
-            category=MapCategory.RESERVE,
-            supported_modes=[GameMode.COMPETITIVE],
+            category=MapCategory.CUSTOM,
+            supported_modes=[GameMode.COMPETITIVE_5V5],
             active=False,  # Inactive map
             created_at=datetime.now(timezone.utc),
         ),
@@ -124,7 +124,7 @@ async def test_get_map_not_found(map_service, mock_session):
 
     # Execute and assert
     with pytest.raises(
-        MapNotFoundException, match=f"Map id={non_existent_id} not found"
+        MapNotFoundError, match=f"Map id={non_existent_id} not found"
     ):
         await map_service.get_map(non_existent_id, mock_session)
 
@@ -159,14 +159,14 @@ async def test_get_map_by_name_not_found(map_service, mock_session):
     mock_session.execute.return_value.scalars = mock_scalars
 
     # Execute and assert
-    with pytest.raises(MapNotFoundException, match="Map de_nuke not found"):
+    with pytest.raises(MapNotFoundError, match="Map de_nuke not found"):
         await map_service.get_map_by_name("de_nuke", mock_session)
 
 
 @pytest.mark.asyncio
 async def test_get_maps_by_mode(map_service, test_maps, mock_session):
     """Test getting maps that support a specific game mode"""
-    # Setup - Filter for WINGMAN mode
+    # Setup - Filter for WINGMAN_2V2 mode
     wingman_maps = [test_maps[0], test_maps[2]]  # dust2 and mirage support wingman
 
     mock_result = Mock()
@@ -175,31 +175,31 @@ async def test_get_maps_by_mode(map_service, test_maps, mock_session):
     mock_session.execute.return_value.scalars = mock_scalars
 
     # Execute
-    maps = await map_service.get_maps_by_mode(GameMode.WINGMAN, mock_session)
+    maps = await map_service.get_maps_by_mode(GameMode.WINGMAN_2V2, mock_session)
 
     # Assert
     assert len(maps) == 2
-    assert all(GameMode.WINGMAN in map.supported_modes for map in maps)
+    assert all(GameMode.WINGMAN_2V2 in map.supported_modes for map in maps)
     mock_session.execute.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_get_maps_by_category(map_service, test_maps, mock_session):
     """Test getting maps by category"""
-    # Setup - Filter for ACTIVE_DUTY category
-    active_duty_maps = [test_maps[0], test_maps[1]]  # dust2 and inferno
+    # Setup - Filter for COMPETITIVE category
+    competitive_maps = [test_maps[0], test_maps[1], test_maps[2]]  # dust2, inferno, mirage
 
     mock_result = Mock()
-    mock_result.all.return_value = active_duty_maps
+    mock_result.all.return_value = competitive_maps
     mock_scalars = Mock(return_value=mock_result)
     mock_session.execute.return_value.scalars = mock_scalars
 
     # Execute
-    maps = await map_service.get_maps_by_category(MapCategory.ACTIVE_DUTY, mock_session)
+    maps = await map_service.get_maps_by_category(MapCategory.COMPETITIVE, mock_session)
 
     # Assert
-    assert len(maps) == 2
-    assert all(map.category == MapCategory.ACTIVE_DUTY for map in maps)
+    assert len(maps) == 3
+    assert all(map.category == MapCategory.COMPETITIVE for map in maps)
     mock_session.execute.assert_called_once()
 
 
@@ -231,8 +231,8 @@ async def test_create_map(map_service, mock_session):
         name="de_ancient",
         display_name="Ancient",
         image_url="https://example.com/ancient.jpg",
-        category=MapCategory.ACTIVE_DUTY,
-        supported_modes=[GameMode.COMPETITIVE],
+        category=MapCategory.COMPETITIVE,
+        supported_modes=[GameMode.COMPETITIVE_5V5],
     )
 
     # Mock the add and commit operations
@@ -329,7 +329,7 @@ async def test_get_maps_for_tournament(map_service, test_maps, mock_session):
     # Assert
     assert len(maps) == 3
     assert all(map.active for map in maps)
-    assert all(GameMode.COMPETITIVE in map.supported_modes for map in maps)
+    assert all(GameMode.COMPETITIVE_5V5 in map.supported_modes for map in maps)
 
 
 @pytest.mark.asyncio
